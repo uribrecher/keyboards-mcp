@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "nord-electro-5d": {
+      "command": "node",
+      "args": ["/Users/uribrecher/test/keyboards-mcp/dist/index.js"]
+    }
+  }
+}
