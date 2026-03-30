@@ -53,6 +53,9 @@ const FIELDS: Field[] = [
   { bit: 240, width: 3, name: "pianoType", labels: { 0: "Grand", 1: "Upright", 2: "EP1", 3: "EP2", 4: "Clav", 5: "Harpsi" } },
   { bit: 246, width: 4, name: "pianoModel", format: v => `${v} (display: ${v + 1})` },
   { bit: 255, width: 2, name: "clavVariation", labels: { 0: "A", 1: "B", 2: "C", 3: "D" } },
+  { bit: 257, width: 2, name: "pianoAcoustic", labels: { 0: "Off", 1: "String Resonance", 2: "Long Release", 3: "Both" } },
+  { bit: 259, width: 2, name: "pianoKbdTouch" },
+  { bit: 261, width: 1, name: "pianoMono", labels: { 0: "off", 1: "on" } },
 
   // Sample Synth
   { bit: 336, width: 7, name: "sampleAttack" },

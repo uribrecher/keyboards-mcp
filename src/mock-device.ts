@@ -128,6 +128,9 @@ const PROGRAM_PARAM_MAP: Array<[key: string, get: (p: ProgramParams) => number |
   ["piano_type", p => p.pianoType],
   ["piano_model", p => p.pianoModel],
   ["piano_variation", p => "ABCD".indexOf(p.clavVariation) + 1],
+  ["piano_acoustic", p => p.pianoAcoustic],
+  ["piano_kbd_touch", p => p.pianoKbdTouch],
+  ["piano_mono", p => p.pianoMono ? 1 : 0],
   // Sample Synth
   ["sample_synth_attack", p => p.sampleAttack],
   ["sample_synth_release", p => p.sampleDecRel],
