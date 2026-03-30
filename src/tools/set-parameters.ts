@@ -16,6 +16,7 @@ import type { Part } from "../nord/parameter-state.js";
 function formatDisplay(param: NordParameter, midiValue: number): string {
   if (param.drawbar) return `${midiToDrawbar(midiValue)}`;
   if (param.modelIndex) return `${midiToModelIndex(midiValue)}`;
+  if (param.oneBased) return `${midiValue + 1}`;
   if ((param.type === "discrete" || param.type === "toggle") && param.labels) {
     return param.labels[midiToDiscrete(midiValue, param.max)] ?? `${midiValue}`;
   }
@@ -31,9 +32,12 @@ export function registerSetParameters(
     "set_parameters",
     "Set one or more Nord Electro 5D parameters. " +
       "Accepts parameter names (e.g. 'drawbar_1', 'reverb_dry_wet', 'organ_model') with numeric values or string labels (e.g. 'B3', 'Hall', 'Fast'). " +
-      "Drawbar values are 0-8; other continuous parameters are 0-127. " +
-      "Per-part params (organ/piano/sample_synth) accept an optional 'part' field ('lower' or 'upper', default: 'upper'). " +
-      "Note: Organ is fully bi-timbral (independent per part). Piano and Sample Synth share model/sample selection across parts — only one piano model and one sample at a time.",
+      "Drawbar values are 0-8 (Farfisa uses 0/1 toggles); other continuous parameters are 0-127. " +
+      "Drawbar CCs modify the currently selected preset's registration — select a preset first, then set drawbars. " +
+      "Piano and Sample Synth share model/sample selection across parts — only one piano model and one sample at a time. " +
+      "Organ preset routing: In split mode, Preset 1 maps to the Lower part and Preset 2 to the Upper part. " +
+      "To set different organ registrations per part: select Preset 1, set its drawbars, then select Preset 2 and set different drawbars. " +
+      "Avoid using vibrato/chorus together with the rotary speaker (Leslie) — they clash sonically.",
     {
       parameters: z
         .array(
@@ -80,18 +84,7 @@ export function registerSetParameters(
         }
 
         try {
-          // For piano_model, resolve the current piano type for correct MIDI encoding
-          let pianoType: string | undefined;
-          if (found.param.modelIndex) {
-            const pianoTypeParam = findParam("piano_type");
-            if (pianoTypeParam) {
-              const ptMidi = state.get("piano_type");
-              if (ptMidi !== undefined) {
-                pianoType = pianoTypeParam.param.labels?.[midiToDiscrete(ptMidi, pianoTypeParam.param.max)];
-              }
-            }
-          }
-          const midiValue = resolveValue(found.param, value, pianoType);
+          const midiValue = resolveValue(found.param, value);
           const targetPart: Part = part ?? "upper";
           const prevMidi = state.get(found.key, isPerPartParam(found.key) ? targetPart : undefined);
 
@@ -126,27 +119,43 @@ export function registerSetParameters(
       const targetEngine = state.get(targetEngineKey);
       const otherEngine = state.get(otherEngineKey);
 
-      // Check if engine select is being set to same engine in layer mode
-      for (const { name, value } of parameters) {
-        const found = findParam(name);
-        if (!found) continue;
+      // Check if both parts use the same engine
+      {
+        // Resolve final engine values after all params in this batch
+        let finalLower = state.get("part_lower_engine_select");
+        let finalUpper = state.get("part_upper_engine_select");
+        for (const { name, value } of parameters) {
+          const found = findParam(name);
+          if (!found) continue;
+          if (found.key === "part_lower_engine_select") finalLower = resolveValue(found.param, value);
+          if (found.key === "part_upper_engine_select") finalUpper = resolveValue(found.param, value);
+        }
 
-        if ((found.key === "part_lower_engine_select" || found.key === "part_upper_engine_select") && isLayerMode) {
-          const newVal = resolveValue(found.param, value);
-          const otherVal = found.key === targetEngineKey ? otherEngine : targetEngine;
-          if (otherVal !== undefined && newVal === otherVal) {
-            const engineNames: Record<number, string> = { 0: "Organ", 1: "Piano", 2: "Sample Synth" };
+        if (finalLower !== undefined && finalUpper !== undefined && finalLower === finalUpper) {
+          const engineIdx = midiToDiscrete(finalLower, 2);
+          const engineNames: Record<number, string> = { 0: "Organ", 1: "Piano", 2: "Sample Synth" };
+          const engineName = engineNames[engineIdx] ?? String(finalLower);
+
+          if (isLayerMode) {
+            // Layer mode: no engine can be shared
             warnings.push(
               `WARNING: In layer mode (split off), both parts CANNOT use the same engine. ` +
-              `Both would be set to ${engineNames[newVal] ?? newVal}. ` +
+              `Both would be set to ${engineName}. ` +
               `Enable split mode first, or choose a different engine for one part.`
+            );
+          } else if (engineIdx !== 0) {
+            // Split mode: Piano and Sample Synth cannot be shared (Organ is OK via presets)
+            warnings.push(
+              `WARNING: In split mode, both parts CANNOT use ${engineName} simultaneously. ` +
+              `${engineName} shares model/sample selection across parts. ` +
+              `Only Organ supports independent per-part configuration (via Preset 1/2).`
             );
           }
         }
       }
 
       // Check for shared piano/sample warnings in split mode
-      const sharedParams = new Set(["piano_type", "piano_model", "piano_variation", "sample_synth_sample"]);
+      const sharedParams = new Set(["piano_type", "piano_model", "sample_synth_sample"]);
       for (const { name } of parameters) {
         const found = findParam(name);
         if (!found || !sharedParams.has(found.key)) continue;
@@ -158,6 +167,55 @@ export function registerSetParameters(
             `(hardware limitation — ${engineName} shares model/sample selection across parts).`
           );
           break;
+        }
+      }
+
+      // Check for vibrato + rotary speaker clash
+      const spkrType = state.get("spkr_comp_type");
+      const spkrEnabled = state.get("spkr_comp_enable");
+      const rotaryTypeValue = resolveValue(
+        findParam("spkr_comp_type")!.param, "Rotary"
+      );
+      const isRotaryActive = spkrEnabled !== undefined && spkrEnabled > 0
+        && spkrType !== undefined && spkrType === rotaryTypeValue;
+
+      for (const { name, value } of parameters) {
+        const found = findParam(name);
+        if (!found) continue;
+
+        // Warn if enabling vibrato while rotary is active
+        if (found.key === "vibrato_enable" && resolveValue(found.param, value) > 0 && isRotaryActive) {
+          warnings.push(
+            `WARNING: Vibrato/chorus and the rotary speaker tend to clash. ` +
+            `Consider disabling vibrato when using the Leslie/rotary effect.`
+          );
+        }
+        // Warn if enabling rotary while vibrato is active
+        if (found.key === "spkr_comp_type") {
+          const vibratoEnabled = state.get("vibrato_enable");
+          if (vibratoEnabled !== undefined && vibratoEnabled > 0
+            && resolveValue(found.param, value) === rotaryTypeValue) {
+            warnings.push(
+              `WARNING: Vibrato/chorus and the rotary speaker tend to clash. ` +
+              `Consider disabling vibrato when using the Leslie/rotary effect.`
+            );
+          }
+        }
+      }
+
+      // Hint about organ preset routing in split mode
+      if (splitMode && splitMode > 0) {
+        for (const { name } of parameters) {
+          const found = findParam(name);
+          if (!found) continue;
+          if (found.key === "organ_preset_select") {
+            warnings.push(
+              `NOTE: In split mode, Organ Preset 1 routes to the Lower part and ` +
+              `Preset 2 routes to the Upper part. Set drawbars on each preset ` +
+              `to configure different registrations per part.`
+            );
+            break;
+          }
         }
       }
 

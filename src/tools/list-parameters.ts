@@ -5,6 +5,7 @@ import {
   getParamsBySection,
   getSections,
 } from "../nord/nord-electro-5d-map.js";
+import { getBackupData, getPianoModelsForType } from "../nord/backup-cache.js";
 
 export function registerListParameters(server: McpServer): void {
   server.tool(
@@ -62,6 +63,22 @@ export function registerListParameters(server: McpServer): void {
 
         info += ` | CC: ${param.cc}`;
         lines.push(info);
+
+        // Append dynamic piano model names from inventory
+        if (key === "piano_model") {
+          const backup = getBackupData();
+          if (backup) {
+            for (const type of ["Grand", "Upright", "EP1", "EP2", "Clav", "Harpsichord"]) {
+              const models = getPianoModelsForType(type);
+              if (models && models.length > 0) {
+                const modelList = models.map((m) => `${m.location}=${m.name}`).join(", ");
+                lines.push(`    ${type}: ${modelList}`);
+              }
+            }
+          } else {
+            lines.push(`    (Run extract_backup to see available model names)`);
+          }
+        }
       }
 
       return { content: [{ type: "text", text: lines.join("\n") }] };

@@ -12,6 +12,14 @@ export function registerConnect(server: McpServer, midi: MidiManager): void {
         .union([z.string(), z.number()])
         .optional()
         .describe("Port name (substring match) or index number. Omit to auto-detect Nord."),
+      input_port: z
+        .union([z.string(), z.number()])
+        .optional()
+        .describe("Input port name or index to listen on (Nord's MIDI Output). Omit to auto-detect."),
+      forward_port: z
+        .union([z.string(), z.number()])
+        .optional()
+        .describe("Forward port name or index to send passthrough MIDI to (mock device). Omit to auto-detect."),
       channel: z
         .number()
         .min(1)
@@ -31,7 +39,7 @@ export function registerConnect(server: McpServer, midi: MidiManager): void {
         .optional()
         .describe("MIDI channel for Upper part (1-16, default 3)"),
     },
-    async ({ port, channel, lower_channel, upper_channel }) => {
+    async ({ port, input_port, forward_port, channel, lower_channel, upper_channel }) => {
       try {
         if (channel !== undefined) {
           midi.setChannel((channel - 1) as any);
@@ -50,11 +58,44 @@ export function registerConnect(server: McpServer, midi: MidiManager): void {
           result = midi.autoConnect();
         }
 
+        // Auto-connect input (listen to Nord's MIDI output)
+        let inputResult = "";
+        try {
+          if (input_port !== undefined) {
+            const res = midi.connectInput(input_port);
+            inputResult = `, input: ${res.portName}`;
+          } else {
+            const res = midi.autoConnectInput();
+            inputResult = `, input: ${res.portName}`;
+          }
+        } catch {
+          // Input connection is optional — don't fail
+        }
+
+        // Connect forward (passthrough to mock) — required if mock port exists
+        let forwardResult = "";
+        try {
+          if (forward_port !== undefined) {
+            const res = midi.connectForward(forward_port);
+            forwardResult = `, forward: ${res.portName}`;
+          } else {
+            const res = midi.autoConnectForward();
+            forwardResult = `, forward: ${res.portName}`;
+          }
+        } catch (err) {
+          // Only swallow if no mock port exists at all
+          if (midi.hasMockPort()) {
+            throw new Error(
+              `Connected to real hardware but failed to connect forward to mock device: ${err instanceof Error ? err.message : String(err)}`
+            );
+          }
+        }
+
         return {
           content: [
             {
               type: "text",
-              text: `Connected to: ${result.portName} (global ch ${midi.getChannel() + 1}, lower ch ${midi.getLowerChannel() + 1}, upper ch ${midi.getUpperChannel() + 1})`,
+              text: `Connected to: ${result.portName} (global ch ${midi.getChannel() + 1}, lower ch ${midi.getLowerChannel() + 1}, upper ch ${midi.getUpperChannel() + 1}${inputResult}${forwardResult})`,
             },
           ],
         };
@@ -78,12 +119,21 @@ export function registerConnect(server: McpServer, midi: MidiManager): void {
     {},
     async () => {
       const was = midi.getConnectedPort();
+      const wasInput = midi.getConnectedInputPort();
+      const wasForward = midi.getConnectedForwardPort();
       midi.disconnect();
+      const parts = [
+        was ? `output: ${was}` : null,
+        wasInput ? `input: ${wasInput}` : null,
+        wasForward ? `forward: ${wasForward}` : null,
+      ].filter(Boolean);
       return {
         content: [
           {
             type: "text",
-            text: was ? `Disconnected from ${was}` : "No device was connected",
+            text: parts.length > 0
+              ? `Disconnected from ${parts.join(", ")}`
+              : "No device was connected",
           },
         ],
       };

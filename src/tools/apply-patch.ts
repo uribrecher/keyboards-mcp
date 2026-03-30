@@ -114,14 +114,13 @@ export function registerApplyPatch(
         }
       }
 
-      // Send all CC messages with delays, using part channel for per-part params
+      // Send all CC messages on the global channel — the Nord receives CC
+      // messages only on the global channel. Per-part channels are used
+      // by the hardware for note routing only.
       await midi.sendCCBatch(
         messages.map((m) => ({
           controller: m.cc,
           value: m.value,
-          channel: m.perPart
-            ? (targetPart === "lower" ? midi.getLowerChannel() : midi.getUpperChannel())
-            : undefined,
         }))
       );
 
