@@ -10,7 +10,6 @@ const PARAM_LABELS = {
   sample_synth_dynamics: { 0: "OFF", 1: "LOW", 2: "MID", 3: "HIGH" },
   organ_preset_select: { 0: "Pst 1", 1: "Pst 2" },
   piano_kbd_touch: { 0: "0", 1: "1", 2: "2", 3: "3" },
-  piano_acoustic: { 0: "OFF", 1: "STRRES", 2: "LNGREL", 3: "BOTH" },
   effect1_type: { 0: "TREM1", 1: "TREM2", 2: "TREM3", 3: "PAN1", 4: "PAN2", 5: "PAN3", 6: "WAH", 7: "RING" },
   effect2_type: { 0: "PHAS1", 1: "PHAS2", 2: "FLANG", 3: "CHOR1", 4: "CHOR2", 5: "VIBE" },
   spkr_comp_type: { 0: "DIST", 1: "SMALL", 2: "JC", 3: "TWIN", 4: "ROTAR", 5: "COMP" },
@@ -232,7 +231,7 @@ function updateEngineParams(data) {
   // Selectors (engine params, now global IDs)
   const engineSelectors = [
     "vibrato_type", "percussion_harmonic",
-    "piano_type", "piano_kbd_touch", "piano_acoustic", "sample_synth_dynamics",
+    "piano_type", "piano_kbd_touch", "sample_synth_dynamics",
   ];
   for (const param of engineSelectors) {
     const el = document.getElementById(`sel-${param}`);
@@ -266,6 +265,13 @@ function updateEngineParams(data) {
     const el = document.getElementById(`led-${id}`);
     if (!el || !params[id]) continue;
     el.classList.toggle("on", params[id].value > 0);
+  }
+
+  // Piano Acoustics — bitmask: bit 0 = String Resonance, bit 1 = Long Release
+  if (params.piano_acoustic) {
+    const val = params.piano_acoustic.index ?? params.piano_acoustic.value;
+    document.getElementById("led-piano_acoustic_strres")?.classList.toggle("on", (val & 1) !== 0);
+    document.getElementById("led-piano_acoustic_longrel")?.classList.toggle("on", (val & 2) !== 0);
   }
 
   // Drawbars — per-preset data from state message

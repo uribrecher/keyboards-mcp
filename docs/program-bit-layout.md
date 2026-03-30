@@ -31,9 +31,10 @@ Bit       Width  Field                        Values / Notes
 246-249    4     pianoModel                   0-based index within type (1-based on display)
 250-254          [unknown]
 255-256    2     clavVariation                0=A, 1=B, 2=C, 3=D
-
- ── [Unknown Region] ──────────────────────────────────────────────────────────
-257-335          [unknown — 79 bits]
+257-258    2     pianoAcoustic                0=Off, 1=String Resonance, 2=Long Release, 3=Both
+259-260    2     pianoKbdTouch                0-3 (touch sensitivity)
+261        1     pianoMono                    0=off, 1=on
+262-335          [unknown — 74 bits]
 
  ── Sample Synth ──────────────────────────────────────────────────────────────
 336-342    7     sampleAttack                 0-127
@@ -42,8 +43,6 @@ Bit       Width  Field                        Values / Notes
 358-389          [unknown — 32 bits]
 390-391    2     sampleDynamics               0=Off, 1=Low, 2=Mid, 3=High
 392        1     sampleFilterVel              0=off, 1=on
-
- ── [Unknown Region] ──────────────────────────────────────────────────────────
 393-426          [unknown — 34 bits]
 
  ── Percussion (B3 organ model only) ──────────────────────────────────────────
@@ -81,7 +80,6 @@ Bit       Width  Field                        Values / Notes
     856-891   9×4  preset1 drawbars 1-9       4-bit each (0-8)
     904-939   9×4  preset2 drawbars 1-9       4-bit each (0-8)
 
- ── [Unknown Region] ──────────────────────────────────────────────────────────
 940-951          [unknown — 12 bits]
 
  ── Effects ───────────────────────────────────────────────────────────────────
@@ -129,7 +127,7 @@ Bit       Width  Field                        Values / Notes
    1040-1042   3   revType                     0=Room,1=StageSoft,2=Stage,3=HallSoft,4=Hall
    1043-1049   7   revDryWet                   0-127
 
- ── [Tail] ────────────────────────────────────────────────────────────────────
+ ── Tail ──────────────────────────────────────────────────────────────────────
 1050-1066        [unknown — 17 bits]
 1067       1     fx1ControlPedal               0=off, 1=on
 1068       1     fx2Deep                       0=off, 1=on
@@ -141,5 +139,4 @@ Bit       Width  Field                        Values / Notes
 - All fields are MSB-first (bit 0 of each byte = hardware bit 7)
 - Drawbar positions are model-dependent — the bit layout changes based on organModel
 - Percussion, vibrato enable, and vibrato type are per-preset and per-organ-model. Bit positions confirmed for B3 only; other organ models store them at different positions (likely near their respective drawbar regions)
-- Unknown regions likely contain: delay part-select, delay feedback, rotary speed/stop,
-  piano kbd touch, piano acoustic, piano mono, octave shift, part mix, eq part-select, amp part-select
+- Unknown regions likely contain: octave shift, part mix, eq part-select, amp part-select

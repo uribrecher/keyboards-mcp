@@ -50,6 +50,9 @@ export interface ProgramParams {
   pianoType: string;
   pianoModel: number;
   clavVariation: string; // "A" | "B" | "C" | "D" (only meaningful when pianoType is "Clav")
+  pianoAcoustic: number; // 0=Off, 1=String Resonance, 2=Long Release, 3=Both
+  pianoKbdTouch: number; // 0-3
+  pianoMono: boolean;
   sampleSlot: number;
   sampleAttack: number;
   sampleDecRel: number;
@@ -149,6 +152,9 @@ function decodeProgramPayload(payload: Buffer): ProgramParams {
   const pianoTypeIdx = rb(payload, 240, 3);
   const pianoModelIdx = rb(payload, 246, 4);
   const clavVariationIdx = rb(payload, 255, 2); // 0=A, 1=B, 2=C, 3=D (Clavinet pickup selection)
+  const pianoAcoustic = rb(payload, 257, 2); // 0=Off, 1=String Resonance, 2=Long Release, 3=Both
+  const pianoKbdTouch = rb(payload, 259, 2); // 0-3
+  const pianoMono = rb(payload, 261, 1) === 1;
 
   // ── Drawbars — bit positions and counts vary by organ model ──
   const drawbarLayout: Record<number, { pst1: number; pst1Count: number; pst2: number; pst2Count: number } | null> = {
@@ -246,6 +252,9 @@ function decodeProgramPayload(payload: Buffer): ProgramParams {
     pianoType: PIANO_TYPES[pianoTypeIdx] ?? `Unknown(${pianoTypeIdx})`,
     pianoModel: pianoModelIdx + 1,
     clavVariation: "ABCD"[clavVariationIdx] ?? "A",
+    pianoAcoustic,
+    pianoKbdTouch,
+    pianoMono,
     sampleSlot,
     sampleAttack,
     sampleDecRel,
@@ -614,9 +623,10 @@ export function formatBackupAsMarkdown(data: BackupMetadata, backupDate?: string
         if (pm.pst1PercussionEnable || pm.pst2PercussionEnable) organ += ` perc:${pm.percussionHarmonic} ${pm.percussionSpeed}/${pm.percussionLevel}`;
       }
       const pianoVariation = pm.pianoType === "Clav" ? pm.clavVariation : "-";
+      const ACOUSTIC_LABELS = ["Off", "StrRes", "LongRel", "StrRes+LongRel"] as const;
       const piano =
         lower === "Piano" || upper === "Piano"
-          ? `${pm.pianoType}:${pm.pianoModel}:${pianoVariation}`
+          ? `${pm.pianoType}:${pm.pianoModel}:${pianoVariation}:${pm.pianoMono ? "mono" : "stereo"}:${ACOUSTIC_LABELS[pm.pianoAcoustic] ?? "Off"}:touch${pm.pianoKbdTouch}`
           : "";
       const hasSample = lower === "Sample Synth" || upper === "Sample Synth";
       const sample = hasSample

@@ -3,3 +3,4 @@ dist/
 test_data/
 data/
 .DS_Store
+.idea
