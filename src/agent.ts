@@ -12,6 +12,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync, existsSync } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -21,18 +22,73 @@ const __dirname = dirname(__filename);
 const PORT = 3001;
 const MODEL = process.env.CLAUDE_MODEL || "claude-haiku-4-5-20251001";
 
+/** Load the Nord backup inventory if available, to include in the system prompt. */
+function loadInventory(): string {
+  const inventoryPath = process.env.NORD_INVENTORY
+    || join(__dirname, "..", "data", "nord_backup_inventory.md");
+  if (!existsSync(inventoryPath)) {
+    console.warn(`Inventory file not found at ${inventoryPath} — agent will run without it.`);
+    return "";
+  }
+  const content = readFileSync(inventoryPath, "utf-8");
+  console.log(`Loaded inventory from ${inventoryPath} (${content.length} chars)`);
+  return `\n\nNORD BACKUP INVENTORY:\n${content}`;
+}
+
 const SYSTEM_PROMPT = `You are controlling a Nord Electro 5D keyboard via MIDI.
 You have access to tools that let you list parameters, set parameters, apply patches, and more.
 You also have web search to research sounds, patches, and keyboard techniques.
-The keyboard is ALREADY CONNECTED — do NOT call connect_to_nord or list_midi_devices unless explicitly asked.
-Just use set_parameters or apply_patch directly.
 Use the tools to fulfill the user's requests about keyboard sounds and patches.
 Be concise in your responses. When setting parameters, explain what you're doing briefly.
 You can set multiple parameters at once using the set_parameters tool.
-The Nord Electro 5D is bi-timbral with two parts (Lower and Upper). Use the "part" field on set_parameters to target a specific part.
-IMPORTANT LIMITATIONS:
+
+CONNECTION:
+The following tools REQUIRE an active MIDI connection: set_parameters, apply_patch, load_program.
+Before using any of them, call is_connected to verify. If not connected, call connect_to_nord first.
+These tools do NOT require a connection: is_connected, connect_to_nord, disconnect_from_nord, list_midi_devices, list_parameters, list_presets, get_current_state, extract_backup, get_last_backup_location.
+
+MIDI ROUTING:
+All parameters are sent on the global MIDI channel. There is no per-part MIDI routing.
+Piano model index is 1-based and per-category (matching the Nord display).
+Sample index is also 1-based. Clavinet has only one model but 4 pickup variations (A/B/C/D) set via piano_variation.
+Consult the NORD BACKUP INVENTORY section for model and sample names. If no inventory is available, use numeric references (e.g., Grand:1) and suggest the user run extract_backup.
+
+BI-TIMBRAL MODE:
+The Nord Electro 5D has two parts (Lower and Upper).
 - LAYER MODE (split off): Both parts span the entire keyboard. You CANNOT assign the same engine type to both parts — each layer must use a different engine (e.g., Organ + Piano, Piano + Sample Synth, Organ + Sample Synth).
-- SPLIT MODE (split on): Each part gets its own keyboard zone. You CAN use the same engine on both parts. However, Piano and Sample Synth share model/sample selection across parts — only one piano model and one sample at a time. Organ is fully independent per part.`;
+- SPLIT MODE (split on): Each part gets its own keyboard zone. You CAN use the same engine on both parts. However, Piano and Sample Synth share model/sample selection across parts — only one piano model and one sample at a time.
+
+ORGAN PRESET ROUTING:
+In split mode, Organ Preset 1 routes to the Lower part and Preset 2 routes to the Upper part. The organ model is global (shared), but each preset has its own drawbar registration. To set different organ sounds per part: select Preset 1, set its drawbars, then select Preset 2 and set different drawbars.
+
+ORGAN MODEL CAPABILITIES:
+- B3: Full vibrato (V1-V3, C1-C3), full percussion, drawbars 0-8
+- B3+Bass: Similar to B3
+- Vox: Vibrato V1-V3 only (no chorus). No percussion. Drawbars 0-8.
+- Farfisa: Vibrato V1, V2, C2, C3 only. No percussion. Drawbars are on/off toggles (0 or 1).
+- Pipe: No vibrato. No percussion.
+
+SOUND SELECTION:
+The NORD BACKUP INVENTORY section at the end of this prompt contains the contents of the keyboard's backup. Use it to find stored programs, pianos, and samples.
+When the user asks for a sound, PREFER loading a stored program (via load_program) over building one from scratch with apply_patch.
+Only use apply_patch or set_parameters to create a sound from scratch if no adequate program exists in the inventory.
+Programs are numbered bank:1-50, matching the hardware display. Always use this notation when communicating with the user.
+
+RECREATING SPECIFIC SONGS:
+When the user asks for a specific song or artist's sound, do NOT guess from the genre (e.g., "funk band → clav"). Instead:
+1. Use web_search to research the actual keyboard parts in that specific song — what instruments are used, how many keyboard layers, what effects, what role each part plays in the mix.
+2. Describe what you found: which keyboards are in the recording, their timbral characteristics, and how they sit in the arrangement.
+3. Then map those findings to the available Nord sounds from the inventory.
+4. If the song has multiple keyboard parts, explain which one you're recreating and why (or offer to set up a split/layer).
+5. If you're unsure about the exact sound, say so — don't fill gaps with genre clichés.
+
+SOUND DESIGN TIPS:
+- Do NOT use vibrato/chorus together with the rotary speaker (Leslie) — they clash sonically.
+- When using the rotary speaker, set spkr_comp_type to "Rotary" and spkr_comp_enable to on.
+- For classic Hammond organ tones, use B3 model with appropriate drawbar settings and the Leslie rotary speaker.`;
+
+const inventorySection = loadInventory();
+const FULL_SYSTEM_PROMPT = SYSTEM_PROMPT + inventorySection;
 
 // ── MCP Client Setup ──
 
@@ -63,8 +119,8 @@ async function setupMCP(): Promise<void> {
     console.log(`  - ${t.name}`);
   }
 
-  // Auto-connect to the mock device MIDI port
-  const midiPort = process.env.MIDI_PORT ?? "Nord Electro 5D";
+  // Auto-connect to MIDI port (auto-detect Nord, or use MIDI_PORT env var)
+  const midiPort = process.env.MIDI_PORT;
   try {
     const listResult = await mcpClient.callTool({ name: "list_midi_devices", arguments: {} });
     const portsText = (listResult.content as Array<{type: string; text: string}>).map(c => c.text).join("");
@@ -72,7 +128,7 @@ async function setupMCP(): Promise<void> {
 
     const connectResult = await mcpClient.callTool({
       name: "connect_to_nord",
-      arguments: { port: midiPort },
+      arguments: midiPort ? { port: midiPort } : {},
     });
     const connectText = (connectResult.content as Array<{type: string; text: string}>).map(c => c.text).join("");
     console.log("Auto-connect:", connectText);
@@ -105,7 +161,7 @@ async function handleChat(
       response = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 4096,
-        system: SYSTEM_PROMPT,
+        system: FULL_SYSTEM_PROMPT,
         tools: [
           ...mcpTools,
           { type: "web_search_20250305", name: "web_search", max_uses: 5 } as any,

@@ -11,355 +11,313 @@
   <div class="panel">
     <!-- Header -->
     <div class="header">
-      <div class="logo">NORD ELECTRO 5D</div>
-      <div class="subtitle">Mock MIDI Device</div>
-      <div id="connection-status" class="status disconnected">DISCONNECTED</div>
+      <div class="header-side">
+        <div class="logo">NORD ELECTRO 5D</div>
+      </div>
+      <div class="program-bar" id="display-program">
+        <span class="program-label">PROGRAM</span>
+        <span class="program-value" id="val-program">-</span>
+        <span class="program-sub-label">Piano:</span>
+        <span class="program-sub-value" id="val-program-piano"></span>
+        <span class="program-sub-label">Synth:</span>
+        <span class="program-sub-value" id="val-program-synth"></span>
+      </div>
+      <div class="header-side header-right">
+        <div class="subtitle">Mock MIDI Device</div>
+        <div id="mcp-status" class="status disconnected">MCP DISCONNECTED</div>
+      </div>
     </div>
 
     <!-- Parts Control Bar -->
     <div class="parts-bar">
       <div class="part-control">
-        <span>LOWER</span>
         <div class="led-indicator" id="led-part_lower_enable" data-param="part_lower_enable"></div>
-        <div class="selector small" id="sel-part_lower_engine_select" data-param="part_lower_engine_select"></div>
+        <span>LOWER</span>
+        <div class="split-value" id="val-part_lower_engine_select">Organ</div>
+        <div class="octave-indicator" id="val-octave_shift_lower">0</div>
       </div>
-      <div class="split-control">
-        <div class="split-label">SPLIT</div>
+      <div class="part-control">
         <div class="led-indicator" id="led-kb_split_mode" data-param="kb_split_mode"></div>
-        <div class="selector small" id="sel-kb_split_point" data-param="kb_split_point"></div>
+        <span>SPLIT</span>
+        <div class="split-value" id="val-kb_split_point">C4</div>
       </div>
       <div class="part-control">
         <span>MIX</span>
         <div class="knob small" id="knob-part_mix" data-param="part_mix"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+        <div class="knob-value" id="val-part_mix">50/50</div>
       </div>
       <div class="part-control">
-        <span>UPPER</span>
         <div class="led-indicator" id="led-part_upper_enable" data-param="part_upper_enable"></div>
-        <div class="selector small" id="sel-part_upper_engine_select" data-param="part_upper_engine_select"></div>
+        <span>UPPER</span>
+        <div class="split-value" id="val-part_upper_engine_select">Organ</div>
+        <div class="octave-indicator" id="val-octave_shift_upper">0</div>
       </div>
     </div>
 
-    <!-- Parts Row (side by side) -->
-    <div class="parts-row">
-      <!-- LOWER part panel -->
-      <div class="part-panel" id="part-lower">
-        <div class="part-label lower">LOWER</div>
+    <!-- Engine Sections (global, not per-part) -->
 
-        <!-- Organ engine -->
-        <div class="engine-section" id="lower-organ">
-          <div class="section organ-section">
-            <div class="section-label">ORGAN</div>
-            <div class="organ-top-row">
-              <div class="control-group">
-                <div class="group-label">MODEL</div>
-                <div class="selector" id="sel-lower-organ_model" data-param="organ_model"></div>
-              </div>
-              <div class="control-group">
-                <div class="group-label">VIBRATO / CHORUS</div>
-                <div class="vib-row">
-                  <div class="led-indicator" id="led-lower-vibrato_enable" data-param="vibrato_enable"></div>
-                  <div class="selector" id="sel-lower-vibrato_type" data-param="vibrato_type"></div>
-                </div>
-              </div>
-              <div class="control-group">
-                <div class="group-label">PERCUSSION</div>
-                <div class="perc-row">
-                  <div class="led-indicator" id="led-lower-percussion" data-param="percussion"></div>
-                  <div class="selector small" id="sel-lower-percussion_harmonic" data-param="percussion_harmonic"></div>
-                  <div class="selector small" id="sel-lower-percussion_speed_level" data-param="percussion_speed_level"></div>
-                </div>
-              </div>
+    <!-- Organ engine -->
+    <div class="engine-section" id="engine-organ">
+      <div class="section organ-section">
+        <div class="section-label">ORGAN</div>
+        <div class="organ-layout">
+          <div class="organ-controls-col">
+            <div class="display organ-model-display" id="display-organ_model">
+              <span class="display-value" id="val-organ_model">B3</span>
             </div>
-            <div class="drawbar-rack">
-              <div class="drawbar" id="drawbar-lower-1" data-index="1"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">16'</div></div>
-              <div class="drawbar" id="drawbar-lower-2" data-index="2"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">5&#8531;'</div></div>
-              <div class="drawbar" id="drawbar-lower-3" data-index="3"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">8'</div></div>
-              <div class="drawbar" id="drawbar-lower-4" data-index="4"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">4'</div></div>
-              <div class="drawbar" id="drawbar-lower-5" data-index="5"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">2&#8532;'</div></div>
-              <div class="drawbar" id="drawbar-lower-6" data-index="6"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">2'</div></div>
-              <div class="drawbar" id="drawbar-lower-7" data-index="7"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">1&#8539;'</div></div>
-              <div class="drawbar" id="drawbar-lower-8" data-index="8"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">1&#8531;'</div></div>
-              <div class="drawbar" id="drawbar-lower-9" data-index="9"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">1'</div></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Piano engine -->
-        <div class="engine-section" id="lower-piano">
-          <div class="section piano-section">
-            <div class="section-label">PIANO</div>
             <div class="control-group">
-              <div class="group-label">TYPE</div>
-              <div class="selector" id="sel-lower-piano_type" data-param="piano_type"></div>
+              <div class="group-label">VIBRATO / CHORUS</div>
+              <div class="selector grid3 small" id="sel-vibrato_type" data-param="vibrato_type"></div>
             </div>
-            <div class="knob-row">
-              <div class="knob-group">
-                <div class="display piano-model-display" id="display-lower-piano_model">
-                  <span class="display-label">MODEL</span>
-                  <span class="display-value" id="val-lower-piano_model">-</span>
-                </div>
-              </div>
-              <div class="knob-group">
-                <div class="knob" id="knob-lower-piano_kbd_touch" data-param="piano_kbd_touch"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-                <div class="knob-label">KBD TOUCH</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Sample Synth engine -->
-        <div class="engine-section" id="lower-sample_synth">
-          <div class="section sample-section">
-            <div class="section-label">SAMPLE SYNTH</div>
-            <div class="sample-top">
-              <div class="display" id="display-lower-sample">
-                <span class="display-label">SAMPLE</span>
-                <span class="display-value" id="val-lower-sample_synth_sample">#1</span>
-              </div>
-              <div class="control-group">
-                <div class="group-label">DYNAMICS</div>
-                <div class="selector" id="sel-lower-sample_synth_dynamics" data-param="sample_synth_dynamics"></div>
-              </div>
-            </div>
-            <div class="knob-row">
-              <div class="knob-group">
-                <div class="knob" id="knob-lower-sample_synth_attack" data-param="sample_synth_attack"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-                <div class="knob-label">ATTACK</div>
-              </div>
-              <div class="knob-group">
-                <div class="knob" id="knob-lower-sample_synth_release" data-param="sample_synth_release"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-                <div class="knob-label">RELEASE</div>
-              </div>
-              <div class="knob-group">
-                <div class="knob" id="knob-lower-sample_synth_filter_vel" data-param="sample_synth_filter_vel"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-                <div class="knob-label">FILTER VEL</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- UPPER part panel -->
-      <div class="part-panel" id="part-upper">
-        <div class="part-label upper">UPPER</div>
-
-        <!-- Organ engine -->
-        <div class="engine-section" id="upper-organ">
-          <div class="section organ-section">
-            <div class="section-label">ORGAN</div>
-            <div class="organ-top-row">
-              <div class="control-group">
-                <div class="group-label">MODEL</div>
-                <div class="selector" id="sel-upper-organ_model" data-param="organ_model"></div>
-              </div>
-              <div class="control-group">
-                <div class="group-label">VIBRATO / CHORUS</div>
-                <div class="vib-row">
-                  <div class="led-indicator" id="led-upper-vibrato_enable" data-param="vibrato_enable"></div>
-                  <div class="selector" id="sel-upper-vibrato_type" data-param="vibrato_type"></div>
-                </div>
-              </div>
-              <div class="control-group">
-                <div class="group-label">PERCUSSION</div>
-                <div class="perc-row">
-                  <div class="led-indicator" id="led-upper-percussion" data-param="percussion"></div>
-                  <div class="selector small" id="sel-upper-percussion_harmonic" data-param="percussion_harmonic"></div>
-                  <div class="selector small" id="sel-upper-percussion_speed_level" data-param="percussion_speed_level"></div>
-                </div>
-              </div>
-            </div>
-            <div class="drawbar-rack">
-              <div class="drawbar" id="drawbar-upper-1" data-index="1"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">16'</div></div>
-              <div class="drawbar" id="drawbar-upper-2" data-index="2"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">5&#8531;'</div></div>
-              <div class="drawbar" id="drawbar-upper-3" data-index="3"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">8'</div></div>
-              <div class="drawbar" id="drawbar-upper-4" data-index="4"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">4'</div></div>
-              <div class="drawbar" id="drawbar-upper-5" data-index="5"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">2&#8532;'</div></div>
-              <div class="drawbar" id="drawbar-upper-6" data-index="6"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">2'</div></div>
-              <div class="drawbar" id="drawbar-upper-7" data-index="7"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">1&#8539;'</div></div>
-              <div class="drawbar" id="drawbar-upper-8" data-index="8"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">1&#8531;'</div></div>
-              <div class="drawbar" id="drawbar-upper-9" data-index="9"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-label">1'</div></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Piano engine -->
-        <div class="engine-section" id="upper-piano">
-          <div class="section piano-section">
-            <div class="section-label">PIANO</div>
             <div class="control-group">
-              <div class="group-label">TYPE</div>
-              <div class="selector" id="sel-upper-piano_type" data-param="piano_type"></div>
+              <div class="group-label">PERCUSSION</div>
+              <div class="led-row">
+                <div class="selector vertical small" id="sel-percussion_harmonic" data-param="percussion_harmonic"></div>
+                <div class="split-value" id="val-percussion_speed_level">S/N</div>
+              </div>
             </div>
-            <div class="knob-row">
-              <div class="knob-group">
-                <div class="display piano-model-display" id="display-upper-piano_model">
-                  <span class="display-label">MODEL</span>
-                  <span class="display-value" id="val-upper-piano_model">-</span>
+          </div>
+          <div class="drawbar-rack-container">
+            <div class="drawbar-rack-wrapper">
+              <div class="drawbar-rack-header">
+                <div class="led-indicator small" id="led-preset1-active"></div>
+                <span class="drawbar-rack-label">PRESET 1</span>
+                <div class="led-row preset-toggles">
+                  <div class="led-indicator small" id="led-pst1-vib"></div>
+                  <span class="led-label">VIB</span>
+                  <div class="led-indicator small" id="led-pst1-prc"></div>
+                  <span class="led-label">PRC</span>
                 </div>
               </div>
-              <div class="knob-group">
-                <div class="knob" id="knob-upper-piano_kbd_touch" data-param="piano_kbd_touch"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-                <div class="knob-label">KBD TOUCH</div>
+              <div class="drawbar-rack" id="drawbar-rack-preset1">
+                <div class="drawbar" id="drawbar-preset1-1" data-index="1"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">16'</div></div>
+                <div class="drawbar" id="drawbar-preset1-2" data-index="2"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">5&#8531;'</div></div>
+                <div class="drawbar" id="drawbar-preset1-3" data-index="3"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">8'</div></div>
+                <div class="drawbar" id="drawbar-preset1-4" data-index="4"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">4'</div></div>
+                <div class="drawbar" id="drawbar-preset1-5" data-index="5"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">2&#8532;'</div></div>
+                <div class="drawbar" id="drawbar-preset1-6" data-index="6"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">2'</div></div>
+                <div class="drawbar" id="drawbar-preset1-7" data-index="7"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">1&#8539;'</div></div>
+                <div class="drawbar" id="drawbar-preset1-8" data-index="8"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">1&#8531;'</div></div>
+                <div class="drawbar" id="drawbar-preset1-9" data-index="9"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">1'</div></div>
+              </div>
+            </div>
+            <div class="drawbar-preset-controls">
+              <div class="led-row">
+                <div class="led-indicator" id="led-organ_drawbar_live" data-param="organ_drawbar_live"></div>
+                <div class="knob-label">LIVE</div>
+              </div>
+            </div>
+            <div class="drawbar-rack-wrapper">
+              <div class="drawbar-rack-header">
+                <div class="led-indicator small" id="led-preset2-active"></div>
+                <span class="drawbar-rack-label">PRESET 2</span>
+                <div class="led-row preset-toggles">
+                  <div class="led-indicator small" id="led-pst2-vib"></div>
+                  <span class="led-label">VIB</span>
+                  <div class="led-indicator small" id="led-pst2-prc"></div>
+                  <span class="led-label">PRC</span>
+                </div>
+              </div>
+              <div class="drawbar-rack" id="drawbar-rack-preset2">
+                <div class="drawbar" id="drawbar-preset2-1" data-index="1"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">16'</div></div>
+                <div class="drawbar" id="drawbar-preset2-2" data-index="2"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">5&#8531;'</div></div>
+                <div class="drawbar" id="drawbar-preset2-3" data-index="3"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">8'</div></div>
+                <div class="drawbar" id="drawbar-preset2-4" data-index="4"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">4'</div></div>
+                <div class="drawbar" id="drawbar-preset2-5" data-index="5"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">2&#8532;'</div></div>
+                <div class="drawbar" id="drawbar-preset2-6" data-index="6"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">2'</div></div>
+                <div class="drawbar" id="drawbar-preset2-7" data-index="7"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">1&#8539;'</div></div>
+                <div class="drawbar" id="drawbar-preset2-8" data-index="8"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">1&#8531;'</div></div>
+                <div class="drawbar" id="drawbar-preset2-9" data-index="9"><div class="drawbar-track"><div class="drawbar-fill"></div><div class="drawbar-cap"></div></div><div class="drawbar-value">0</div><div class="drawbar-label">1'</div></div>
               </div>
             </div>
           </div>
-        </div>
+          <div class="rotary-subsection">
+            <div class="group-label">ROTARY</div>
+            <div class="rotary-label" id="val-rotary_speed">SLOW</div>
+            <div class="led-row">
+              <div class="led-indicator" id="led-rotary_stop_mode" data-param="rotary_stop_mode"></div>
+              <span class="rotary-stop-label">STOP</span>
+            </div>
+          </div>
+        </div> <!-- end organ-layout -->
+      </div>
+    </div>
 
-        <!-- Sample Synth engine -->
-        <div class="engine-section" id="upper-sample_synth">
-          <div class="section sample-section">
-            <div class="section-label">SAMPLE SYNTH</div>
-            <div class="sample-top">
-              <div class="display" id="display-upper-sample">
-                <span class="display-label">SAMPLE</span>
-                <span class="display-value" id="val-upper-sample_synth_sample">#1</span>
-              </div>
-              <div class="control-group">
-                <div class="group-label">DYNAMICS</div>
-                <div class="selector" id="sel-upper-sample_synth_dynamics" data-param="sample_synth_dynamics"></div>
-              </div>
-            </div>
-            <div class="knob-row">
-              <div class="knob-group">
-                <div class="knob" id="knob-upper-sample_synth_attack" data-param="sample_synth_attack"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-                <div class="knob-label">ATTACK</div>
-              </div>
-              <div class="knob-group">
-                <div class="knob" id="knob-upper-sample_synth_release" data-param="sample_synth_release"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-                <div class="knob-label">RELEASE</div>
-              </div>
-              <div class="knob-group">
-                <div class="knob" id="knob-upper-sample_synth_filter_vel" data-param="sample_synth_filter_vel"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-                <div class="knob-label">FILTER VEL</div>
-              </div>
-            </div>
-          </div>
+    <!-- Piano/Synth + Effects side by side -->
+    <div class="main-row">
+    <div class="engine-section always-visible" id="engine-piano">
+      <div class="section piano-section vertical-layout">
+        <div class="section-label">PIANO</div>
+        <div class="display piano-model-display" id="display-piano_model">
+          <span class="display-value" id="val-piano_model">-</span>
+        </div>
+        <div class="control-group">
+          <div class="group-label">TYPE</div>
+          <div class="selector grid2 small" id="sel-piano_type" data-param="piano_type"></div>
+        </div>
+        <div class="control-group">
+          <div class="group-label">ACOUSTICS</div>
+          <div class="selector grid2 small" id="sel-piano_acoustic" data-param="piano_acoustic"></div>
+        </div>
+        <div class="led-row">
+          <div class="led-indicator" id="led-piano_mono" data-param="piano_mono"></div>
+          <div class="knob-label">MONO</div>
+        </div>
+        <div class="control-group">
+          <div class="group-label">KBD TOUCH</div>
+          <div class="selector grid2 small" id="sel-piano_kbd_touch" data-param="piano_kbd_touch"></div>
         </div>
       </div>
     </div>
 
-    <!-- EFFECTS + AMP row -->
-    <div class="mid-row">
-      <div class="section fx-section">
-        <div class="section-label">EFFECTS</div>
-        <div class="fx-row">
-          <div class="fx-unit">
-            <div class="fx-header"><span class="fx-name">FX 1</span><div class="led-indicator" id="led-effect1_enable" data-param="effect1_enable"></div><div class="part-indicator" id="pi-effect1_part_select">Both</div></div>
-            <div class="selector small" id="sel-effect1_type" data-param="effect1_type"></div>
-            <div class="knob-group">
-              <div class="knob" id="knob-effect1_rate" data-param="effect1_rate"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-              <div class="knob-label">RATE</div>
-            </div>
-          </div>
-          <div class="fx-unit">
-            <div class="fx-header"><span class="fx-name">FX 2</span><div class="led-indicator" id="led-effect2_enable" data-param="effect2_enable"></div><div class="part-indicator" id="pi-effect2_part_select">Both</div></div>
-            <div class="selector small" id="sel-effect2_type" data-param="effect2_type"></div>
-            <div class="knob-row">
-              <div class="knob-group">
-                <div class="knob" id="knob-effect2_rate" data-param="effect2_rate"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-                <div class="knob-label">RATE</div>
-              </div>
-              <div class="knob-group">
-                <div class="led-indicator small" id="led-effect2_deep" data-param="effect2_deep"></div>
-                <div class="knob-label">DEEP</div>
-              </div>
-            </div>
-          </div>
+    <!-- Sample Synth engine -->
+    <div class="engine-section always-visible" id="engine-sample_synth">
+      <div class="section sample-section">
+        <div class="section-label">SAMPLE SYNTH</div>
+        <div class="display" id="display-sample">
+          <span class="display-value" id="val-sample_synth_sample">#1</span>
         </div>
-      </div>
-
-      <div class="section amp-section">
-        <div class="section-label">AMP / ROTARY</div>
-        <div class="amp-row">
-          <div class="control-group">
-            <div class="fx-header"><span class="fx-name">SPKR/COMP</span><div class="led-indicator" id="led-spkr_comp_enable" data-param="spkr_comp_enable"></div><div class="part-indicator" id="pi-spkr_comp_part_select">Both</div></div>
-            <div class="selector small" id="sel-spkr_comp_type" data-param="spkr_comp_type"></div>
-            <div class="knob-group">
-              <div class="knob" id="knob-spkr_comp_drive" data-param="spkr_comp_drive"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-              <div class="knob-label">DRIVE</div>
-            </div>
-          </div>
-          <div class="control-group rotary-group">
-            <div class="fx-header"><span class="fx-name">ROTARY</span><div class="led-indicator" id="led-rotary_stop_mode" data-param="rotary_stop_mode"></div></div>
-            <div class="rotary-display">
-              <div class="rotary-icon" id="rotary-icon">
-                <div class="rotary-blade"></div>
-              </div>
-              <div class="rotary-label" id="val-rotary_speed">SLOW</div>
-            </div>
-          </div>
+        <div class="control-group">
+          <div class="group-label">DYNAMICS</div>
+          <div class="selector grid2 small" id="sel-sample_synth_dynamics" data-param="sample_synth_dynamics"></div>
+        </div>
+        <div class="led-row">
+          <div class="led-indicator" id="led-sample_synth_filter_vel" data-param="sample_synth_filter_vel"></div>
+          <div class="knob-label">FILTER VEL</div>
+        </div>
+        <div class="knob-group">
+          <div class="knob" id="knob-sample_synth_attack" data-param="sample_synth_attack"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+          <div class="knob-label">ATTACK</div>
+          <div class="knob-value" id="val-sample_synth_attack">-</div>
+        </div>
+        <div class="knob-group">
+          <div class="knob" id="knob-sample_synth_release" data-param="sample_synth_release"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+          <div class="knob-label" id="label-sample_synth_release">RELEASE</div>
+          <div class="knob-value" id="val-sample_synth_release">-</div>
         </div>
       </div>
     </div>
+    <!-- EFFECTS (unified section) -->
+    <div class="section effects-section">
+      <div class="section-label">EFFECTS</div>
 
-    <!-- REVERB / DELAY / EQ -->
-    <div class="section bottom-section">
-      <div class="section-label">REVERB / DELAY / EQ</div>
-      <div class="bottom-row">
-        <div class="bottom-unit">
-          <div class="fx-header"><span class="fx-name">REVERB</span><div class="led-indicator" id="led-reverb_enable" data-param="reverb_enable"></div></div>
-          <div class="selector small" id="sel-reverb_type" data-param="reverb_type"></div>
+      <!-- Row 1: EQ + GAIN -->
+      <div class="effects-row-top">
+        <div class="effects-unit eq-unit" data-enable="eq_enable">
+          <div class="fx-header"><span class="fx-name">EQ</span></div>
+          <div class="eq-body">
+            <div class="knob-row eq-knobs">
+              <div class="knob-group">
+                <div class="knob small" id="knob-eq_bass" data-param="eq_bass"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+                <div class="knob-label">BASS</div>
+                <div class="knob-value" id="val-eq_bass">-</div>
+              </div>
+              <div class="knob-group">
+                <div class="knob small" id="knob-eq_mid_freq" data-param="eq_mid_freq"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+                <div class="knob-label">FREQ</div>
+                <div class="knob-value" id="val-eq_mid_freq">-</div>
+              </div>
+              <div class="knob-group">
+                <div class="knob small" id="knob-eq_mid" data-param="eq_mid"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+                <div class="knob-label">MID</div>
+                <div class="knob-value" id="val-eq_mid">-</div>
+              </div>
+              <div class="knob-group">
+                <div class="knob small" id="knob-eq_treble" data-param="eq_treble"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+                <div class="knob-label">TREBLE</div>
+                <div class="knob-value" id="val-eq_treble">-</div>
+              </div>
+            </div>
+            <div class="eq-side">
+              <div class="led-indicator" id="led-eq_enable" data-param="eq_enable"></div>
+              <div class="part-indicator-vertical" id="pi-eq_part_select">Both</div>
+            </div>
+          </div>
+        </div>
+        <div class="effects-unit gain-unit">
+          <div class="fx-header"><span class="fx-name">GAIN</span></div>
+          <div class="knob" id="knob-master_volume" data-param="master_volume"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+          <div class="knob-value" id="val-master_volume">100</div>
+        </div>
+      </div>
+
+      <!-- Row 2: FX1 | FX2 | AMP | DELAY | REVERB -->
+      <div class="effects-row-bottom">
+        <div class="effects-unit" data-enable="effect1_enable">
+          <div class="fx-header"><span class="fx-name">FX 1</span></div>
           <div class="knob-group">
-            <div class="knob" id="knob-reverb_dry_wet" data-param="reverb_dry_wet"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-            <div class="knob-label">DRY/WET</div>
+            <div class="knob" id="knob-effect1_rate" data-param="effect1_rate"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+            <div class="knob-label">RATE</div>
+            <div class="knob-value" id="val-effect1_rate">-</div>
           </div>
+          <div class="selector grid2 small" id="sel-effect1_type" data-param="effect1_type"></div>
+          <div class="led-row">
+            <div class="led-indicator small" id="led-effect1_ctrl_pedal" data-param="effect1_ctrl_pedal"></div>
+            <div class="knob-label">CTRL PED</div>
+          </div>
+          <div class="fx-footer"><div class="led-indicator" id="led-effect1_enable" data-param="effect1_enable"></div><div class="part-indicator" id="pi-effect1_part_select">Both</div></div>
         </div>
-        <div class="bottom-unit">
-          <div class="fx-header"><span class="fx-name">DELAY</span><div class="led-indicator" id="led-delay_enable" data-param="delay_enable"></div><div class="part-indicator" id="pi-delay_part_select">Both</div></div>
+        <div class="effects-unit" data-enable="effect2_enable">
+          <div class="fx-header"><span class="fx-name">FX 2</span></div>
+          <div class="knob-group">
+            <div class="knob" id="knob-effect2_rate" data-param="effect2_rate"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+            <div class="knob-label">RATE</div>
+            <div class="knob-value" id="val-effect2_rate">-</div>
+          </div>
+          <div class="selector grid2 small" id="sel-effect2_type" data-param="effect2_type"></div>
+          <div class="led-row">
+            <div class="led-indicator small" id="led-effect2_deep" data-param="effect2_deep"></div>
+            <div class="knob-label">DEEP</div>
+          </div>
+          <div class="fx-footer"><div class="led-indicator" id="led-effect2_enable" data-param="effect2_enable"></div><div class="part-indicator" id="pi-effect2_part_select">Both</div></div>
+        </div>
+        <div class="effects-unit" data-enable="spkr_comp_enable">
+          <div class="fx-header"><span class="fx-name">AMP</span></div>
+          <div class="knob-group">
+            <div class="knob" id="knob-spkr_comp_drive" data-param="spkr_comp_drive"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+            <div class="knob-label">DRIVE</div>
+            <div class="knob-value" id="val-spkr_comp_drive">-</div>
+          </div>
+          <div class="selector grid2 small" id="sel-spkr_comp_type" data-param="spkr_comp_type"></div>
+          <div class="fx-footer"><div class="led-indicator" id="led-spkr_comp_enable" data-param="spkr_comp_enable"></div><div class="part-indicator" id="pi-spkr_comp_part_select">Both</div></div>
+        </div>
+        <div class="effects-unit" data-enable="delay_enable">
+          <div class="fx-header"><span class="fx-name">DELAY</span></div>
+          <div class="knob-group">
+            <div class="knob" id="knob-delay_dry_wet" data-param="delay_dry_wet"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+            <div class="knob-label">DRY/WET</div>
+            <div class="knob-value" id="val-delay_dry_wet">-</div>
+          </div>
+          <div class="control-group">
+            <div class="knob-label">FEEDBACK</div>
+            <div class="selector grid2 small compact" id="sel-delay_feedback" data-param="delay_feedback"></div>
+          </div>
+          <div class="control-group">
+            <div class="knob-label">TEMPO</div>
+            <div class="knob-value" id="val-delay_tempo">-</div>
+          </div>
           <div class="delay-leds">
             <div class="led-indicator small" id="led-delay_ping_pong" data-param="delay_ping_pong"></div>
             <span class="led-label">P.PONG</span>
           </div>
-          <div class="knob-row">
-            <div class="knob-group">
-              <div class="knob small" id="knob-delay_tempo" data-param="delay_tempo"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-              <div class="knob-label">TEMPO</div>
-            </div>
-            <div class="knob-group">
-              <div class="knob small" id="knob-delay_dry_wet" data-param="delay_dry_wet"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-              <div class="knob-label">D/W</div>
-            </div>
-            <div class="knob-group">
-              <div class="knob small" id="knob-delay_feedback" data-param="delay_feedback"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-              <div class="knob-label">FB</div>
-            </div>
-          </div>
+          <div class="fx-footer"><div class="led-indicator" id="led-delay_enable" data-param="delay_enable"></div><div class="part-indicator" id="pi-delay_part_select">Both</div></div>
         </div>
-        <div class="bottom-unit eq-unit">
-          <div class="fx-header"><span class="fx-name">EQ</span><div class="led-indicator" id="led-eq_enable" data-param="eq_enable"></div><div class="part-indicator" id="pi-eq_part_select">Both</div></div>
-          <div class="knob-row">
-            <div class="knob-group">
-              <div class="knob small" id="knob-eq_bass" data-param="eq_bass"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-              <div class="knob-label">BASS</div>
-            </div>
-            <div class="knob-group">
-              <div class="knob small" id="knob-eq_mid" data-param="eq_mid"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-              <div class="knob-label">MID</div>
-            </div>
-            <div class="knob-group">
-              <div class="knob small" id="knob-eq_mid_freq" data-param="eq_mid_freq"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-              <div class="knob-label">FREQ</div>
-            </div>
-            <div class="knob-group">
-              <div class="knob small" id="knob-eq_treble" data-param="eq_treble"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-              <div class="knob-label">TREBLE</div>
-            </div>
+        <div class="effects-unit" data-enable="reverb_enable">
+          <div class="fx-header"><span class="fx-name">REVERB</span></div>
+          <div class="knob-group">
+            <div class="knob" id="knob-reverb_dry_wet" data-param="reverb_dry_wet"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+            <div class="knob-label">DRY/WET</div>
+            <div class="knob-value" id="val-reverb_dry_wet">-</div>
           </div>
+          <div class="selector vertical small" id="sel-reverb_type" data-param="reverb_type"></div>
+          <div class="fx-footer"><div class="led-indicator" id="led-reverb_enable" data-param="reverb_enable"></div></div>
         </div>
       </div>
     </div>
+    </div> <!-- end main-row -->
 
-    <!-- MASTER -->
+    <!-- Footer -->
     <div class="footer">
-      <div class="master-group">
-        <div class="group-label">MASTER VOLUME</div>
-        <div class="master-slider">
-          <div class="master-track">
-            <div class="master-fill" id="master-fill"></div>
-          </div>
-          <div class="master-value" id="val-master_volume">100</div>
-        </div>
-      </div>
       <div class="last-change" id="last-change">Waiting for MIDI...</div>
     </div>
   </div>

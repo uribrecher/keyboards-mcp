@@ -8,6 +8,8 @@ export interface Preset {
 
 /**
  * Built-in preset patches for common keyboard sounds.
+ * Each preset includes full parts configuration (upper/lower enable, engine select, split mode)
+ * so it works regardless of the keyboard's current state.
  * Values use drawbar positions (0-8) for drawbar params and labels where available.
  */
 export const PRESETS: Preset[] = [
@@ -18,6 +20,12 @@ export const PRESETS: Preset[] = [
       "Perfect for jazz standards, soul jazz, and Jimmy Smith-style grooves.",
     genre: "jazz",
     parameters: {
+      // Parts configuration
+      part_upper_engine_select: "Organ",
+      part_upper_enable: "On",
+      part_lower_enable: "Off",
+      kb_split_mode: "Off",
+      // Organ
       organ_model: "B3",
       drawbar_1: 8,
       drawbar_2: 8,
@@ -33,6 +41,7 @@ export const PRESETS: Preset[] = [
       percussion: "On",
       percussion_harmonic: "2nd",
       percussion_speed_level: "Fast/Normal",
+      // Amp / Effects
       rotary_speed: "Slow",
       effect1_enable: "Off",
       effect2_enable: "Off",
@@ -53,6 +62,12 @@ export const PRESETS: Preset[] = [
       "Great for gospel, church, and praise music.",
     genre: "gospel",
     parameters: {
+      // Parts configuration
+      part_upper_engine_select: "Organ",
+      part_upper_enable: "On",
+      part_lower_enable: "Off",
+      kb_split_mode: "Off",
+      // Organ
       organ_model: "B3",
       drawbar_1: 8,
       drawbar_2: 8,
@@ -66,6 +81,7 @@ export const PRESETS: Preset[] = [
       vibrato_type: "C3",
       vibrato_enable: "On",
       percussion: "Off",
+      // Amp / Effects
       rotary_speed: "Fast",
       effect1_enable: "Off",
       effect2_enable: "Off",
@@ -85,6 +101,12 @@ export const PRESETS: Preset[] = [
       "Inspired by Jon Lord / Deep Purple, also great for classic rock and blues rock.",
     genre: "rock",
     parameters: {
+      // Parts configuration
+      part_upper_engine_select: "Organ",
+      part_upper_enable: "On",
+      part_lower_enable: "Off",
+      kb_split_mode: "Off",
+      // Organ
       organ_model: "B3",
       drawbar_1: 8,
       drawbar_2: 8,
@@ -98,6 +120,7 @@ export const PRESETS: Preset[] = [
       vibrato_type: "C3",
       vibrato_enable: "On",
       percussion: "Off",
+      // Amp / Effects
       rotary_speed: "Fast",
       effect1_enable: "Off",
       effect2_enable: "Off",
@@ -119,12 +142,19 @@ export const PRESETS: Preset[] = [
       "Classic sound for ballads, smooth jazz, neo-soul, and R&B.",
     genre: "ballad",
     parameters: {
+      // Parts configuration
+      part_upper_engine_select: "Piano",
+      part_upper_enable: "On",
+      part_lower_enable: "Off",
+      kb_split_mode: "Off",
+      // Piano
       piano_type: "EP1",
       piano_model: 0,
-      effect1_type: "Tremolo",
+      // Amp / Effects
+      effect1_type: "Trem 1",
       effect1_enable: "On",
       effect1_rate: 40,
-      effect2_type: "Chorus",
+      effect2_type: "Chorus 1",
       effect2_enable: "On",
       effect2_rate: 60,
       spkr_comp_type: "JC",
@@ -147,9 +177,16 @@ export const PRESETS: Preset[] = [
       "Great for funk, soul, Motown, and Supertramp-style pop.",
     genre: "funk",
     parameters: {
+      // Parts configuration
+      part_upper_engine_select: "Piano",
+      part_upper_enable: "On",
+      part_lower_enable: "Off",
+      kb_split_mode: "Off",
+      // Piano
       piano_type: "EP2",
       piano_model: 0,
-      effect1_type: "Tremolo",
+      // Amp / Effects
+      effect1_type: "Trem 1",
       effect1_enable: "On",
       effect1_rate: 65,
       effect2_enable: "Off",
@@ -171,12 +208,19 @@ export const PRESETS: Preset[] = [
       "Stevie Wonder / Herbie Hancock style, perfect for funk and disco.",
     genre: "funk",
     parameters: {
+      // Parts configuration
+      part_upper_engine_select: "Piano",
+      part_upper_enable: "On",
+      part_lower_enable: "Off",
+      kb_split_mode: "Off",
+      // Piano
       piano_type: "Clav",
       piano_model: 0,
+      // Amp / Effects
       effect1_type: "Wah",
       effect1_enable: "On",
       effect1_rate: 80,
-      effect2_type: "Phaser",
+      effect2_type: "Phase 1",
       effect2_enable: "On",
       effect2_rate: 40,
       spkr_comp_type: "Small",
@@ -195,8 +239,15 @@ export const PRESETS: Preset[] = [
       "Versatile sound for pop, classical, singer-songwriter, and worship.",
     genre: "pop",
     parameters: {
+      // Parts configuration
+      part_upper_engine_select: "Piano",
+      part_upper_enable: "On",
+      part_lower_enable: "Off",
+      kb_split_mode: "Off",
+      // Piano
       piano_type: "Grand",
       piano_model: 0,
+      // Amp / Effects
       effect1_enable: "Off",
       effect2_enable: "Off",
       spkr_comp_enable: "Off",
@@ -216,10 +267,17 @@ export const PRESETS: Preset[] = [
       "Great for country, boogie-woogie, and vintage rock & roll.",
     genre: "country",
     parameters: {
+      // Parts configuration
+      part_upper_engine_select: "Piano",
+      part_upper_enable: "On",
+      part_lower_enable: "Off",
+      kb_split_mode: "Off",
+      // Piano
       piano_type: "Upright",
       piano_model: 0,
+      // Amp / Effects
       effect1_enable: "Off",
-      effect2_type: "Chorus",
+      effect2_type: "Chorus 1",
       effect2_enable: "On",
       effect2_rate: 50,
       spkr_comp_enable: "Off",
