@@ -427,6 +427,12 @@ body {
   gap: 6px;
 }
 
+.led-row.compact {
+  gap: 3px;
+  margin-top: 4px;
+  justify-content: center;
+}
+
 .piano-section, .sample-section {
   display: flex;
   flex-direction: column;
@@ -909,25 +915,116 @@ body {
 
 /* Parts bar */
 .parts-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-  background: rgba(0,0,0,0.2);
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  padding: 8px;
+  background: var(--section-bg);
+  border: 1px solid var(--section-border);
   border-radius: 8px;
   margin-bottom: 10px;
 }
+.parts-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 6px;
+}
+.parts-col-left { align-items: center; }
+.parts-col-center { align-items: center; }
+.parts-col-right { align-items: center; }
+.parts-col.disabled { background: #151515; }
+.part-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1;
+}
+.part-labeled-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.part-display-label {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+.parts-col .display.part-engine-display {
+  width: auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px 14px;
+}
+.parts-col .display.part-octave-display {
+  width: 44px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px 0;
+}
+.part-engine-display .display-value {
+  font-size: 16px;
+}
+.part-octave-display .display-value {
+  font-size: 18px;
+  color: var(--text-dim);
+}
+.part-octave-display.shifted .display-value {
+  color: var(--display-text);
+}
+.part-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.part-toggles {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+.parts-col.disabled .section-label { color: var(--text-dim); }
+.parts-col.disabled .display { background: #111; border-color: #222; }
+.parts-col.disabled .display-value { color: var(--text-dim); }
+.parts-col.disabled span,
+.parts-col.disabled .split-value,
+.parts-col.disabled .knob-value,
+.parts-col.disabled .led-label { color: var(--text-dim); }
+.parts-col.disabled .led-indicator.on { background: #444; box-shadow: none; }
+.parts-col.disabled .part-octave-display.shifted .display-value { color: var(--text-dim); }
 .part-control { display: flex; align-items: center; gap: 8px; }
 .part-control span { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: var(--text); }
 .split-control { display: flex; align-items: center; gap: 8px; }
 .split-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--text-dim); }
-#val-part_mix {
+.part-mix-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.part-mix-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+}
+.part-mix-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#val-part_mix_lower, #val-part_mix_upper {
   background: #111;
   padding: 2px 6px;
   border-radius: 3px;
   font-size: 11px;
   font-weight: 700;
-  width: 70px;
+  width: 32px;
   text-align: center;
 }
 
@@ -943,6 +1040,39 @@ body {
 
 .octave-indicator { font-size: 10px; font-family: monospace; font-weight: 700; color: var(--text-dim); padding: 1px 4px; border-radius: 3px; background: #222; }
 .octave-indicator.shifted { color: var(--led-on); background: #1a3a1a; }
+
+.split-value.dimmed { color: var(--text-dim); background: #1a1a1a; }
+
+.center-top-row {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+.center-label-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.led-indicator.tiny {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+}
+.display.center-display {
+  width: 48px;
+  min-width: 48px;
+  min-height: 32px;
+  padding: 4px 0;
+}
+.center-display .display-value {
+  font-size: 14px;
+}
+.center-display.dimmed {
+  border-color: #222;
+}
+.center-display.dimmed .display-value {
+  color: var(--text-dim);
+}
 
 .engine-section { display: none; }
 .engine-section.active { display: block; }
