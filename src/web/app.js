@@ -169,6 +169,10 @@ function updateUI(data) {
     el.classList.toggle("disabled", !activeEngines.has(Number(idx)));
   }
 
+  // Dim part columns when part is disabled
+  document.querySelector(".parts-col-left")?.classList.toggle("disabled", !lowerEnabled);
+  document.querySelector(".parts-col-right")?.classList.toggle("disabled", !upperEnabled);
+
   // Update program bar sub-lines (piano/synth names, empty if disabled)
   const pianoActive = activeEngines.has(1); // 1 = piano
   const synthActive = activeEngines.has(2); // 2 = sample_synth
@@ -434,11 +438,16 @@ function updateGlobalParams(params) {
   }
 
   // Split point display
+  const splitEnabled = params.kb_split_mode ? params.kb_split_mode.value > 0 : false;
   if (params.kb_split_point) {
     const splitLabels = { 0: "C3", 1: "F3", 2: "C4", 3: "F4", 4: "C5", 5: "F5" };
     const idx = params.kb_split_point.index ?? params.kb_split_point.value;
     const valEl = document.getElementById("val-kb_split_point");
-    if (valEl) valEl.textContent = splitLabels[idx] || "C4";
+    if (valEl) {
+      valEl.textContent = splitLabels[idx] || "C4";
+      const splitDisplay = valEl.closest(".display");
+      if (splitDisplay) splitDisplay.classList.toggle("dimmed", !splitEnabled);
+    }
   }
 
   // Engine select displays
@@ -457,8 +466,10 @@ function updateGlobalParams(params) {
     "spkr_comp_enable", "rotary_stop_mode",
     "reverb_enable", "delay_enable", "delay_ping_pong",
     "eq_enable",
-    "part_lower_enable", "part_upper_enable",
     "kb_split_mode",
+    "sustain_pedal_enable_lower", "sustain_pedal_enable_upper",
+    "ctrl_pedal_enable_lower", "ctrl_pedal_enable_upper",
+    "transpose_enable",
   ];
   for (const id of globalLeds) {
     const el = document.getElementById(`led-${id}`);
@@ -473,16 +484,27 @@ function updateGlobalParams(params) {
     unit.classList.toggle("disabled", params[enableKey].value === 0);
   }
 
-  // Octave shift indicators (64 = center/no shift, each octave ≈ 16 MIDI values)
+  // Octave shift indicators (discrete index 0-13, display = index - 7)
   for (const part of ["lower", "upper"]) {
     const key = `octave_shift_${part}`;
     if (!params[key]) continue;
     const valEl = document.getElementById(`val-${key}`);
     if (!valEl) continue;
-    const value = params[key].value;
-    const shift = Math.round((value - 64) / 16);
+    const idx = params[key].index ?? params[key].value;
+    const shift = idx - 7;
     valEl.textContent = shift > 0 ? `+${shift}` : String(shift);
-    valEl.classList.toggle("shifted", shift !== 0);
+    valEl.closest(".part-octave-display")?.classList.toggle("shifted", shift !== 0);
+  }
+
+  // Transpose indicator (discrete index 0-12, display = index - 6 semitones)
+  const transposeEnabled = params.transpose_enable ? params.transpose_enable.value > 0 : false;
+  const transposeEl = document.getElementById("val-transpose_amount");
+  if (transposeEl && params.transpose_amount) {
+    const idx = params.transpose_amount.index ?? params.transpose_amount.value;
+    const semitones = idx - 6;
+    transposeEl.textContent = semitones > 0 ? `+${semitones}` : String(semitones);
+    const transposeDisplay = transposeEl.closest(".display");
+    if (transposeDisplay) transposeDisplay.classList.toggle("dimmed", !transposeEnabled);
   }
 
   // Global knobs
@@ -501,20 +523,24 @@ function updateGlobalParams(params) {
     updateKnob(el, value, 127);
 
     // Update numeric value display
+    if (param === "part_mix") {
+      // 0=Lower(50/0), 64=center(50/50), 127=Upper(0/50)
+      let lower, upper;
+      if (value <= 64) {
+        lower = 50;
+        upper = (value / 64) * 50;
+      } else {
+        lower = ((127 - value) / 63) * 50;
+        upper = 50;
+      }
+      const lowerEl = document.getElementById("val-part_mix_lower");
+      const upperEl = document.getElementById("val-part_mix_upper");
+      if (lowerEl) lowerEl.textContent = lower.toFixed(1);
+      if (upperEl) upperEl.textContent = upper.toFixed(1);
+    }
     const valEl = document.getElementById(`val-${param}`);
     if (valEl) {
-      if (param === "part_mix") {
-        // 0=Lower(50/0), 64=center(50/50), 127=Upper(0/50)
-        let lower, upper;
-        if (value <= 64) {
-          lower = 50;
-          upper = (value / 64) * 50;
-        } else {
-          lower = ((127 - value) / 63) * 50;
-          upper = 50;
-        }
-        valEl.textContent = `${lower.toFixed(1)}/${upper.toFixed(1)}`;
-      } else if (param === "effect2_rate") {
+      if (param === "effect2_rate") {
         // FX2 rate scale depends on type: Chorus 1-2 = 0-2.7Hz, others = 0-10.5Hz
         const fx2TypeIdx = params.effect2_type ? (params.effect2_type.index ?? params.effect2_type.value) : 0;
         const isChorus = fx2TypeIdx === 3 || fx2TypeIdx === 4; // CHOR1=3, CHOR2=4

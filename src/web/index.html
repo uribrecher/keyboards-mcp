@@ -30,27 +30,93 @@
 
     <!-- Parts Control Bar -->
     <div class="parts-bar">
-      <div class="part-control">
-        <div class="led-indicator" id="led-part_lower_enable" data-param="part_lower_enable"></div>
-        <span>LOWER</span>
-        <div class="split-value" id="val-part_lower_engine_select">Organ</div>
-        <div class="octave-indicator" id="val-octave_shift_lower">0</div>
+      <div class="parts-col parts-col-left">
+        <div class="part-header">
+          <div class="section-label">PART LOWER</div>
+          <div class="part-toggles">
+            <div class="led-row compact">
+              <div class="led-indicator small" id="led-sustain_pedal_enable_lower"></div>
+              <span class="led-label">SUS</span>
+            </div>
+            <div class="led-row compact">
+              <div class="led-indicator small" id="led-ctrl_pedal_enable_lower"></div>
+              <span class="led-label">CTL</span>
+            </div>
+          </div>
+        </div>
+        <div class="part-detail-row">
+          <div class="part-labeled-display">
+            <div class="display part-engine-display">
+              <span class="display-value" id="val-part_lower_engine_select">Organ</span>
+            </div>
+            <span class="part-display-label">ENGINE</span>
+          </div>
+          <div class="part-labeled-display">
+            <div class="display part-octave-display">
+              <span class="display-value" id="val-octave_shift_lower">0</span>
+            </div>
+            <span class="part-display-label">OCT SHIFT</span>
+          </div>
+        </div>
       </div>
-      <div class="part-control">
-        <div class="led-indicator" id="led-kb_split_mode" data-param="kb_split_mode"></div>
-        <span>SPLIT</span>
-        <div class="split-value" id="val-kb_split_point">C4</div>
+      <div class="parts-col parts-col-center">
+        <div class="center-top-row">
+          <div class="part-mix-group">
+            <div class="center-label-row">
+              <div class="led-indicator tiny" id="led-kb_split_mode" data-param="kb_split_mode"></div>
+              <span class="part-mix-label">SPLIT</span>
+            </div>
+            <div class="display center-display">
+              <span class="display-value" id="val-kb_split_point">C4</span>
+            </div>
+          </div>
+          <div class="part-mix-group">
+            <div class="center-label-row">
+              <div class="led-indicator tiny" id="led-transpose_enable"></div>
+              <span class="part-mix-label">TRANSPOSE</span>
+            </div>
+            <div class="display center-display">
+              <span class="display-value" id="val-transpose_amount">0</span>
+            </div>
+          </div>
+        </div>
+        <div class="part-mix-group">
+          <span class="part-mix-label">PART MIX</span>
+          <div class="part-mix-row">
+            <div class="knob-value" id="val-part_mix_lower">50.0</div>
+            <div class="knob small" id="knob-part_mix" data-param="part_mix"><div class="knob-body"><div class="knob-indicator"></div></div></div>
+            <div class="knob-value" id="val-part_mix_upper">50.0</div>
+          </div>
+        </div>
       </div>
-      <div class="part-control">
-        <span>MIX</span>
-        <div class="knob small" id="knob-part_mix" data-param="part_mix"><div class="knob-body"><div class="knob-indicator"></div></div></div>
-        <div class="knob-value" id="val-part_mix">50/50</div>
-      </div>
-      <div class="part-control">
-        <div class="led-indicator" id="led-part_upper_enable" data-param="part_upper_enable"></div>
-        <span>UPPER</span>
-        <div class="split-value" id="val-part_upper_engine_select">Organ</div>
-        <div class="octave-indicator" id="val-octave_shift_upper">0</div>
+      <div class="parts-col parts-col-right">
+        <div class="part-header">
+          <div class="part-toggles">
+            <div class="led-row compact">
+              <div class="led-indicator small" id="led-sustain_pedal_enable_upper"></div>
+              <span class="led-label">SUS</span>
+            </div>
+            <div class="led-row compact">
+              <div class="led-indicator small" id="led-ctrl_pedal_enable_upper"></div>
+              <span class="led-label">CTL</span>
+            </div>
+          </div>
+          <div class="section-label">PART UPPER</div>
+        </div>
+        <div class="part-detail-row">
+          <div class="part-labeled-display">
+            <div class="display part-octave-display">
+              <span class="display-value" id="val-octave_shift_upper">0</span>
+            </div>
+            <span class="part-display-label">OCT SHIFT</span>
+          </div>
+          <div class="part-labeled-display">
+            <div class="display part-engine-display">
+              <span class="display-value" id="val-part_upper_engine_select">Organ</span>
+            </div>
+            <span class="part-display-label">ENGINE</span>
+          </div>
+        </div>
       </div>
     </div>
 
