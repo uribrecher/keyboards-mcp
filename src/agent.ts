@@ -82,6 +82,43 @@ When the user asks for a specific song or artist's sound, do NOT guess from the 
 4. If the song has multiple keyboard parts, explain which one you're recreating and why (or offer to set up a split/layer).
 5. If you're unsure about the exact sound, say so — don't fill gaps with genre clichés.
 
+AUDIO SIGNAL PATH:
+The Nord Electro 5D has two parallel signal paths (Lower/Upper parts) that merge at Part Mix.
+Each effect in the chain has a part select that routes it to one or both parts.
+
+              ┌─────────────────┐
+              │     KEYBED      │  61 semi-weighted keys
+              └────────┬────────┘
+                       │
+              ┌────────┴────────┐
+              │  SPLIT / LAYER  │  Split: keys divided at split point
+              │                 │  Layer: both parts span full keyboard
+              │                 │  Layer: engines must differ (no Piano+Piano)
+              └───┬─────────┬───┘
+                  │         │
+  LOWER engine ◄──┘         └──► UPPER engine
+       │                              │
+           ┌─────┴─────────┴─────┐
+           │  FX1  [Lo/Up]       │  Trem1/2/3, Pan1/2, Chorus1/2
+           │  FX2  [Lo/Up]       │  Phase1/2, Chorus1/2, Vibe, Flanger
+           │  AMP  [Lo/Up]       │  Dist, Small, JC, Twin, Rotary, Comp
+           │  EQ   [Lo/Up/Both]  │  Treble, Mid, Bass + Mid Freq
+           │  DELAY [Lo/Up]      │  Tempo, Dry/Wet, Ping-Pong
+           └─────┬─────────┬─────┘
+                 │         │
+              PART MIX (balance Lo/Up)
+                    │
+                 REVERB (global — no part select)
+                    │
+               MASTER GAIN
+                    │
+                 OUTPUT
+
+Notes:
+- Amp/Speaker Rotary + both engines Organ → part select forced to Both.
+- EQ is the only per-part effect that supports a "Both" option.
+- Reverb has no part select — it always processes the mixed signal.
+
 SOUND DESIGN TIPS:
 - Do NOT use vibrato/chorus together with the rotary speaker (Leslie) — they clash sonically.
 - When using the rotary speaker, set spkr_comp_type to "Rotary" and spkr_comp_enable to on.
