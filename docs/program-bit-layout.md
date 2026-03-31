@@ -126,7 +126,7 @@ Bit       Width  Field                        Values / Notes
 
   Amp/Speaker (bits 1027-1038):
    1027        1   ampEnable                   0=off, 1=on
-   1028              [unknown — 1 bit]
+   1028        1   ampPartSelect               0=Lower, 1=Upper (Rotary+both Organ → forced Both)
    1029-1031   3   ampType                     0=Dist,1=Small,2=JC,3=Twin,4=Rotary,5=Comp
    1032-1038   7   ampDrive                    0-127
 
@@ -148,4 +148,4 @@ Bit       Width  Field                        Values / Notes
 - All fields are MSB-first (bit 0 of each byte = hardware bit 7)
 - Drawbar positions are model-dependent — the bit layout changes based on organModel
 - Percussion, vibrato enable, and vibrato type are per-preset and per-organ-model. Bit positions confirmed for B3 only; other organ models store them at different positions (likely near their respective drawbar regions)
-- Unknown regions likely contain: eq part-select, amp part-select
+- Unknown regions likely contain: additional effect routing or reserved bits
