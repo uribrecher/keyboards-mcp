@@ -81,7 +81,7 @@ export interface ProgramParams {
   fx2: { enable: boolean; type: string; rate: number; deep: boolean; partSelect: number };
   delay: { enable: boolean; partSelect: number; tempo: number; pingPong: boolean; dryWet: number };
   eq: { enable: boolean; partSelect: number; treble: number; midFreq: number; mid: number; bass: number };
-  amp: { enable: boolean; type: string; drive: number };
+  amp: { enable: boolean; partSelect: number; type: string; drive: number };
   reverb: { enable: boolean; type: string; dryWet: number };
 }
 
@@ -250,7 +250,7 @@ function decodeProgramPayload(payload: Buffer): ProgramParams {
 
   // ── Amp/Speaker (bits 1027-1038) ──
   const ampEnable = rb(payload, 1027, 1) === 1;
-  // bit 1028: unknown (possibly rotary speed or part select)
+  const ampPartSelect = rb(payload, 1028, 1);  // 0=Lower, 1=Upper
   const ampTypeIdx = rb(payload, 1029, 3);
   const ampDrive = rb(payload, 1032, 7);
 
@@ -322,6 +322,7 @@ function decodeProgramPayload(payload: Buffer): ProgramParams {
     eq: { enable: eqEnable, partSelect: eqPartSelect, treble: eqTreble, midFreq: eqMidFreq, mid: eqMid, bass: eqBass },
     amp: {
       enable: ampEnable,
+      partSelect: ampPartSelect,
       type: AMP_TYPES[ampTypeIdx] ?? `Unknown(${ampTypeIdx})`,
       drive: ampDrive,
     },
@@ -667,7 +668,9 @@ export function formatBackupAsMarkdown(data: BackupMetadata, backupDate?: string
       const fx2 = pm.fx2.enable
         ? `${pm.fx2.type} ${fmtVal(pm.fx2.rate)}${pm.fx2.deep ? " deep" : ""}`
         : "";
-      const amp = pm.amp.enable ? `${pm.amp.type} ${fmtVal(pm.amp.drive)}` : "";
+      const AMP_PART_LABELS = ["Lo", "Up"] as const;
+      const ampPart = pm.amp.type === "Rotary" ? "" : (AMP_PART_LABELS[pm.amp.partSelect] ?? "");
+      const amp = pm.amp.enable ? `${ampPart ? ampPart + " " : ""}${pm.amp.type} ${fmtVal(pm.amp.drive)}` : "";
       const delay = pm.delay.enable
         ? `${fmtVal(pm.delay.dryWet)}${pm.delay.pingPong ? " pp" : ""}`
         : "";

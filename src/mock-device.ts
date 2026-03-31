@@ -172,6 +172,7 @@ const PROGRAM_PARAM_MAP: Array<[key: string, get: (p: ProgramParams) => number |
   ["eq_bass", p => p.eq.bass],
   // Amp/Speaker
   ["spkr_comp_enable", p => p.amp.enable],
+  ["spkr_comp_part_select", p => p.amp.partSelect],
   ["spkr_comp_type", p => p.amp.type],
   ["spkr_comp_drive", p => p.amp.drive],
   // Reverb
@@ -245,6 +246,22 @@ function applyDrawbars(presetKey: string, drawbarStr: string): void {
     channelState.get(LOWER_CH)!.set(param.cc, midiVal);
     channelState.get(UPPER_CH)!.set(param.cc, midiVal);
   }
+}
+
+// ── Amp/Rotary edge case ──
+// When both engines are Organ and amp type is Rotary, hardware forces part select to "Both".
+const CC_LOWER_ENGINE = NORD_ELECTRO_5D_PARAMS.part_lower_engine_select.cc;  // 39
+const CC_UPPER_ENGINE = NORD_ELECTRO_5D_PARAMS.part_upper_engine_select.cc;  // 40
+const CC_AMP_TYPE = NORD_ELECTRO_5D_PARAMS.spkr_comp_type.cc;               // 81
+const AMP_ROTARY_MIDI = resolveValue(NORD_ELECTRO_5D_PARAMS.spkr_comp_type, 4); // Rotary index
+
+/** Check if both engines=Organ + amp=Rotary (hardware forces amp part select to "Both"). */
+function isRotaryBothForced(): boolean {
+  const ch = channelState.get(LOWER_CH)!;
+  const lowerEngine = ch.get(CC_LOWER_ENGINE) ?? 0;
+  const upperEngine = ch.get(CC_UPPER_ENGINE) ?? 0;
+  const ampType = ch.get(CC_AMP_TYPE) ?? 0;
+  return lowerEngine === 0 && upperEngine === 0 && ampType === AMP_ROTARY_MIDI;
 }
 
 // Program state (from Bank Select + Program Change)
@@ -362,6 +379,15 @@ function buildStateMessage(lastChangeKey?: string, lastChangePart?: string, incl
       const val = getChannelValue(LOWER_CH, param.cc, param.defaultValue);
       global[key] = buildParamEntry(param, val);
     }
+  }
+
+  // Amp/Rotary edge case: both engines Organ + Rotary → force "Both"
+  if (isRotaryBothForced() && global.spkr_comp_part_select) {
+    global.spkr_comp_part_select = {
+      ...global.spkr_comp_part_select,
+      label: "Both",
+      index: 2,
+    };
   }
 
   // Build per-preset drawbar state

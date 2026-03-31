@@ -125,6 +125,7 @@ const FIELDS: Field[] = [
 
   // Amp/Speaker
   { bit: 1027, width: 1, name: "ampEnable", labels: { 0: "off", 1: "on" } },
+  { bit: 1028, width: 1, name: "ampPartSelect", labels: { 0: "Lower", 1: "Upper" } },
   { bit: 1029, width: 3, name: "ampType", labels: { 0: "Dist", 1: "Small", 2: "JC", 3: "Twin", 4: "Rotary", 5: "Comp" } },
   { bit: 1032, width: 7, name: "ampDrive" },
 
