@@ -115,7 +115,16 @@ const PROGRAM_PARAM_MAP: Array<[key: string, get: (p: ProgramParams) => number |
   ["part_upper_enable", p => p.upperEnable],
   ["part_lower_engine_select", p => p.lowerEngine],
   ["part_upper_engine_select", p => p.upperEngine],
+  ["octave_shift_lower", p => p.lowerOctaveShift],
+  ["octave_shift_upper", p => p.upperOctaveShift],
+  ["sustain_pedal_enable_lower", p => p.lowerSustainPedalEnable ? 1 : 0],
+  ["sustain_pedal_enable_upper", p => p.upperSustainPedalEnable ? 1 : 0],
+  ["ctrl_pedal_enable_lower", p => p.lowerCtrlPedalEnable ? 1 : 0],
+  ["ctrl_pedal_enable_upper", p => p.upperCtrlPedalEnable ? 1 : 0],
   // Master
+  ["transpose_enable", p => p.transposeEnable ? 1 : 0],
+  ["transpose_amount", p => p.transposeAmount],
+  ["part_mix", p => p.partMix],
   ["master_volume", p => p.masterGain],
   // Organ (vibrato/percussion enable are per-preset — apply preset 1 as default display)
   ["organ_model", p => p.organModel],
@@ -156,6 +165,7 @@ const PROGRAM_PARAM_MAP: Array<[key: string, get: (p: ProgramParams) => number |
   ["delay_dry_wet", p => p.delay.dryWet],
   // EQ
   ["eq_enable", p => p.eq.enable],
+  ["eq_part_select", p => p.eq.partSelect],
   ["eq_treble", p => p.eq.treble],
   ["eq_mid_freq", p => p.eq.midFreq],
   ["eq_mid", p => p.eq.mid],

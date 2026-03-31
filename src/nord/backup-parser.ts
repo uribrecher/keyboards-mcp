@@ -45,6 +45,15 @@ export interface ProgramParams {
   lowerEngine: string;
   upperEnable: boolean;
   upperEngine: string;
+  lowerOctaveShift: number; // raw value; display = value - 7
+  upperOctaveShift: number; // raw value; display = value - 7
+  lowerSustainPedalEnable: boolean;
+  upperSustainPedalEnable: boolean;
+  lowerCtrlPedalEnable: boolean;
+  upperCtrlPedalEnable: boolean;
+  transposeEnable: boolean;
+  transposeAmount: number; // raw 0-12; display = value - 6 semitones
+  partMix: number;
   masterGain: number;
   organModel: string;
   pianoType: string;
@@ -71,7 +80,7 @@ export interface ProgramParams {
   fx1: { enable: boolean; type: string; rate: number; partSelect: number; controlPedal: boolean };
   fx2: { enable: boolean; type: string; rate: number; deep: boolean; partSelect: number };
   delay: { enable: boolean; partSelect: number; tempo: number; pingPong: boolean; dryWet: number };
-  eq: { enable: boolean; treble: number; midFreq: number; mid: number; bass: number };
+  eq: { enable: boolean; partSelect: number; treble: number; midFreq: number; mid: number; bass: number };
   amp: { enable: boolean; type: string; drive: number };
   reverb: { enable: boolean; type: string; dryWet: number };
 }
@@ -140,6 +149,12 @@ function decodeProgramPayload(payload: Buffer): ProgramParams {
   // ── Part / Split ──
   const lowerEngineIdx = rb(payload, 145, 2);
   const upperEngineIdx = rb(payload, 148, 2);
+  const lowerOctaveShift = rb(payload, 150, 4);
+  const upperOctaveShift = rb(payload, 154, 4);
+  const lowerSustainPedalEnable = rb(payload, 158, 1) === 1;
+  const upperSustainPedalEnable = rb(payload, 159, 1) === 1;
+  const lowerCtrlPedalEnable = rb(payload, 160, 1) === 1;
+  const upperCtrlPedalEnable = rb(payload, 161, 1) === 1;
   const splitMode = rb(payload, 163, 1) === 1;
   const splitPointIdx = rb(payload, 164, 3);
   const lowerEnable = rb(payload, 189, 1) === 1;
@@ -176,6 +191,9 @@ function decodeProgramPayload(payload: Buffer): ProgramParams {
   const pst2Valid = pst2.length > 0 && pst2.every((v) => v <= 8);
 
   // ── Master Gain (bit 179, 7-bit) ──
+  const transposeEnable = rb(payload, 167, 1) === 1;
+  const transposeAmount = rb(payload, 168, 4);
+  const partMix = rb(payload, 172, 7);
   const masterGain = rb(payload, 179, 7);
 
   // ── Sample Synth ──
@@ -222,12 +240,13 @@ function decodeProgramPayload(payload: Buffer): ProgramParams {
   const delayPingPong = rb(payload, 988, 1) === 1;
   const delayDryWet = rb(payload, 989, 7);
 
-  // ── EQ (bits 997-1026) ──
+  // ── EQ (bits 997-1026, part select at 1069) ──
   const eqEnable = rb(payload, 997, 1) === 1;
   const eqMidFreq = rb(payload, 999, 7);
   const eqTreble = rb(payload, 1006, 7);
   const eqMid = rb(payload, 1013, 7);
   const eqBass = rb(payload, 1020, 7);
+  const eqPartSelect = rb(payload, 1069, 2);  // 0=Lower, 1=Upper, 2=Both
 
   // ── Amp/Speaker (bits 1027-1038) ──
   const ampEnable = rb(payload, 1027, 1) === 1;
@@ -247,6 +266,15 @@ function decodeProgramPayload(payload: Buffer): ProgramParams {
     lowerEngine: ENGINE_TYPES[lowerEngineIdx] ?? `Unknown(${lowerEngineIdx})`,
     upperEnable,
     upperEngine: ENGINE_TYPES[upperEngineIdx] ?? `Unknown(${upperEngineIdx})`,
+    lowerOctaveShift,
+    upperOctaveShift,
+    lowerSustainPedalEnable,
+    upperSustainPedalEnable,
+    lowerCtrlPedalEnable,
+    upperCtrlPedalEnable,
+    transposeEnable,
+    transposeAmount,
+    partMix,
     masterGain,
     organModel: ORGAN_MODELS[organModelIdx] ?? `Unknown(${organModelIdx})`,
     pianoType: PIANO_TYPES[pianoTypeIdx] ?? `Unknown(${pianoTypeIdx})`,
@@ -291,7 +319,7 @@ function decodeProgramPayload(payload: Buffer): ProgramParams {
       pingPong: delayPingPong,
       dryWet: delayDryWet,
     },
-    eq: { enable: eqEnable, treble: eqTreble, midFreq: eqMidFreq, mid: eqMid, bass: eqBass },
+    eq: { enable: eqEnable, partSelect: eqPartSelect, treble: eqTreble, midFreq: eqMidFreq, mid: eqMid, bass: eqBass },
     amp: {
       enable: ampEnable,
       type: AMP_TYPES[ampTypeIdx] ?? `Unknown(${ampTypeIdx})`,
@@ -644,8 +672,10 @@ export function formatBackupAsMarkdown(data: BackupMetadata, backupDate?: string
         ? `${fmtVal(pm.delay.dryWet)}${pm.delay.pingPong ? " pp" : ""}`
         : "";
       const rev = pm.reverb.enable ? `${pm.reverb.type} ${fmtVal(pm.reverb.dryWet)}` : "";
+      const EQ_PART_LABELS = ["Lo", "Up", ""] as const;
+      const eqPart = EQ_PART_LABELS[pm.eq.partSelect] ?? "";
       const eq = pm.eq.enable
-        ? `T:${fmtVal(pm.eq.treble)} M:${fmtVal(pm.eq.mid)} F:${fmtVal(pm.eq.midFreq)} B:${fmtVal(pm.eq.bass)}`
+        ? `${eqPart ? eqPart + " " : ""}T:${fmtVal(pm.eq.treble)} M:${fmtVal(pm.eq.mid)} F:${fmtVal(pm.eq.midFreq)} B:${fmtVal(pm.eq.bass)}`
         : "";
       lines.push(
         `| ${p.slot + 1} | ${p.name} | ${lower} | ${upper} | ${split} | ${organ} | ${piano} | ${sample} | ${pst1} | ${pst2} | ${fx1} | ${fx2} | ${amp} | ${delay} | ${rev} | ${eq} | ${fmtVal(pm.masterGain)} |`
