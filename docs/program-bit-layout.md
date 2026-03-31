@@ -11,12 +11,20 @@ Bit       Width  Field                        Values / Notes
 145-146    2     lowerEngine                  0=Organ, 1=Piano, 2=Sample Synth
 147              [gap]
 148-149    2     upperEngine                  0=Organ, 1=Piano, 2=Sample Synth
-150-162          [unknown]
+150-153    4     lowerOctaveShift             raw value; display = value - 7 (range varies by split point)
+154-157    4     upperOctaveShift             raw value; display = value - 7 (range varies by split point)
+158        1     lowerSustainPedalEnable      0=off, 1=on
+159        1     upperSustainPedalEnable      0=off, 1=on
+160        1     lowerCtrlPedalEnable         0=off, 1=on
+161        1     upperCtrlPedalEnable         0=off, 1=on
+162              [unknown]
 163        1     splitMode                    0=off, 1=on
 164-166    3     splitPoint                   0=C3,1=F3,2=C4,3=F4,4=C5,5=F5
 
  ── Master ────────────────────────────────────────────────────────────────────
-167-178          [unknown]
+167        1     transposeEnable              0=off, 1=on
+168-171    4     transposeAmount              raw value 0-12; display = value - 6 semitones
+172-178    7     partMix                      0-127 (0=Lower, 64=center, 127=Upper)
 179-185    7     masterGain                   0-127
 
  ── Organ ─────────────────────────────────────────────────────────────────────
@@ -108,7 +116,7 @@ Bit       Width  Field                        Values / Notes
     988        1   delayPingPong               0=off, 1=on
     989-995    7   delayDryWet                 0-127
 
-  EQ (bits 997-1026):
+  EQ (bits 997-1026, part select at 1069):
     997        1   eqEnable                    0=off, 1=on
     998              [gap]
     999-1005   7   eqMidFreq                   0-127
@@ -131,7 +139,8 @@ Bit       Width  Field                        Values / Notes
 1050-1066        [unknown — 17 bits]
 1067       1     fx1ControlPedal               0=off, 1=on
 1068       1     fx2Deep                       0=off, 1=on
-1069-1095        [unknown — 27 bits]
+1069-1070  2     eqPartSelect                  0=Lower, 1=Upper, 2=Both
+1071-1095        [unknown — 25 bits]
 ```
 
 ## Notes
@@ -139,4 +148,4 @@ Bit       Width  Field                        Values / Notes
 - All fields are MSB-first (bit 0 of each byte = hardware bit 7)
 - Drawbar positions are model-dependent — the bit layout changes based on organModel
 - Percussion, vibrato enable, and vibrato type are per-preset and per-organ-model. Bit positions confirmed for B3 only; other organ models store them at different positions (likely near their respective drawbar regions)
-- Unknown regions likely contain: octave shift, part mix, eq part-select, amp part-select
+- Unknown regions likely contain: eq part-select, amp part-select

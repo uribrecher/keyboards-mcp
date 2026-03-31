@@ -38,10 +38,19 @@ const FIELDS: Field[] = [
   // Part / Split
   { bit: 145, width: 2, name: "lowerEngine", labels: { 0: "Organ", 1: "Piano", 2: "Sample Synth" } },
   { bit: 148, width: 2, name: "upperEngine", labels: { 0: "Organ", 1: "Piano", 2: "Sample Synth" } },
+  { bit: 150, width: 4, name: "lowerOctaveShift", format: v => `${v} (display: ${v - 7})` },
+  { bit: 154, width: 4, name: "upperOctaveShift", format: v => `${v} (display: ${v - 7})` },
+  { bit: 158, width: 1, name: "lowerSustainPedalEnable", labels: { 0: "off", 1: "on" } },
+  { bit: 159, width: 1, name: "upperSustainPedalEnable", labels: { 0: "off", 1: "on" } },
+  { bit: 160, width: 1, name: "lowerCtrlPedalEnable", labels: { 0: "off", 1: "on" } },
+  { bit: 161, width: 1, name: "upperCtrlPedalEnable", labels: { 0: "off", 1: "on" } },
   { bit: 163, width: 1, name: "splitMode", labels: { 0: "off", 1: "on" } },
   { bit: 164, width: 3, name: "splitPoint", labels: { 0: "C3", 1: "F3", 2: "C4", 3: "F4", 4: "C5", 5: "F5" } },
 
   // Master
+  { bit: 167, width: 1, name: "transposeEnable", labels: { 0: "off", 1: "on" } },
+  { bit: 168, width: 4, name: "transposeAmount", format: v => `${v} (display: ${v - 6})` },
+  { bit: 172, width: 7, name: "partMix" },
   { bit: 179, width: 7, name: "masterGain" },
 
   // Organ
@@ -127,6 +136,7 @@ const FIELDS: Field[] = [
   // Tail
   { bit: 1067, width: 1, name: "fx1ControlPedal", labels: { 0: "off", 1: "on" } },
   { bit: 1068, width: 1, name: "fx2Deep", labels: { 0: "off", 1: "on" } },
+  { bit: 1069, width: 2, name: "eqPartSelect", labels: { 0: "Lower", 1: "Upper", 2: "Both" } },
 ];
 
 // ── Gaps (documented single-bit holes between known fields) ─────────────────

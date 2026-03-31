@@ -79,8 +79,8 @@ Source: Nord Electro 5D Owner's Manual, Appendix II (screenshot in `test_data/Sc
 | 11 | Control Pedal (Expression) | Physical pedal input, not a stored parameter |
 | 48 | Program/Set List/Live mode toggle | Mode switching, not a sound parameter |
 | 49 | Set List Slot Select | Navigation, not a sound parameter |
-| 52 | Transpose Enable | Global setting, not per-program |
-| 53 | Transpose Value | Global setting, not per-program |
+| 52 | Transpose Enable | `transpose_enable` | Per-program, stored at bit 167 |
+| 53 | Transpose Value | `transpose_amount` | Per-program, stored at bits 168-171 (0-12, display = value - 6) |
 | 56 | Sustain Pedal Enable Part Lower | Pedal routing |
 | 57 | Sustain Pedal Enable Part Upper | Pedal routing |
 | 58 | Ctrl Pedal Enable Part Lower | Pedal routing |
