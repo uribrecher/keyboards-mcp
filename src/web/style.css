@@ -148,6 +148,25 @@ body {
 .status.connected { background: #1a3a1a; color: var(--led-on); }
 .status.disconnected { background: #3a1a1a; color: #ff4c4c; }
 
+.re-extract-btn {
+  background: #333;
+  color: #ccc;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font: 10px/1.4 var(--font);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+.re-extract-btn:hover { background: #444; color: #fff; }
+.re-extract-btn:active { background: #555; }
+.re-extract-btn.loading {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 /* Sections */
 .section {
   background: var(--section-bg);

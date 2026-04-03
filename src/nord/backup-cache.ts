@@ -38,6 +38,20 @@ export function loadBackupCache(): void {
   }
 }
 
+/** Reload backup cache from disk, replacing any in-memory data. */
+export function reloadBackupCache(): boolean {
+  try {
+    if (existsSync(cachePath)) {
+      cachedBackup = JSON.parse(readFileSync(cachePath, "utf-8")) as BackupMetadata;
+      console.error(`Reloaded backup cache from ${cachePath}`);
+      return true;
+    }
+  } catch {
+    // Non-fatal
+  }
+  return false;
+}
+
 /**
  * Resolve a piano model index to its name from the cached inventory.
  * @param pianoType - Piano type label (e.g., "Grand", "Upright", "EP1")

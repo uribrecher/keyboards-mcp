@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "mock": "tsx src/mock-device.ts",
+    "mock:electron": "electron dist/electron/main.js",
     "agent": "ANTHROPIC_API_KEY=$(op item get zevuqtkunbnvdjzt5rbnyvsw6q --reveal --account my.1password.com --fields label=credential) tsx src/agent.ts"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "@types/adm-zip": "^0.5.8",
     "@types/node": "^20.0.0",
     "@types/ws": "^8.18.1",
+    "electron": "^41.1.1",
     "tsx": "^4.0.0",
     "typescript": "^5.5.0"
   }

@@ -76,8 +76,11 @@ let ws = null;
 let reconnectTimer = null;
 
 function connect() {
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${protocol}//${location.host}`);
+  // When loaded via file:// (Electron), location.host is empty — use localhost:3000
+  const wsUrl = location.protocol === "file:"
+    ? "ws://localhost:3000"
+    : `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`;
+  ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
     if (reconnectTimer) {
@@ -813,6 +816,61 @@ chatReset.addEventListener("click", async () => {
   chatMessages.innerHTML = "";
   localStorage.removeItem("nord-chat-history");
   addChatMessage("assistant", "Conversation reset. How can I help?");
+});
+
+// ── Re-Extract ──
+const reExtractBtn = document.getElementById("re-extract-btn");
+
+async function openBackupPath() {
+  // Electron: native dialog returns absolute path
+  if (window.electronAPI) {
+    return await window.electronAPI.openBackupDialog();
+  }
+  // Browser fallback: not supported (no full path access)
+  addChatMessage("assistant", "File picker requires the Electron app. Run with `npm run mock:electron`.\nAlternatively, ask me in chat to extract a specific backup path.");
+  return null;
+}
+
+async function doReExtract(payload) {
+  reExtractBtn.classList.add("loading");
+  reExtractBtn.textContent = "EXTRACTING…";
+  try {
+    const res = await fetch(`${AGENT_URL}/re-extract`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload ? JSON.stringify(payload) : "",
+    });
+    const data = await res.json();
+
+    if (data.error === "no_path") {
+      // No cached path — open native file/folder dialog
+      const path = await openBackupPath();
+      if (path) {
+        doReExtract({ path });
+      }
+      return;
+    }
+    if (data.error) {
+      addChatMessage("assistant", `Re-extract failed: ${data.message || data.error}`);
+      return;
+    }
+
+    // Success — tell the mock device to reload its cache
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "reload-cache" }));
+    }
+    addChatMessage("assistant", `Backup re-extracted:\n${data.summary}`);
+  } catch (err) {
+    addChatMessage("assistant", `Re-extract error: ${err.message}. Is the agent running on port 3001?`);
+  } finally {
+    reExtractBtn.classList.remove("loading");
+    reExtractBtn.textContent = "RE-EXTRACT";
+  }
+}
+
+reExtractBtn.addEventListener("click", () => {
+  if (reExtractBtn.classList.contains("loading")) return;
+  doReExtract();
 });
 
 // ── Init ──
