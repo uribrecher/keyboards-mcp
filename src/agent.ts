@@ -302,6 +302,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  console.log(`${req.method} ${req.url}`);
   setCorsHeaders(res);
 
   // CORS preflight
@@ -345,6 +346,64 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     conversationHistory = [];
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/re-extract") {
+    res.setHeader("Content-Type", "application/json");
+    try {
+      const body = await readBody(req);
+      const parsed = body ? JSON.parse(body) : {};
+      let backupPath: string | undefined = parsed.path;
+      console.log("re-extract request:", JSON.stringify(parsed));
+
+      // Try to get the last backup location (used for path resolution and fallback)
+      const pathResult = await mcpClient.callTool({ name: "get_last_backup_location", arguments: {} });
+      const pathText = (pathResult.content as Array<{type: string; text: string}>)
+        .map(c => c.text).join("");
+      const lastPath = (!pathResult.isError && pathText && !pathText.includes("No previous backup"))
+        ? pathText.trim()
+        : undefined;
+
+      // Fall back to the cached path
+      if (!backupPath) {
+        backupPath = lastPath;
+      }
+
+      if (!backupPath) {
+        // Return the last known backup directory (or project root) so the UI
+        // can combine it with the filename from the file picker
+        const baseDir = lastPath ? dirname(lastPath) : join(__dirname, "..");
+        console.log("re-extract: no path found, returning baseDir:", baseDir);
+        res.writeHead(200);
+        res.end(JSON.stringify({ error: "no_path", baseDir }));
+        return;
+      }
+      console.log("re-extract: extracting from", backupPath);
+
+      // Call extract_backup
+      const result = await mcpClient.callTool({
+        name: "extract_backup",
+        arguments: { file_path: backupPath },
+      });
+      const resultText = (result.content as Array<{type: string; text: string}>)
+        .map(c => c.text).join("");
+
+      if (result.isError) {
+        res.writeHead(200);
+        res.end(JSON.stringify({ error: "extract_failed", message: resultText }));
+        return;
+      }
+
+      // Return first line as summary (e.g., "Extracted full backup inventory:")
+      const summary = resultText.split("\n").slice(0, 7).join("\n");
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, summary, path: backupPath }));
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: "server_error", message: errorMsg }));
+    }
     return;
   }
 
