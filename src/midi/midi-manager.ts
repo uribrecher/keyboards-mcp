@@ -80,14 +80,21 @@ export class MidiManager {
 
   isConnected(): boolean {
     if (this.output === null) return false;
-    // If a mock device port exists, we must also be forwarding to it
-    if (this.hasMockPort() && this.forwardOutput === null) return false;
+    // If a mock device port exists, we must be forwarding AND have a live WebSocket
+    if (this.hasMockPort()) {
+      if (this.forwardOutput === null) return false;
+      if (!this.mockWs || this.mockWs.readyState !== WebSocket.OPEN) return false;
+    }
     return true;
   }
 
   hasMockPort(): boolean {
     const ports = this.listOutputPorts();
     return ports.some((p) => p.name.toLowerCase().includes("mock"));
+  }
+
+  isMockWsOpen(): boolean {
+    return this.mockWs !== null && this.mockWs.readyState === WebSocket.OPEN;
   }
 
   getConnectedPort(): string | null {
