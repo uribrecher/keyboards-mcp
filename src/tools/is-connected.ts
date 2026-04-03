@@ -15,15 +15,27 @@ export function registerIsConnected(server: McpServer, midi: MidiManager): void 
 
       if (!connected) {
         // Give specific guidance when partially connected
-        if (port && midi.hasMockPort() && !forwardPort) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Partially connected: output to ${port}, but mock device is available and not forwarding. Call connect_to_nord to establish a full connection.`,
-              },
-            ],
-          };
+        if (port && midi.hasMockPort()) {
+          if (forwardPort && !midi.isMockWsOpen()) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Partially connected: MIDI output to ${port} and forward to ${forwardPort}, but the WebSocket to the mock device is down (mock may have restarted). Call connect_to_nord to re-establish a full connection.`,
+                },
+              ],
+            };
+          }
+          if (!forwardPort) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Partially connected: output to ${port}, but mock device is available and not forwarding. Call connect_to_nord to establish a full connection.`,
+                },
+              ],
+            };
+          }
         }
         return {
           content: [

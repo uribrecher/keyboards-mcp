@@ -6,7 +6,8 @@
  */
 
 import AdmZip from "adm-zip";
-import { basename, extname } from "node:path";
+import { basename, extname, join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
 
 // ── Types ──
 
@@ -432,6 +433,34 @@ function parseMetaXml(xml: string): { productVersion: string; buildNumber: strin
   };
 }
 
+// ── Single Program Parser ──
+
+export function parseSingleProgram(buf: Buffer, fileName: string): ProgramEntry {
+  const hdr = readCbinHeader(buf);
+  const payload = buf.subarray(CBIN_HEADER_SIZE);
+  return {
+    bank: hdr.bankIndex + 1,
+    slot: hdr.slotIndex,
+    name: fileName,
+    params: decodeProgramPayload(payload),
+    payloadHex: payload.toString("hex"),
+  };
+}
+
+// ── Programs Folder Parser ──
+
+export function parseProgramsFolder(dirPath: string): ProgramEntry[] {
+  const files = readdirSync(dirPath).filter((f) => extname(f).toLowerCase() === ".ne5p");
+  const programs: ProgramEntry[] = [];
+  for (const file of files) {
+    const buf = readFileSync(join(dirPath, file));
+    const name = basename(file, extname(file));
+    programs.push(parseSingleProgram(buf, name));
+  }
+  programs.sort((a, b) => a.bank - b.bank || a.slot - b.slot);
+  return programs;
+}
+
 // ── Main Parser ──
 
 export function parseBackup(filePath: string): BackupMetadata {
@@ -459,15 +488,7 @@ export function parseBackup(filePath: string): BackupMetadata {
     if (ext === ".ne5p") {
       // Program preset — small file, read fully
       const buf = entry.getData();
-      const hdr = readCbinHeader(buf);
-      const payload = buf.subarray(CBIN_HEADER_SIZE);
-      programs.push({
-        bank: hdr.bankIndex + 1,
-        slot: hdr.slotIndex,
-        name: fileName,
-        params: decodeProgramPayload(payload),
-        payloadHex: payload.toString("hex"),
-      });
+      programs.push(parseSingleProgram(buf, fileName));
       continue;
     }
 
@@ -543,6 +564,76 @@ export function parseBackup(filePath: string): BackupMetadata {
   livePresets.sort((a, b) => a.slot - b.slot);
 
   return { ...meta, pianos, samples, programs, setLists, livePresets };
+}
+
+// ── Programs Section Formatter ──
+
+export function formatProgramsSection(
+  programs: ProgramEntry[],
+  sampleBySlot: Map<number, string>,
+): string {
+  const lines: string[] = [];
+  lines.push(`## Programs (${programs.length})`);
+  lines.push("");
+  const byBank = new Map<number, ProgramEntry[]>();
+  for (const p of programs) {
+    if (!byBank.has(p.bank)) byBank.set(p.bank, []);
+    byBank.get(p.bank)!.push(p);
+  }
+  for (const [bank, progs] of [...byBank.entries()].sort((a, b) => a[0] - b[0])) {
+    lines.push(`### Bank ${bank} (${progs.length} slots)`);
+    lines.push("");
+    lines.push("| Prog | Name | Lower | Upper | Split | Organ | Piano | Sample | PST1 | PST2 | FX1 | FX2 | Amp | Delay | Reverb | EQ | Gain |");
+    lines.push("|------|------|-------|-------|-------|-------|-------|--------|------|------|-----|-----|-----|-------|--------|-----|------|");
+    for (const p of progs) {
+      const pm = p.params;
+      const fmtVal = (v: number) => (v / 12.7).toFixed(1);
+      const lower = pm.lowerEnable ? pm.lowerEngine : "off";
+      const upper = pm.upperEnable ? pm.upperEngine : "off";
+      const split = pm.splitMode ? pm.splitPoint : "";
+      const hasOrganEngine = lower === "Organ" || upper === "Organ";
+      let organ = "";
+      if (hasOrganEngine) {
+        organ = pm.organModel;
+        if (pm.pst1VibratoEnable || pm.pst2VibratoEnable) organ += ` vib:${pm.vibratoType}`;
+        if (pm.pst1PercussionEnable || pm.pst2PercussionEnable) organ += ` perc:${pm.percussionHarmonic} ${pm.percussionSpeed}/${pm.percussionLevel}`;
+      }
+      const pianoVariation = pm.pianoType === "Clav" ? pm.clavVariation : "-";
+      const ACOUSTIC_LABELS = ["Off", "StrRes", "LongRel", "StrRes+LongRel"] as const;
+      const piano =
+        lower === "Piano" || upper === "Piano"
+          ? `${pm.pianoType}:${pm.pianoModel}:${pianoVariation}:${pm.pianoMono ? "mono" : "stereo"}:${ACOUSTIC_LABELS[pm.pianoAcoustic] ?? "Off"}:touch${pm.pianoKbdTouch}`
+          : "";
+      const hasSample = lower === "Sample Synth" || upper === "Sample Synth";
+      const sample = hasSample
+        ? `${sampleBySlot.get(pm.sampleSlot) ?? `#${pm.sampleSlot}`} atk:${fmtVal(pm.sampleAttack)} dec:${fmtVal(pm.sampleDecRel)}`
+        : "";
+      const hasOrgan = lower === "Organ" || upper === "Organ";
+      const pst1 = hasOrgan && pm.pst1Drawbars !== "?" ? pm.pst1Drawbars : "";
+      const pst2 = hasOrgan && pm.pst2Drawbars !== "?" ? pm.pst2Drawbars : "";
+      const fx1 = pm.fx1.enable ? `${pm.fx1.type} ${fmtVal(pm.fx1.rate)}${pm.fx1.controlPedal ? " cp" : ""}` : "";
+      const fx2 = pm.fx2.enable
+        ? `${pm.fx2.type} ${fmtVal(pm.fx2.rate)}${pm.fx2.deep ? " deep" : ""}`
+        : "";
+      const AMP_PART_LABELS = ["Lo", "Up"] as const;
+      const ampPart = pm.amp.type === "Rotary" ? "" : (AMP_PART_LABELS[pm.amp.partSelect] ?? "");
+      const amp = pm.amp.enable ? `${ampPart ? ampPart + " " : ""}${pm.amp.type} ${fmtVal(pm.amp.drive)}` : "";
+      const delay = pm.delay.enable
+        ? `${fmtVal(pm.delay.dryWet)}${pm.delay.pingPong ? " pp" : ""}`
+        : "";
+      const rev = pm.reverb.enable ? `${pm.reverb.type} ${fmtVal(pm.reverb.dryWet)}` : "";
+      const EQ_PART_LABELS = ["Lo", "Up", ""] as const;
+      const eqPart = EQ_PART_LABELS[pm.eq.partSelect] ?? "";
+      const eq = pm.eq.enable
+        ? `${eqPart ? eqPart + " " : ""}T:${fmtVal(pm.eq.treble)} M:${fmtVal(pm.eq.mid)} F:${fmtVal(pm.eq.midFreq)} B:${fmtVal(pm.eq.bass)}`
+        : "";
+      lines.push(
+        `| ${p.slot + 1} | ${p.name} | ${lower} | ${upper} | ${split} | ${organ} | ${piano} | ${sample} | ${pst1} | ${pst2} | ${fx1} | ${fx2} | ${amp} | ${delay} | ${rev} | ${eq} | ${fmtVal(pm.masterGain)} |`
+      );
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
 }
 
 // ── Markdown Formatter ──
@@ -626,66 +717,7 @@ export function formatBackupAsMarkdown(data: BackupMetadata, backupDate?: string
   lines.push("");
 
   // ── Programs by bank ──
-  lines.push(`## Programs (${data.programs.length})`);
-  lines.push("");
-  const byBank = new Map<number, ProgramEntry[]>();
-  for (const p of data.programs) {
-    if (!byBank.has(p.bank)) byBank.set(p.bank, []);
-    byBank.get(p.bank)!.push(p);
-  }
-  for (const [bank, progs] of [...byBank.entries()].sort((a, b) => a[0] - b[0])) {
-    lines.push(`### Bank ${bank} (${progs.length} slots)`);
-    lines.push("");
-    lines.push("| Prog | Name | Lower | Upper | Split | Organ | Piano | Sample | PST1 | PST2 | FX1 | FX2 | Amp | Delay | Reverb | EQ | Gain |");
-    lines.push("|------|------|-------|-------|-------|-------|-------|--------|------|------|-----|-----|-----|-------|--------|-----|------|");
-    for (const p of progs) {
-      const pm = p.params;
-      const fmtVal = (v: number) => (v / 12.7).toFixed(1);
-      const lower = pm.lowerEnable ? pm.lowerEngine : "off";
-      const upper = pm.upperEnable ? pm.upperEngine : "off";
-      const split = pm.splitMode ? pm.splitPoint : "";
-      const hasOrganEngine = lower === "Organ" || upper === "Organ";
-      let organ = "";
-      if (hasOrganEngine) {
-        organ = pm.organModel;
-        if (pm.pst1VibratoEnable || pm.pst2VibratoEnable) organ += ` vib:${pm.vibratoType}`;
-        if (pm.pst1PercussionEnable || pm.pst2PercussionEnable) organ += ` perc:${pm.percussionHarmonic} ${pm.percussionSpeed}/${pm.percussionLevel}`;
-      }
-      const pianoVariation = pm.pianoType === "Clav" ? pm.clavVariation : "-";
-      const ACOUSTIC_LABELS = ["Off", "StrRes", "LongRel", "StrRes+LongRel"] as const;
-      const piano =
-        lower === "Piano" || upper === "Piano"
-          ? `${pm.pianoType}:${pm.pianoModel}:${pianoVariation}:${pm.pianoMono ? "mono" : "stereo"}:${ACOUSTIC_LABELS[pm.pianoAcoustic] ?? "Off"}:touch${pm.pianoKbdTouch}`
-          : "";
-      const hasSample = lower === "Sample Synth" || upper === "Sample Synth";
-      const sample = hasSample
-        ? `${sampleBySlot.get(pm.sampleSlot) ?? `#${pm.sampleSlot}`} atk:${fmtVal(pm.sampleAttack)} dec:${fmtVal(pm.sampleDecRel)}`
-        : "";
-      const hasOrgan = lower === "Organ" || upper === "Organ";
-      const pst1 = hasOrgan && pm.pst1Drawbars !== "?" ? pm.pst1Drawbars : "";
-      const pst2 = hasOrgan && pm.pst2Drawbars !== "?" ? pm.pst2Drawbars : "";
-      const fx1 = pm.fx1.enable ? `${pm.fx1.type} ${fmtVal(pm.fx1.rate)}${pm.fx1.controlPedal ? " cp" : ""}` : "";
-      const fx2 = pm.fx2.enable
-        ? `${pm.fx2.type} ${fmtVal(pm.fx2.rate)}${pm.fx2.deep ? " deep" : ""}`
-        : "";
-      const AMP_PART_LABELS = ["Lo", "Up"] as const;
-      const ampPart = pm.amp.type === "Rotary" ? "" : (AMP_PART_LABELS[pm.amp.partSelect] ?? "");
-      const amp = pm.amp.enable ? `${ampPart ? ampPart + " " : ""}${pm.amp.type} ${fmtVal(pm.amp.drive)}` : "";
-      const delay = pm.delay.enable
-        ? `${fmtVal(pm.delay.dryWet)}${pm.delay.pingPong ? " pp" : ""}`
-        : "";
-      const rev = pm.reverb.enable ? `${pm.reverb.type} ${fmtVal(pm.reverb.dryWet)}` : "";
-      const EQ_PART_LABELS = ["Lo", "Up", ""] as const;
-      const eqPart = EQ_PART_LABELS[pm.eq.partSelect] ?? "";
-      const eq = pm.eq.enable
-        ? `${eqPart ? eqPart + " " : ""}T:${fmtVal(pm.eq.treble)} M:${fmtVal(pm.eq.mid)} F:${fmtVal(pm.eq.midFreq)} B:${fmtVal(pm.eq.bass)}`
-        : "";
-      lines.push(
-        `| ${p.slot + 1} | ${p.name} | ${lower} | ${upper} | ${split} | ${organ} | ${piano} | ${sample} | ${pst1} | ${pst2} | ${fx1} | ${fx2} | ${amp} | ${delay} | ${rev} | ${eq} | ${fmtVal(pm.masterGain)} |`
-      );
-    }
-    lines.push("");
-  }
+  lines.push(formatProgramsSection(data.programs, sampleBySlot));
 
   // ── Set Lists ──
   if (data.setLists.length > 0) {
