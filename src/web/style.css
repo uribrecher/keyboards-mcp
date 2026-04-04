@@ -77,6 +77,22 @@ body {
   width: 300px;
   flex-shrink: 0;
 }
+.program-bar .setlist-line {
+  display: none;
+}
+.program-bar.setlist-mode {
+  grid-template-rows: 14px 14px 20px 14px 14px;
+}
+.program-bar.setlist-mode .setlist-line {
+  display: block;
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--led-on);
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .program-label {
   font-size: 10px;
   letter-spacing: 2px;
