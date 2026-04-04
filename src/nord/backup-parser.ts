@@ -100,8 +100,9 @@ export interface SetListProgramRef {
 }
 
 export interface SetListEntry {
+  bank: number;  // 1-based
   name: string;
-  slot: number;
+  slot: number;  // 0-based within bank
   programs: [SetListProgramRef, SetListProgramRef, SetListProgramRef, SetListProgramRef]; // A, B, C, D
 }
 
@@ -515,6 +516,7 @@ export function parseBackup(filePath: string): BackupMetadata {
         return { bank: Math.floor(linear / 50) + 1, slot: linear % 50 };
       }) as SetListEntry["programs"];
       setLists.push({
+        bank: hdr.bankIndex + 1,
         name: fileName,
         slot: hdr.slotIndex,
         programs,
@@ -560,7 +562,7 @@ export function parseBackup(filePath: string): BackupMetadata {
   // Sort by slot
   samples.sort((a, b) => a.slot - b.slot);
   programs.sort((a, b) => a.bank - b.bank || a.slot - b.slot);
-  setLists.sort((a, b) => a.slot - b.slot);
+  setLists.sort((a, b) => a.bank - b.bank || a.slot - b.slot);
   livePresets.sort((a, b) => a.slot - b.slot);
 
   return { ...meta, pianos, samples, programs, setLists, livePresets };
@@ -719,22 +721,32 @@ export function formatBackupAsMarkdown(data: BackupMetadata, backupDate?: string
   // ── Programs by bank ──
   lines.push(formatProgramsSection(data.programs, sampleBySlot));
 
-  // ── Set Lists ──
+  // ── Set Lists by bank ──
   if (data.setLists.length > 0) {
     const progByBankSlot = new Map(
       data.programs.map((p) => [`${p.bank}:${p.slot}`, p.name])
     );
     const resolveRef = (ref: SetListProgramRef) =>
       progByBankSlot.get(`${ref.bank}:${ref.slot}`) ?? `B${ref.bank}:${ref.slot + 1}`;
-    lines.push(`## Set Lists (${data.setLists.length})`);
+    const byBank = new Map<number, typeof data.setLists>();
+    for (const s of data.setLists) {
+      if (!byBank.has(s.bank)) byBank.set(s.bank, []);
+      byBank.get(s.bank)!.push(s);
+    }
+    const bankCount = byBank.size;
+    lines.push(`## Set Lists (${bankCount} bank${bankCount > 1 ? "s" : ""})`);
     lines.push("");
-    lines.push("| # | Name | Program A | Program B | Program C | Program D |");
-    lines.push("|---|------|-----------|-----------|-----------|-----------|");
-    data.setLists.forEach((s, i) => {
-      const [a, b, c, d] = s.programs.map(resolveRef);
-      lines.push(`| ${i + 1} | ${s.name} | ${a} | ${b} | ${c} | ${d} |`);
-    });
-    lines.push("");
+    for (const [bank, songs] of [...byBank.entries()].sort((a, b) => a[0] - b[0])) {
+      lines.push(`### Bank ${bank} (${songs.length} songs)`);
+      lines.push("");
+      lines.push("| # | Name | Program A | Program B | Program C | Program D |");
+      lines.push("|---|------|-----------|-----------|-----------|-----------|");
+      for (const s of songs) {
+        const [a, b, c, d] = s.programs.map(resolveRef);
+        lines.push(`| ${s.slot + 1} | ${s.name} | ${a} | ${b} | ${c} | ${d} |`);
+      }
+      lines.push("");
+    }
   }
 
   // ── Live Presets ──

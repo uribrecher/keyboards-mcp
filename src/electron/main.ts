@@ -223,6 +223,16 @@ let currentBank = 0;
 let currentProgram = 0;
 let programLoaded = false;
 
+// Set List state
+let setListMode = false;
+let currentSetList = 0;
+let currentSong = 0;
+let currentPart = 0;
+const PART_LABELS = ["A", "B", "C", "D"] as const;
+
+const CC_SETLIST_MODE = NORD_ELECTRO_5D_PARAMS.program_setlist_mode.cc;
+const CC_SETLIST_PART = NORD_ELECTRO_5D_PARAMS.setlist_part_select.cc;
+
 // Inventory data
 let _backup = getBackupData();
 let _pianoModels: Record<string, string[]> | undefined;
@@ -256,6 +266,26 @@ function buildInventoryFromCache(): void {
 }
 buildInventoryFromCache();
 
+function resolveSetListSong(bankIdx: number, songIdx: number, partIdx: number) {
+  const bank = bankIdx + 1;
+  const entry = _backup?.setLists.find(s => s.bank === bank && s.slot === songIdx);
+  if (!entry) return { prog: undefined, entry: undefined };
+  const ref = entry.programs[partIdx];
+  if (!ref) return { prog: undefined, entry };
+  const prog = _backup?.programs.find(p => p.bank === ref.bank && p.slot === ref.slot);
+  return { prog, entry };
+}
+
+function loadSetListPart(bankIdx: number, songIdx: number, partIdx: number): void {
+  const { prog, entry } = resolveSetListSong(bankIdx, songIdx, partIdx);
+  if (prog?.params) {
+    applyProgramParams(prog.params);
+    console.log(`Set List: Bank ${bankIdx + 1} Song ${songIdx + 1} Part ${PART_LABELS[partIdx]} → ${prog.name ?? "?"} (${prog.bank}:${prog.slot + 1})`);
+  } else {
+    console.log(`Set List: Bank ${bankIdx + 1} Song ${songIdx + 1} Part ${PART_LABELS[partIdx]} → no program found`);
+  }
+}
+
 // ── State message building (identical to mock-device.ts) ──
 
 interface ParamState {
@@ -279,6 +309,17 @@ interface StateMessage {
   lastChange?: { key: string; name: string; cc: number; value: number; label: string; part?: string };
   presetOrganToggles?: { pst1Vib: boolean; pst1Prc: boolean; pst2Vib: boolean; pst2Prc: boolean };
   lastProgramChange?: { bank: number; slot: number; name?: string };
+  setList?: {
+    mode: boolean;
+    listNumber: number;
+    listName?: string;
+    songNumber: number;
+    songName?: string;
+    part: string;
+    programBank: number;
+    programSlot: number;
+    programName?: string;
+  };
 }
 
 function labelFor(param: NordParameter, midiValue: number): string {
@@ -344,9 +385,26 @@ function buildStateMessage(lastChangeKey?: string, lastChangePart?: string, incl
     program = { bank, slot, name: prog?.name };
   }
 
+  let setListInfo: StateMessage["setList"];
+  if (setListMode) {
+    const { prog, entry } = resolveSetListSong(currentSetList, currentSong, currentPart);
+    setListInfo = {
+      mode: true,
+      listNumber: currentSetList + 1,
+      listName: undefined,
+      songNumber: currentSong + 1,
+      songName: entry?.name,
+      part: PART_LABELS[currentPart],
+      programBank: prog?.bank ?? 0,
+      programSlot: (prog?.slot ?? -1) + 1,
+      programName: prog?.name,
+    };
+  }
+
   const msg: StateMessage = {
     lower, upper, global, preset1Drawbars, preset2Drawbars, program,
     presetOrganToggles,
+    ...(setListInfo ? { setList: setListInfo } : {}),
     ...(includeInventory ? { pianoModels: _pianoModels, sampleNames: _sampleNames } : {}),
     ...(lastProgramChange ? { lastProgramChange } : {}),
   };
@@ -473,8 +531,29 @@ app.whenReady().then(() => {
       return;
     }
     if (msg.controller === 32) {
-      currentBank = msg.value;
-      console.log(`MIDI: Bank Select LSB = ${msg.value} → Bank ${msg.value + 1} (ch${msg.channel})`);
+      if (setListMode) {
+        currentSetList = msg.value;
+        console.log(`MIDI: Bank Select LSB = ${msg.value} → Set List ${msg.value + 1} (ch${msg.channel})`);
+      } else {
+        currentBank = msg.value;
+        console.log(`MIDI: Bank Select LSB = ${msg.value} → Bank ${msg.value + 1} (ch${msg.channel})`);
+      }
+      return;
+    }
+
+    // CC48: Program/Set List mode toggle
+    if (msg.controller === CC_SETLIST_MODE) {
+      setListMode = msg.value >= 64;
+      console.log(`MIDI: Mode → ${setListMode ? "Set List" : "Program"} (CC${msg.controller}=${msg.value})`);
+      broadcast(buildStateMessage());
+      return;
+    }
+
+    // CC49: Set List part select (A/B/C/D)
+    if (msg.controller === CC_SETLIST_PART && setListMode) {
+      currentPart = midiToDiscrete(msg.value, 3);
+      loadSetListPart(currentSetList, currentSong, currentPart);
+      broadcast(buildStateMessage());
       return;
     }
 
@@ -525,6 +604,14 @@ app.whenReady().then(() => {
   });
 
   midiInput.on("program", (msg: { number: number; channel: number }) => {
+    if (setListMode) {
+      currentSong = msg.number;
+      currentPart = 0;
+      loadSetListPart(currentSetList, currentSong, currentPart);
+      broadcast(buildStateMessage());
+      return;
+    }
+
     currentProgram = msg.number;
     programLoaded = true;
     const bank = currentBank + 1;

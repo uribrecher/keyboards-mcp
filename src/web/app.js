@@ -70,6 +70,29 @@ function updateProgram(program) {
   el.textContent = program.name ? `${loc} — ${program.name}` : loc;
 }
 
+function updateSetList(setList) {
+  const bar = document.getElementById("display-program");
+  if (!bar) return;
+
+  if (!setList || !setList.mode) {
+    bar.classList.remove("setlist-mode");
+    return;
+  }
+
+  bar.classList.add("setlist-mode");
+  document.getElementById("setlist-line1").textContent = `SET LIST #${setList.listNumber}  ${setList.part}`;
+  const songLabel = setList.songName
+    ? `#${setList.songNumber} ${setList.songName}`
+    : `#${setList.songNumber}`;
+  document.getElementById("setlist-line2").textContent = songLabel;
+
+  // Also update program display with the resolved program
+  if (setList.programName) {
+    const el = document.getElementById("val-program");
+    if (el) el.textContent = `${setList.programBank}:${setList.programSlot} — ${setList.programName}`;
+  }
+}
+
 // ── WebSocket ──
 
 let ws = null;
@@ -113,6 +136,7 @@ function connect() {
     }
     updateInventoryData(data);
     updateProgram(data.program);
+    updateSetList(data.setList);
     updateUI(data);
   };
 }
