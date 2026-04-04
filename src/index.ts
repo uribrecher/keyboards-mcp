@@ -14,6 +14,7 @@ import { registerExtractBackup } from "./tools/extract-backup.js";
 import { registerGetLastBackupLocation } from "./tools/get-last-backup-location.js";
 import { registerIsConnected } from "./tools/is-connected.js";
 import { registerLoadProgram } from "./tools/load-program.js";
+import { registerLoadSong } from "./tools/load-song.js";
 import { loadBackupCache } from "./nord/backup-cache.js";
 
 // Load cached inventory data from previous extract_backup (if available)
@@ -48,6 +49,7 @@ registerExtractBackup(server);
 registerGetLastBackupLocation(server);
 registerIsConnected(server, midiManager);
 registerLoadProgram(server, midiManager);
+registerLoadSong(server, midiManager);
 
 // Start the server
 const transport = new StdioServerTransport();
