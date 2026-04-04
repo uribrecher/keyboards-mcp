@@ -30,6 +30,7 @@ Claude Code  <──MCP──>  MCP Server  <──MIDI──>  Nord Electro 5D
 | `src/nord/` | Nord-specific logic: MIDI CC map, backup parser, parameter state |
 | `src/midi/` | MIDI I/O manager (easymidi wrapper) |
 | `src/web/` | Mock device web UI (HTML/CSS/JS) |
+| `src/electron/` | Electron app wrapper — native file dialogs, same UI |
 | `src/mock-device.ts` | Virtual Nord device for offline development |
 | `src/agent.ts` | Agentic mode — AI-driven keyboard configuration |
 | `diff-programs.ts` | CLI tool for binary-diffing two `.ne5p` program files |
@@ -88,10 +89,11 @@ Once connected via Claude Code, the following tools are available:
 For development without hardware:
 
 ```bash
-npm run mock
+npm run mock            # Plain Node.js — opens web UI at http://localhost:3000
+npm run mock:electron   # Electron app — native file dialogs, same UI
 ```
 
-Opens a web UI at `http://localhost:3000` showing the virtual keyboard state — drawbars, knobs, LEDs, and all engine parameters update in real time.
+Shows the virtual keyboard state — drawbars, knobs, LEDs, and all engine parameters update in real time. The Electron version adds native file/folder dialogs for backup re-extraction.
 
 ### Diff tool
 
