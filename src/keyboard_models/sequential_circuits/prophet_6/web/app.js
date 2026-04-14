@@ -13,6 +13,14 @@ const SECTION_LABELS = {
   performance: "Performance",
 };
 
+// Discrete parameter labels for button-group rendering
+const PARAM_LABELS = {
+  arp_mode: { 0: "Up", 1: "Down", 2: "Up/Down", 3: "Random", 4: "Assign" },
+  arp_range: { 0: "1 Oct", 1: "2 Oct", 2: "3 Oct" },
+  arp_time_signature: { 0: "Half", 1: "Qtr", 2: "8th", 3: "8th D", 4: "8th S", 5: "8th T", 6: "16th", 7: "16th S", 8: "16th T", 9: "32nd" },
+  glide_mode: { 0: "FxRate", 1: "FxRate A", 2: "FxTime", 3: "FxTime A" },
+};
+
 const SECTION_ORDER = Object.keys(SECTION_LABELS);
 
 let ws = null;
@@ -57,6 +65,18 @@ function buildUI(params) {
         toggle.textContent = "Off";
         row.appendChild(toggle);
         paramElements[item.key] = { row, toggle };
+      } else if (PARAM_LABELS[item.key]) {
+        const selector = document.createElement("div");
+        selector.className = "param-selector";
+        selector.id = `sel-${item.key}`;
+        for (const [val, label] of Object.entries(PARAM_LABELS[item.key])) {
+          const btn = document.createElement("button");
+          btn.dataset.value = val;
+          btn.textContent = label;
+          selector.appendChild(btn);
+        }
+        row.appendChild(selector);
+        paramElements[item.key] = { row, selector };
       } else {
         const barContainer = document.createElement("div");
         barContainer.className = "param-bar-container";
@@ -92,6 +112,11 @@ function updateUI(state) {
       const on = p.label === "On" || p.value > 0;
       el.toggle.className = `param-toggle ${on ? "on" : "off"}`;
       el.toggle.textContent = on ? "On" : "Off";
+    } else if (el.selector) {
+      const idx = p.index ?? p.value;
+      for (const btn of el.selector.children) {
+        btn.classList.toggle("active", parseInt(btn.dataset.value) === idx);
+      }
     } else {
       const pct = Math.round((p.value / 127) * 100);
       el.bar.style.width = `${pct}%`;
