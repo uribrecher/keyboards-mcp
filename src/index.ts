@@ -16,6 +16,7 @@ import { registerIsConnected } from "./tools/is-connected.js";
 import { registerLoadProgram } from "./tools/load-program.js";
 import { registerLoadSong } from "./tools/load-song.js";
 import { loadBackupCache } from "./nord/backup-cache.js";
+import { registerWebSearch } from "./tools/web-search.js";
 
 // Load cached inventory data from previous extract_backup (if available)
 loadBackupCache();
@@ -50,6 +51,7 @@ registerGetLastBackupLocation(server);
 registerIsConnected(server, midiManager);
 registerLoadProgram(server, midiManager);
 registerLoadSong(server, midiManager);
+registerWebSearch(server);
 
 // Start the server
 const transport = new StdioServerTransport();
