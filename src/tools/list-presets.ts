@@ -1,23 +1,29 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PRESETS, getPresetsByGenre } from "../nord/presets.js";
+import type { ModelHolder } from "../shared/model-holder.js";
 
-export function registerListPresets(server: McpServer): void {
-  server.tool(
+export function registerListPresets(server: McpServer, holder: ModelHolder): void {
+  server.registerTool(
     "list_presets",
-    "List available built-in preset patches for the Nord Electro 5D. " +
-      "Each preset is a complete set of parameters for a specific keyboard sound.",
     {
-      genre: z
-        .string()
-        .optional()
-        .describe("Optional genre filter, e.g. 'jazz', 'rock', 'funk', 'pop'"),
+      description: "List available built-in preset patches for the connected keyboard. " +
+        "Each preset is a complete set of parameters for a specific keyboard sound.",
+      inputSchema: {
+        genre: z
+          .string()
+          .optional()
+          .describe("Optional genre filter, e.g. 'jazz', 'rock', 'funk', 'pop'"),
+      },
     },
     async ({ genre }) => {
-      const presets = genre ? getPresetsByGenre(genre) : PRESETS;
+      let model;
+      try { model = holder.requireModel(); }
+      catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
+
+      const presets = genre ? model.getPresetsByGenre(genre) : model.presets;
 
       if (presets.length === 0) {
-        const genres = [...new Set(PRESETS.map((p) => p.genre))].join(", ");
+        const genres = [...new Set(model.presets.map((p) => p.genre))].join(", ");
         return {
           content: [
             {
@@ -31,7 +37,7 @@ export function registerListPresets(server: McpServer): void {
       }
 
       const lines = presets.map(
-        (p) => `- **${p.name}** [${p.genre}]\n  ${p.description}`
+        (p) => `- **${p.name}** [${p.genre}]\n  ${p.description}`,
       );
 
       return {
@@ -42,6 +48,6 @@ export function registerListPresets(server: McpServer): void {
           },
         ],
       };
-    }
+    },
   );
 }
