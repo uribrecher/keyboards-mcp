@@ -24,6 +24,7 @@ const __dirname = dirname(__filename);
 const PORT = 3001;
 const LLM_BASE_URL = process.env.LLM_BASE_URL || "http://localhost:8080/v1";
 const MAX_HISTORY = Number(process.env.MAX_HISTORY_MESSAGES) || 40;
+let llmModel = "default";
 
 /** Load a backup inventory file if available, to include in the system prompt. */
 function loadInventory(): string {
@@ -212,7 +213,7 @@ async function handleChat(
     let response;
     try {
       response = await openai.chat.completions.create({
-        model: "default",
+        model: llmModel,
         max_tokens: 4096,
         messages: [
           { role: "system", content: FULL_SYSTEM_PROMPT },
@@ -433,11 +434,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 async function main(): Promise<void> {
   console.log(`LLM endpoint: ${LLM_BASE_URL}`);
 
-  // Validate LLM server is reachable
+  // Validate LLM server is reachable and discover model name
   try {
     const resp = await fetch(`${LLM_BASE_URL}/models`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    console.log("LLM server reachable");
+    const body = await resp.json() as { data?: Array<{ id: string }> };
+    if (body.data?.[0]?.id) {
+      llmModel = body.data[0].id;
+    }
+    console.log(`LLM server reachable, model: ${llmModel}`);
   } catch (err) {
     console.error(`Cannot reach LLM server at ${LLM_BASE_URL}.`);
     console.error("Start mlx_lm.server first: npm run run:mlx");
