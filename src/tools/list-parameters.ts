@@ -7,12 +7,13 @@ export function registerListParameters(server: McpServer, holder: ModelHolder): 
     "list_parameters",
     {
       description: "List all available keyboard parameters with their names, types, ranges, and descriptions. " +
-        "Use this to understand what you can control on the keyboard.",
+        "Use this to understand what you can control on the keyboard. " +
+        "Omit the section parameter to list ALL parameters across all sections.",
       inputSchema: {
         section: z
           .string()
           .optional()
-          .describe("Optional section filter (e.g. organ, piano, effect1, reverb, etc.)"),
+          .describe("Optional section filter (e.g. organ, piano, effect1, reverb, etc.). Omit to list all parameters."),
       },
     },
     async ({ section }) => {

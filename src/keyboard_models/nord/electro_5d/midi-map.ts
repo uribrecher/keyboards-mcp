@@ -1040,9 +1040,14 @@ export function createParameterMap(): ParameterMap {
     },
 
     getParamsBySection(section: string): Record<string, KeyboardParameter> {
+      const aliases: Record<string, string[]> = {
+        global: ["global", "parts"],
+        parts: ["global", "parts"],
+      };
+      const sections = aliases[section] ?? [section];
       const result: Record<string, KeyboardParameter> = {};
       for (const [key, param] of Object.entries(PARAMS)) {
-        if (param.section === section) {
+        if (sections.includes(param.section)) {
           result[key] = param;
         }
       }
