@@ -1,136 +1,126 @@
 #!/usr/bin/env tsx
 /**
- * Nord Electro 5D Agent Service
+ * Keyboard Agent Service
  *
- * HTTP server (port 3001) that bridges the web UI chat to Claude API
- * with Nord MCP tools. Spawns keyboards-mcp as a child process and
- * connects to it as an MCP client.
+ * HTTP server (port 3001) that bridges the web UI chat to a local LLM
+ * (via OpenAI-compatible API) with keyboard MCP tools.
+ * Spawns keyboards-mcp as a child process and connects as an MCP client.
  *
- * Usage: ANTHROPIC_API_KEY=sk-... npx tsx src/agent.ts
+ * Usage: npx tsx src/agent.ts
+ * Requires: mlx_lm.server running (npm run run:mlx)
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync, existsSync } from "node:fs";
-import Anthropic from "@anthropic-ai/sdk";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import OpenAI from "openai";
+import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PORT = 3001;
-const MODEL = process.env.CLAUDE_MODEL || "claude-haiku-4-5-20251001";
+const LLM_BASE_URL = process.env.LLM_BASE_URL || "http://localhost:8080/v1";
+const MAX_HISTORY = Number(process.env.MAX_HISTORY_MESSAGES) || 40;
 
-/** Load the Nord backup inventory if available, to include in the system prompt. */
+/** Load a backup inventory file if available, to include in the system prompt. */
 function loadInventory(): string {
-  const inventoryPath = process.env.NORD_INVENTORY
-    || join(__dirname, "..", "data", "nord_backup_inventory.md");
-  if (!existsSync(inventoryPath)) {
-    console.warn(`Inventory file not found at ${inventoryPath} — agent will run without it.`);
-    return "";
+  const explicit = process.env.KEYBOARD_INVENTORY;
+  if (explicit && existsSync(explicit)) {
+    const content = readFileSync(explicit, "utf-8");
+    console.log(`Loaded inventory from ${explicit} (${content.length} chars)`);
+    return compressInventory(content);
   }
-  const content = readFileSync(inventoryPath, "utf-8");
-  console.log(`Loaded inventory from ${inventoryPath} (${content.length} chars)`);
-  return `\n\nNORD BACKUP INVENTORY:\n${content}`;
+  const dataDir = join(__dirname, "..", "data");
+  if (existsSync(dataDir)) {
+    const files = readdirSync(dataDir).filter(f => f.endsWith("_backup_inventory.md"));
+    if (files.length > 0) {
+      const path = join(dataDir, files[0]);
+      const content = readFileSync(path, "utf-8");
+      console.log(`Loaded inventory from ${path} (${content.length} chars)`);
+      return compressInventory(content);
+    }
+  }
+  console.warn("No inventory file found — agent will run without it.");
+  return "";
 }
 
-const SYSTEM_PROMPT = `You are controlling a Nord Electro 5D keyboard via MIDI.
-You have access to tools that let you list parameters, set parameters, apply patches, and more.
-You also have web search to research sounds, patches, and keyboard techniques.
+/**
+ * Compress the inventory for smaller context windows.
+ * Keeps program names (bank:slot + name), piano models, and sample names.
+ * Strips per-program parameter details, set list song assignments, and usage counts.
+ */
+function compressInventory(raw: string): string {
+  const lines = raw.split("\n");
+  const kept: string[] = [];
+  let skipping = false;
+
+  for (const line of lines) {
+    // Skip parameter detail blocks (indented lines after program entries)
+    if (/^  {2,}/.test(line) && skipping) continue;
+
+    // Skip "Used by" lines
+    if (/used by/i.test(line)) continue;
+
+    // Skip set list song-level assignment details (lines like "  A: Program 1:01 ...")
+    if (/^\s+[A-D]:\s+Program\s+/i.test(line)) continue;
+
+    // Keep section headers and program/piano/sample list entries
+    if (line.startsWith("#") || line.startsWith("-") || line.startsWith("|") || line.trim() === "") {
+      skipping = false;
+      kept.push(line);
+    } else {
+      // Start of a parameter detail block — skip
+      skipping = true;
+    }
+  }
+
+  const compressed = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return `\n\nKEYBOARD BACKUP INVENTORY (compressed):\n${compressed}`;
+}
+
+const SYSTEM_PROMPT = `You are controlling a MIDI keyboard via an MCP server.
+You have access to tools that let you list parameters, set parameters, apply patches, search the web, and more.
 Use the tools to fulfill the user's requests about keyboard sounds and patches.
 Be concise in your responses. When setting parameters, explain what you're doing briefly.
 You can set multiple parameters at once using the set_parameters tool.
 
 CONNECTION:
-The following tools REQUIRE an active MIDI connection: set_parameters, apply_patch, load_program.
-Before using any of them, call is_connected to verify. If not connected, call connect_to_nord first.
-These tools do NOT require a connection: is_connected, connect_to_nord, disconnect_from_nord, list_midi_devices, list_parameters, list_presets, get_current_state, extract_backup, get_last_backup_location.
+The following tools REQUIRE an active MIDI connection: set_parameters, apply_patch, load_program, load_song.
+Before using any of them, call is_connected to verify. If not connected, call connect_to_keyboard first.
+These tools do NOT require a connection: is_connected, connect_to_keyboard, disconnect_from_keyboard, list_midi_devices, list_parameters, list_presets, get_current_state, extract_backup, get_last_backup_location, web_search.
 
 MIDI ROUTING:
 All parameters are sent on the global MIDI channel. There is no per-part MIDI routing.
-Piano model index is 1-based and per-category (matching the Nord display).
-Sample index is also 1-based. Clavinet has only one model but 4 pickup variations (A/B/C/D) set via piano_variation.
-Consult the NORD BACKUP INVENTORY section for model and sample names. If no inventory is available, use numeric references (e.g., Grand:1) and suggest the user run extract_backup.
-
-BI-TIMBRAL MODE:
-The Nord Electro 5D has two parts (Lower and Upper).
-- LAYER MODE (split off): Both parts span the entire keyboard. You CANNOT assign the same engine type to both parts — each layer must use a different engine (e.g., Organ + Piano, Piano + Sample Synth, Organ + Sample Synth).
-- SPLIT MODE (split on): Each part gets its own keyboard zone. You CAN use the same engine on both parts. However, Piano and Sample Synth share model/sample selection across parts — only one piano model and one sample at a time.
-
-ORGAN PRESET ROUTING:
-In split mode, Organ Preset 1 routes to the Lower part and Preset 2 routes to the Upper part. The organ model is global (shared), but each preset has its own drawbar registration. To set different organ sounds per part: select Preset 1, set its drawbars, then select Preset 2 and set different drawbars.
-
-ORGAN MODEL CAPABILITIES:
-- B3: Full vibrato (V1-V3, C1-C3), full percussion, drawbars 0-8
-- B3+Bass: Similar to B3
-- Vox: Vibrato V1-V3 only (no chorus). No percussion. Drawbars 0-8.
-- Farfisa: Vibrato V1, V2, C2, C3 only. No percussion. Drawbars are on/off toggles (0 or 1).
-- Pipe: No vibrato. No percussion.
+Piano model index is 1-based and per-category (matching the hardware display).
+Sample index is also 1-based.
 
 SOUND SELECTION:
-The NORD BACKUP INVENTORY section at the end of this prompt contains the contents of the keyboard's backup. Use it to find stored programs, pianos, and samples.
 When the user asks for a sound, PREFER loading a stored program (via load_program) over building one from scratch with apply_patch.
 Only use apply_patch or set_parameters to create a sound from scratch if no adequate program exists in the inventory.
-Programs are numbered bank:1-50, matching the hardware display. Always use this notation when communicating with the user.
+Programs are numbered by bank and slot, matching the hardware display.
 
 RECREATING SPECIFIC SONGS:
-When the user asks for a specific song or artist's sound, do NOT guess from the genre (e.g., "funk band → clav"). Instead:
-1. Use web_search to research the actual keyboard parts in that specific song — what instruments are used, how many keyboard layers, what effects, what role each part plays in the mix.
-2. Describe what you found: which keyboards are in the recording, their timbral characteristics, and how they sit in the arrangement.
-3. Then map those findings to the available Nord sounds from the inventory.
-4. If the song has multiple keyboard parts, explain which one you're recreating and why (or offer to set up a split/layer).
-5. If you're unsure about the exact sound, say so — don't fill gaps with genre clichés.
-
-AUDIO SIGNAL PATH:
-The Nord Electro 5D has two parallel signal paths (Lower/Upper parts) that merge at Part Mix.
-Each effect in the chain has a part select that routes it to one or both parts.
-
-              ┌─────────────────┐
-              │     KEYBED      │  61 semi-weighted keys
-              └────────┬────────┘
-                       │
-              ┌────────┴────────┐
-              │  SPLIT / LAYER  │  Split: keys divided at split point
-              │                 │  Layer: both parts span full keyboard
-              │                 │  Layer: engines must differ (no Piano+Piano)
-              └───┬─────────┬───┘
-                  │         │
-  LOWER engine ◄──┘         └──► UPPER engine
-       │                              │
-           ┌─────┴─────────┴─────┐
-           │  FX1  [Lo/Up]       │  Trem1/2/3, Pan1/2, Chorus1/2
-           │  FX2  [Lo/Up]       │  Phase1/2, Chorus1/2, Vibe, Flanger
-           │  AMP  [Lo/Up]       │  Dist, Small, JC, Twin, Rotary, Comp
-           │  EQ   [Lo/Up/Both]  │  Treble, Mid, Bass + Mid Freq
-           │  DELAY [Lo/Up]      │  Tempo, Dry/Wet, Ping-Pong
-           └─────┬─────────┬─────┘
-                 │         │
-              PART MIX (balance Lo/Up)
-                    │
-                 REVERB (global — no part select)
-                    │
-               MASTER GAIN
-                    │
-                 OUTPUT
-
-Notes:
-- Amp/Speaker Rotary + both engines Organ → part select forced to Both.
-- EQ is the only per-part effect that supports a "Both" option.
-- Reverb has no part select — it always processes the mixed signal.
+When the user asks for a specific song or artist's sound:
+1. Use web_search to research the actual keyboard parts in that specific song.
+2. Describe what you found: which keyboards, timbral characteristics, arrangement role.
+3. Map findings to available sounds from the inventory.
+4. If the song has multiple keyboard parts, explain which one you're recreating and why.
+5. If unsure about the exact sound, say so.
 
 SOUND DESIGN TIPS:
 - Do NOT use vibrato/chorus together with the rotary speaker (Leslie) — they clash sonically.
-- When using the rotary speaker, set spkr_comp_type to "Rotary" and spkr_comp_enable to on.
-- For classic Hammond organ tones, use B3 model with appropriate drawbar settings and the Leslie rotary speaker.`;
+- When using the rotary speaker, set spkr_comp_type to "Rotary" and spkr_comp_enable to on.`;
 
 const inventorySection = loadInventory();
-const FULL_SYSTEM_PROMPT = SYSTEM_PROMPT + inventorySection;
+let FULL_SYSTEM_PROMPT = SYSTEM_PROMPT + inventorySection;
 
 // ── MCP Client Setup ──
 
 let mcpClient: Client;
-let mcpTools: Anthropic.Tool[] = [];
+let mcpTools: ChatCompletionTool[] = [];
 
 async function setupMCP(): Promise<void> {
   const serverPath = join(__dirname, "..", "dist", "index.js");
@@ -140,96 +130,155 @@ async function setupMCP(): Promise<void> {
     args: [serverPath],
   });
 
-  mcpClient = new Client({ name: "nord-agent", version: "1.0.0" });
+  mcpClient = new Client({ name: "keyboard-agent", version: "1.0.0" });
   await mcpClient.connect(transport);
 
-  // Discover tools and convert to Anthropic format
+  // Discover tools and convert to OpenAI function-calling format
   const { tools } = await mcpClient.listTools();
   mcpTools = tools.map((t) => ({
-    name: t.name,
-    description: t.description ?? "",
-    input_schema: t.inputSchema as Anthropic.Tool["input_schema"],
+    type: "function" as const,
+    function: {
+      name: t.name,
+      description: t.description ?? "",
+      parameters: t.inputSchema as Record<string, unknown>,
+    },
   }));
 
   console.log(`MCP connected. ${mcpTools.length} tools available:`);
   for (const t of mcpTools) {
-    console.log(`  - ${t.name}`);
+    console.log(`  - ${t.function.name}`);
   }
 
-  // Auto-connect to MIDI port (auto-detect Nord, or use MIDI_PORT env var)
+  // Auto-connect to MIDI port
   const midiPort = process.env.MIDI_PORT;
   try {
     const listResult = await mcpClient.callTool({ name: "list_midi_devices", arguments: {} });
-    const portsText = (listResult.content as Array<{type: string; text: string}>).map(c => c.text).join("");
+    const portsText = (listResult.content as Array<{ type: string; text: string }>).map(c => c.text).join("");
     console.log("MIDI ports:", portsText);
 
     const connectResult = await mcpClient.callTool({
-      name: "connect_to_nord",
+      name: "connect_to_keyboard",
       arguments: midiPort ? { port: midiPort } : {},
     });
-    const connectText = (connectResult.content as Array<{type: string; text: string}>).map(c => c.text).join("");
+    const connectText = (connectResult.content as Array<{ type: string; text: string }>).map(c => c.text).join("");
     console.log("Auto-connect:", connectText);
+
+    // Fetch model-specific system prompt
+    try {
+      const promptResult = await mcpClient.callTool({ name: "get_system_prompt", arguments: {} });
+      const promptText = (promptResult.content as Array<{ type: string; text: string }>).map(c => c.text).join("");
+      if (!promptResult.isError && promptText) {
+        FULL_SYSTEM_PROMPT += `\n\n${promptText}`;
+        console.log("Loaded model-specific system prompt");
+      }
+    } catch {
+      // Non-fatal — agent works without model-specific prompt
+    }
   } catch (err) {
-    console.warn(`Auto-connect to "${midiPort}" failed. Set MIDI_PORT env var or ask Claude to connect.`, err);
+    console.warn("Auto-connect failed. Set MIDI_PORT env var or ask the LLM to connect.", err);
   }
 }
 
-// ── Anthropic Client ──
+// ── LLM Client ──
 
-const anthropic = new Anthropic();
+const openai = new OpenAI({
+  baseURL: LLM_BASE_URL,
+  apiKey: "not-needed",
+});
 
-// Conversation history (single session, in-memory)
-let conversationHistory: Anthropic.MessageParam[] = [];
+let conversationHistory: ChatCompletionMessageParam[] = [];
+
+/** Trim conversation history to stay within context limits. */
+function trimHistory(): void {
+  if (conversationHistory.length <= MAX_HISTORY) return;
+  // Keep the most recent messages, drop oldest pairs
+  const excess = conversationHistory.length - MAX_HISTORY;
+  conversationHistory = conversationHistory.slice(excess);
+}
 
 async function handleChat(
   userMessage: string,
-  onEvent: (event: string, data: unknown) => void
+  onEvent: (event: string, data: unknown) => void,
 ): Promise<void> {
   conversationHistory.push({ role: "user", content: userMessage });
+  trimHistory();
 
   let continueLoop = true;
 
   while (continueLoop) {
     continueLoop = false;
 
-    console.log(`Calling Claude API (${MODEL}, ${conversationHistory.length} messages, ${mcpTools.length} tools)...`);
+    console.log(`Calling LLM (${conversationHistory.length} messages, ${mcpTools.length} tools)...`);
     let response;
     try {
-      response = await anthropic.messages.create({
-        model: MODEL,
+      response = await openai.chat.completions.create({
+        model: "default",
         max_tokens: 4096,
-        system: FULL_SYSTEM_PROMPT,
-        tools: [
-          ...mcpTools,
-          { type: "web_search_20250305", name: "web_search", max_uses: 5 } as any,
+        messages: [
+          { role: "system", content: FULL_SYSTEM_PROMPT },
+          ...conversationHistory,
         ],
-        messages: conversationHistory,
+        tools: mcpTools.length > 0 ? mcpTools : undefined,
       });
-      console.log(`Response: stop_reason=${response.stop_reason}, ${response.content.length} blocks`);
     } catch (apiErr: unknown) {
-      console.error("API Error:", apiErr);
+      console.error("LLM Error:", apiErr);
       throw apiErr;
     }
 
-    // Process response content blocks
-    const assistantContent: Anthropic.ContentBlock[] = [];
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    const choice = response.choices[0];
+    if (!choice) throw new Error("No response from LLM");
 
-    for (const block of response.content) {
-      assistantContent.push(block);
+    console.log(`Response: finish_reason=${choice.finish_reason}, tool_calls=${choice.message.tool_calls?.length ?? 0}`);
 
-      if (block.type === "text") {
-        onEvent("text", { text: block.text });
-      } else if (block.type === "tool_use") {
-        onEvent("tool_use", { id: block.id, name: block.name, input: block.input });
+    // Emit text content
+    if (choice.message.content) {
+      onEvent("text", { text: choice.message.content });
+    }
+
+    // Add assistant message to history (including tool_calls if present)
+    conversationHistory.push(choice.message);
+
+    // Process tool calls
+    const toolCalls = choice.message.tool_calls;
+    if (toolCalls && toolCalls.length > 0) {
+      for (const toolCall of toolCalls) {
+        const toolName = toolCall.function.name;
+        onEvent("tool_use", { id: toolCall.id, name: toolName, input: toolCall.function.arguments });
+
+        // Parse arguments (OpenAI sends them as a JSON string)
+        let args: Record<string, unknown>;
+        try {
+          args = JSON.parse(toolCall.function.arguments);
+        } catch {
+          const errorMsg = `Invalid JSON in tool arguments: ${toolCall.function.arguments}. Please try again with valid JSON.`;
+          onEvent("tool_result", { id: toolCall.id, name: toolName, result: errorMsg, isError: true });
+          conversationHistory.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: errorMsg,
+          });
+          continueLoop = true;
+          continue;
+        }
+
+        // Check if tool exists
+        const toolExists = mcpTools.some(t => t.function.name === toolName);
+        if (!toolExists) {
+          const available = mcpTools.map(t => t.function.name).join(", ");
+          const errorMsg = `Unknown tool "${toolName}". Available tools: ${available}`;
+          onEvent("tool_result", { id: toolCall.id, name: toolName, result: errorMsg, isError: true });
+          conversationHistory.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: errorMsg,
+          });
+          continueLoop = true;
+          continue;
+        }
 
         // Execute tool via MCP
         try {
-          const result = await mcpClient.callTool({
-            name: block.name,
-            arguments: block.input as Record<string, unknown>,
-          });
-
+          const result = await mcpClient.callTool({ name: toolName, arguments: args });
           const resultText = Array.isArray(result.content)
             ? result.content
                 .filter((c): c is { type: "text"; text: string } => c.type === "text")
@@ -237,46 +286,22 @@ async function handleChat(
                 .join("\n")
             : String(result.content);
 
-          onEvent("tool_result", { id: block.id, name: block.name, result: resultText });
-
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: block.id,
+          onEvent("tool_result", { id: toolCall.id, name: toolName, result: resultText });
+          conversationHistory.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
             content: resultText,
           });
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
-          onEvent("tool_result", { id: block.id, name: block.name, result: `Error: ${errorMsg}`, isError: true });
-
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: block.id,
+          onEvent("tool_result", { id: toolCall.id, name: toolName, result: `Error: ${errorMsg}`, isError: true });
+          conversationHistory.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
             content: `Error: ${errorMsg}`,
-            is_error: true,
           });
         }
-      } else if ((block as any).type === "server_tool_use") {
-        // Web search — handled server-side by Anthropic, just show it in the UI
-        onEvent("tool_use", { id: (block as any).id, name: (block as any).name ?? "web_search", input: (block as any).input });
-      } else if ((block as any).type === "web_search_tool_result") {
-        // Web search results — already processed by the API
-        const searchBlock = block as any;
-        const resultSummary = Array.isArray(searchBlock.content)
-          ? searchBlock.content
-              .filter((c: any) => c.type === "web_search_result")
-              .map((c: any) => `${c.title}: ${c.url}`)
-              .join("\n")
-          : "Search completed";
-        onEvent("tool_result", { id: searchBlock.id ?? "", name: "web_search", result: resultSummary });
       }
-    }
-
-    // Add assistant message to history
-    conversationHistory.push({ role: "assistant", content: assistantContent });
-
-    // If there were tool calls, add results and continue the loop
-    if (toolResults.length > 0) {
-      conversationHistory.push({ role: "user", content: toolResults });
       continueLoop = true;
     }
   }
@@ -305,7 +330,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   console.log(`${req.method} ${req.url}`);
   setCorsHeaders(res);
 
-  // CORS preflight
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
@@ -322,7 +346,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
 
-    // SSE response
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -357,22 +380,18 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       let backupPath: string | undefined = parsed.path;
       console.log("re-extract request:", JSON.stringify(parsed));
 
-      // Try to get the last backup location (used for path resolution and fallback)
       const pathResult = await mcpClient.callTool({ name: "get_last_backup_location", arguments: {} });
-      const pathText = (pathResult.content as Array<{type: string; text: string}>)
+      const pathText = (pathResult.content as Array<{ type: string; text: string }>)
         .map(c => c.text).join("");
       const lastPath = (!pathResult.isError && pathText && !pathText.includes("No previous backup"))
         ? pathText.trim()
         : undefined;
 
-      // Fall back to the cached path
       if (!backupPath) {
         backupPath = lastPath;
       }
 
       if (!backupPath) {
-        // Return the last known backup directory (or project root) so the UI
-        // can combine it with the filename from the file picker
         const baseDir = lastPath ? dirname(lastPath) : join(__dirname, "..");
         console.log("re-extract: no path found, returning baseDir:", baseDir);
         res.writeHead(200);
@@ -381,12 +400,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       console.log("re-extract: extracting from", backupPath);
 
-      // Call extract_backup
       const result = await mcpClient.callTool({
         name: "extract_backup",
         arguments: { file_path: backupPath },
       });
-      const resultText = (result.content as Array<{type: string; text: string}>)
+      const resultText = (result.content as Array<{ type: string; text: string }>)
         .map(c => c.text).join("");
 
       if (result.isError) {
@@ -395,7 +413,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         return;
       }
 
-      // Return first line as summary (e.g., "Extracted full backup inventory:")
       const summary = resultText.split("\n").slice(0, 7).join("\n");
       res.writeHead(200);
       res.end(JSON.stringify({ success: true, summary, path: backupPath }));
@@ -414,18 +431,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 // ── Main ──
 
 async function main(): Promise<void> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("Error: ANTHROPIC_API_KEY environment variable is required");
-    console.error("Usage: ANTHROPIC_API_KEY=sk-... npx tsx src/agent.ts");
+  console.log(`LLM endpoint: ${LLM_BASE_URL}`);
+
+  // Validate LLM server is reachable
+  try {
+    const resp = await fetch(`${LLM_BASE_URL}/models`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    console.log("LLM server reachable");
+  } catch (err) {
+    console.error(`Cannot reach LLM server at ${LLM_BASE_URL}.`);
+    console.error("Start mlx_lm.server first: npm run run:mlx");
     process.exit(1);
   }
 
-  // Debug: show key prefix and model
-  const keyPrefix = process.env.ANTHROPIC_API_KEY.substring(0, 12);
-  console.log(`API key: ${keyPrefix}...`);
-  console.log(`Model: ${MODEL}`);
-
-  console.log("Starting Nord Electro 5D Agent...");
+  console.log("Starting Keyboard Agent...");
 
   await setupMCP();
 
