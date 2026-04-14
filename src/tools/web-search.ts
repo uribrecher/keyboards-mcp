@@ -17,7 +17,14 @@ export function registerWebSearch(server: McpServer): void {
       try {
         const resp = await fetch(url, {
           headers: { "User-Agent": "keyboards-mcp/1.0" },
+          signal: AbortSignal.timeout(10_000),
         });
+        if (!resp.ok) {
+          return {
+            content: [{ type: "text" as const, text: `Search failed: HTTP ${resp.status}` }],
+            isError: true,
+          };
+        }
         html = await resp.text();
       } catch (err) {
         return {
@@ -35,7 +42,7 @@ export function registerWebSearch(server: McpServer): void {
         const title = match[2].replace(/<[^>]+>/g, "").trim();
         const snippet = match[3].replace(/<[^>]+>/g, "").trim();
         if (title && resultUrl) {
-          results.push(`${title}\n${resultUrl}\n${snippet}`);
+          results.push(snippet ? `${title}\n${resultUrl}\n${snippet}` : `${title}\n${resultUrl}`);
         }
       }
 
