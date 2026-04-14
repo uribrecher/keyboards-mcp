@@ -1,44 +1,61 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MidiManager } from "../midi/midi-manager.js";
+import type { ModelHolder } from "../shared/model-holder.js";
 
 export function registerLoadProgram(
   server: McpServer,
-  midi: MidiManager
+  midi: MidiManager,
+  holder: ModelHolder,
 ): void {
-  server.tool(
+  server.registerTool(
     "load_program",
-    "Load a stored program on the Nord Electro 5D by bank and program number. " +
-      "Sends MIDI Bank Select (CC0 + CC32) followed by Program Change. " +
-      "Bank 1-5, program 1-50 (matching hardware display).",
     {
-      bank: z.number().min(1).max(5).describe("Program bank (1-5)"),
-      slot: z.number().min(1).max(50).describe("Program number within bank (1-50)"),
+      description: "Load a stored program on the keyboard by bank and program number. " +
+        "Sends MIDI Bank Select (CC0 + CC32) followed by Program Change.",
+      inputSchema: {
+        bank: z.number().min(1).max(99).describe("Program bank"),
+        slot: z.number().min(1).max(99).describe("Program number within bank"),
+      },
     },
     async ({ bank, slot }) => {
-      if (!midi.isConnected()) {
+      let model;
+      try { model = holder.requireModel(); }
+      catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
+
+      if (!model.programLoader) {
         return {
-          content: [{ type: "text" as const, text: "Not connected. Use connect_to_nord first." }],
+          content: [{ type: "text", text: `${model.info.displayName} does not support program loading.` }],
           isError: true,
         };
       }
 
-      // Nord Electro 5D program change sequence:
-      // 1. CC 0  (Bank Select MSB) = 0
-      // 2. CC 32 (Bank Select LSB) = bank - 1 (0-indexed)
-      // 3. Program Change = slot - 1 (convert 1-indexed input to 0-indexed MIDI)
-      midi.sendCC(0, 0);
-      midi.sendCC(32, bank - 1);
-      midi.sendProgramChange(slot - 1);
+      if (!midi.isConnected()) {
+        return {
+          content: [{ type: "text" as const, text: "Not connected. Use connect_to_keyboard first." }],
+          isError: true,
+        };
+      }
+
+      const loader = model.programLoader;
+      if (bank < loader.bankRange.min || bank > loader.bankRange.max) {
+        return {
+          content: [{ type: "text", text: `Bank must be ${loader.bankRange.min}-${loader.bankRange.max} for ${model.info.displayName}.` }],
+          isError: true,
+        };
+      }
+      if (slot < loader.slotRange.min || slot > loader.slotRange.max) {
+        return {
+          content: [{ type: "text", text: `Slot must be ${loader.slotRange.min}-${loader.slotRange.max} for ${model.info.displayName}.` }],
+          isError: true,
+        };
+      }
+
+      await loader.loadProgram(midi, bank, slot);
 
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Loaded program ${bank}:${slot}`,
-          },
-        ],
+        content: [{ type: "text" as const, text: `Loaded program ${bank}:${slot}` }],
       };
-    }
+    },
   );
 }

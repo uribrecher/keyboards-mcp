@@ -847,11 +847,11 @@ const reExtractBtn = document.getElementById("re-extract-btn");
 
 async function openBackupPath() {
   // Electron: native dialog returns absolute path
-  if (window.electronAPI) {
-    return await window.electronAPI.openBackupDialog();
+  if (window.mockRunnerAPI) {
+    return await window.mockRunnerAPI.openBackupDialog();
   }
   // Browser fallback: not supported (no full path access)
-  addChatMessage("assistant", "File picker requires the Electron app. Run with `npm run mock:electron`.\nAlternatively, ask me in chat to extract a specific backup path.");
+  addChatMessage("assistant", "File picker requires the Electron app. Run with `npm run mock:runner`.\nAlternatively, ask me in chat to extract a specific backup path.");
   return null;
 }
 

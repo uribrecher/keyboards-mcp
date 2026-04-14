@@ -5,60 +5,25 @@
  * (Appendix II: MIDI Controller List, page 21).
  */
 
-export type ParamType = "continuous" | "discrete" | "toggle";
-
-export interface NordParameter {
-  name: string;
-  section: string;
-  cc: number;
-  min: number;
-  max: number;
-  defaultValue: number;
-  type: ParamType;
-  labels?: Record<number, string>;
-  description: string;
-  /** For drawbars: maps position 0-8 to MIDI 0-127 */
-  drawbar?: boolean;
-  /** For model/sample index params: maps index to MIDI via round(index * 2.5) */
-  modelIndex?: boolean;
-  /** Display is 1-based on the Nord. Input N maps to MIDI N-1. */
-  oneBased?: boolean;
-  /** True for parameters that are per-part (Lower/Upper) in bi-timbral mode */
-  perPart?: boolean;
-}
-
-/** Convert drawbar position (0-8) to MIDI value (0-127) */
-export function drawbarToMidi(position: number): number {
-  return Math.round((Math.min(8, Math.max(0, position)) / 8) * 127);
-}
-
-/** Convert MIDI value (0-127) to drawbar position (0-8) */
-export function midiToDrawbar(value: number): number {
-  return Math.round((value / 127) * 8);
-}
+import type { KeyboardParameter } from "../../../shared/types.js";
+import type { ParameterMap } from "../../../shared/keyboard-model.js";
+import {
+  resolveValue as genericResolveValue,
+  formatValue as genericFormatValue,
+} from "../../../shared/parameter-resolution.js";
 
 /**
  * Universal model index to MIDI value mapping.
  * Empirically tested — the same non-uniform spacing applies to all piano types.
  */
-const MODEL_TO_MIDI = [0, 3, 6, 8, 11, 13, 16, 18, 21];
+export const MODEL_TO_MIDI = [0, 3, 6, 8, 11, 13, 16, 18, 21];
 
-/** Convert model number (1-based, matching Nord display) to MIDI value. */
-export function modelIndexToMidi(modelNumber: number): number {
-  const idx = Math.max(0, modelNumber - 1);
-  if (idx < MODEL_TO_MIDI.length) return MODEL_TO_MIDI[idx];
-  return Math.min(127, idx * 3);
-}
+const RAW = { kind: "raw" as const };
+const DRAWBAR_9 = { kind: "drawbar" as const, positions: 9 };
+const MODEL_INDEX = { kind: "model-index" as const, table: MODEL_TO_MIDI };
+const ONE_BASED = { kind: "one-based" as const };
 
-/** Convert MIDI value back to model number (1-based, matching Nord display) */
-export function midiToModelIndex(midiValue: number): number {
-  for (let i = MODEL_TO_MIDI.length - 1; i >= 0; i--) {
-    if (midiValue >= MODEL_TO_MIDI[i]) return i + 1;
-  }
-  return 1;
-}
-
-export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
+export const PARAMS: Record<string, KeyboardParameter> = {
   // ── Organ Section ──
   organ_model: {
     name: "Organ Model",
@@ -70,6 +35,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "B3", 1: "B3+Bass", 2: "Pipe", 3: "Vox", 4: "Farfisa" },
     description: "Organ model: B3 (Hammond), B3+Bass, Pipe, Vox (Continental), or Farfisa",
+    encoding: RAW,
     perPart: true,
   },
   organ_preset_select: {
@@ -81,9 +47,11 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 0,
     type: "discrete",
     labels: { 0: "Preset 1", 1: "Preset 2" },
-    description: "Select between organ Preset 1 and Preset 2. Each preset has its own drawbar registration. " +
+    description:
+      "Select between organ Preset 1 and Preset 2. Each preset has its own drawbar registration. " +
       "In split mode, Preset 1 routes to Lower part, Preset 2 to Upper part. " +
       "Drawbar CCs (16-24) modify the currently selected preset's drawbars.",
+    encoding: RAW,
     perPart: true,
   },
   drawbar_1: {
@@ -94,8 +62,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    drawbar: true,
     description: "Drawbar 1 — Sub octave (16'). Values 0-8. Modifies the currently selected preset's registration. For Farfisa organ, drawbars are on/off toggles (0 or 1).",
+    encoding: DRAWBAR_9,
     perPart: true,
   },
   drawbar_2: {
@@ -106,8 +74,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    drawbar: true,
     description: "Drawbar 2 — Sub 3rd (5⅓'). Values 0-8.",
+    encoding: DRAWBAR_9,
     perPart: true,
   },
   drawbar_3: {
@@ -118,8 +86,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 127,
     type: "continuous",
-    drawbar: true,
     description: "Drawbar 3 — Fundamental (8'). Values 0-8.",
+    encoding: DRAWBAR_9,
     perPart: true,
   },
   drawbar_4: {
@@ -130,8 +98,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    drawbar: true,
     description: "Drawbar 4 — 2nd harmonic (4'). Values 0-8.",
+    encoding: DRAWBAR_9,
     perPart: true,
   },
   drawbar_5: {
@@ -142,8 +110,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    drawbar: true,
     description: "Drawbar 5 — 3rd harmonic (2⅔'). Values 0-8.",
+    encoding: DRAWBAR_9,
     perPart: true,
   },
   drawbar_6: {
@@ -154,8 +122,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    drawbar: true,
     description: "Drawbar 6 — 4th harmonic (2'). Values 0-8.",
+    encoding: DRAWBAR_9,
     perPart: true,
   },
   drawbar_7: {
@@ -166,8 +134,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    drawbar: true,
     description: "Drawbar 7 — 5th harmonic (1⅗'). Values 0-8.",
+    encoding: DRAWBAR_9,
     perPart: true,
   },
   drawbar_8: {
@@ -178,8 +146,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    drawbar: true,
     description: "Drawbar 8 — 6th harmonic (1⅓'). Values 0-8.",
+    encoding: DRAWBAR_9,
     perPart: true,
   },
   drawbar_9: {
@@ -190,8 +158,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    drawbar: true,
     description: "Drawbar 9 — 8th harmonic (1'). Values 0-8.",
+    encoding: DRAWBAR_9,
     perPart: true,
   },
   organ_drawbar_live: {
@@ -204,6 +172,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Drawbar Live mode on/off",
+    encoding: RAW,
     perPart: true,
   },
   vibrato_type: {
@@ -216,6 +185,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "V1", 1: "C1", 2: "V2", 3: "C2", 4: "V3", 5: "C3" },
     description: "Organ vibrato/chorus type: V1-V3 (vibrato), C1-C3 (chorus)",
+    encoding: RAW,
     perPart: true,
   },
   vibrato_enable: {
@@ -228,6 +198,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Organ vibrato/chorus on/off",
+    encoding: RAW,
     perPart: true,
   },
   percussion: {
@@ -240,6 +211,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Organ percussion on/off (B3 only)",
+    encoding: RAW,
     perPart: true,
   },
   percussion_speed_level: {
@@ -252,6 +224,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Slow/Normal", 1: "Fast/Normal", 2: "Slow/Soft", 3: "Fast/Soft" },
     description: "Percussion speed and level: Fast/Slow decay, Normal/Soft volume",
+    encoding: RAW,
     perPart: true,
   },
   percussion_harmonic: {
@@ -264,6 +237,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "2nd", 1: "3rd" },
     description: "Percussion harmonic: 2nd (bright click) or 3rd (mellow)",
+    encoding: RAW,
     perPart: true,
   },
 
@@ -278,6 +252,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Grand", 1: "Upright", 2: "EP1", 3: "EP2", 4: "Clav", 5: "Harpsichord" },
     description: "Piano type: Grand, Upright, EP1 (Rhodes-type), EP2 (Wurlitzer-type), Clav, or Harpsichord",
+    encoding: RAW,
     perPart: true,
   },
   piano_model: {
@@ -288,12 +263,12 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    modelIndex: true,
     description:
       "Piano model index (1-based, per-category location matching Nord hardware display). " +
       "Available models depend on piano_type and which pianos are loaded on the keyboard. " +
       "Run extract_backup to populate the inventory with model names. " +
       "For Clav type, use piano_variation to select pickup A/B/C/D.",
+    encoding: MODEL_INDEX,
     perPart: true,
   },
   piano_variation: {
@@ -304,11 +279,11 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    modelIndex: true,
     description:
       "Clavinet pickup variation (CC 45). Only applies to Clav piano type. " +
       "1=D6 A (both pickups in-phase), 2=D6 B (bridge pickup), 3=D6 C (neck pickup), 4=D6 D (both pickups out-of-phase). " +
       "Uses model index encoding. Has no effect on other piano types.",
+    encoding: MODEL_INDEX,
     perPart: true,
   },
   piano_kbd_touch: {
@@ -317,10 +292,11 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     cc: 46,
     min: 0,
     max: 3,
-    defaultValue: 0,
+    defaultValue: 2,
     type: "discrete",
-    labels: { 0: "0", 1: "1", 2: "2", 3: "3" },
-    description: "Keyboard touch sensitivity for piano sounds",
+    labels: { 0: "Touch 1", 1: "Touch 2", 2: "Touch 3", 3: "Touch 4" },
+    description: "Keyboard touch sensitivity / velocity curve (1=lightest, 4=heaviest)",
+    encoding: RAW,
     perPart: true,
   },
   piano_acoustic: {
@@ -333,6 +309,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Off", 1: "String Resonance", 2: "Long Release", 3: "String Resonance + Long Release" },
     description: "Piano acoustic mode: Off, String Resonance, Long Release, or both",
+    encoding: RAW,
     perPart: true,
   },
   piano_mono: {
@@ -344,11 +321,24 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 0,
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
-    description: "Piano mono mode on/off",
+    description: "Piano mono mode on/off (mono playback instead of stereo)",
+    encoding: RAW,
     perPart: true,
   },
 
   // ── Sample Synth Section ──
+  sample_synth_sample: {
+    name: "Sample Synth Sample",
+    section: "sample_synth",
+    cc: 35,
+    min: 1,
+    max: 127,
+    defaultValue: 1,
+    type: "continuous",
+    description: "Sample slot number (1-based). Available samples depend on what's loaded on the keyboard.",
+    encoding: ONE_BASED,
+    perPart: true,
+  },
   sample_synth_attack: {
     name: "Sample Synth Attack",
     section: "sample_synth",
@@ -357,7 +347,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    description: "Sample synth attack time (0-127, display scale 0.5ms to 45s). Controls how long it takes for the sample to reach full level.",
+    description: "Sample synth attack time (0-127, 0=fast, 127=slow)",
+    encoding: RAW,
     perPart: true,
   },
   sample_synth_release: {
@@ -368,24 +359,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 64,
     type: "continuous",
-    description:
-      "Sample synth decay/sustain/release (0-127). Three zones: " +
-      "0-63 = decay time (3ms to 43s), 64 = sustain (looped sample while key held), " +
-      "65-127 = release time after key up (3ms to 39s).",
-    perPart: true,
-  },
-  sample_synth_sample: {
-    name: "Sample Synth Sample",
-    section: "sample_synth",
-    cc: 35,
-    min: 0,
-    max: 127,
-    defaultValue: 0,
-    type: "continuous",
-    oneBased: true,
-    description: "Select sample from loaded sample bank (1-based, matching Nord display). " +
-      "MIDI CC limited to samples 1-128 (slots 0-127). Samples beyond slot 128 are only accessible from the hardware panel. " +
-      "Samples must be loaded via Nord Sound Manager.",
+    description: "Sample synth decay/release time (0-127)",
+    encoding: RAW,
     perPart: true,
   },
   sample_synth_dynamics: {
@@ -397,8 +372,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 0,
     type: "discrete",
     labels: { 0: "Off", 1: "Low", 2: "Mid", 3: "High" },
-    description:
-      "Velocity response mode. Off = full velocity always. Low/Mid/High = increasing dynamic range.",
+    description: "Sample synth dynamics (velocity sensitivity)",
+    encoding: RAW,
     perPart: true,
   },
   sample_synth_filter_vel: {
@@ -409,13 +384,24 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    description:
-      "Velocity-sensitive low-pass filter. Higher values = more filter effect. " +
-      "Soft playing sounds dampened, hard playing sounds brighter.",
+    description: "Sample synth filter velocity sensitivity (0-127)",
+    encoding: RAW,
     perPart: true,
   },
 
   // ── Effect 1 ──
+  effect1_type: {
+    name: "Effect 1 Type",
+    section: "effect1",
+    cc: 60,
+    min: 0,
+    max: 7,
+    defaultValue: 0,
+    type: "discrete",
+    labels: { 0: "Trem 1", 1: "Trem 2", 2: "Trem 3", 3: "Pan 1", 4: "Pan 2", 5: "Pan 3", 6: "Wah", 7: "Ring Mod" },
+    description: "Effect 1 type: Trem (tremolo) 1-3, Pan 1-3, Wah, or Ring Mod",
+    encoding: RAW,
+  },
   effect1_enable: {
     name: "Effect 1 Enable",
     section: "effect1",
@@ -426,29 +412,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Effect 1 on/off",
+    encoding: RAW,
   },
-  effect1_type: {
-    name: "Effect 1 Type",
-    section: "effect1",
-    cc: 60,
-    min: 0,
-    max: 7,
-    defaultValue: 0,
-    type: "discrete",
-    labels: { 0: "Trem 1", 1: "Trem 2", 2: "Trem 3", 3: "Pan 1", 4: "Pan 2", 5: "Pan 3", 6: "Wah", 7: "Ring Mod" },
-    description: "Effect 1 type: Trem 1-3, Pan 1-3, Wah, or Ring Mod",
-  },
-  effect1_rate: {
-    name: "Effect 1 Rate",
-    section: "effect1",
-    cc: 63,
-    min: 0,
-    max: 127,
-    defaultValue: 0,
-    type: "continuous",
-    description: "Effect 1 rate/speed (0-127, display scale 0.0-10.0)",
-  },
-
   effect1_ctrl_pedal: {
     name: "Effect 1 Ctrl Pedal",
     section: "effect1",
@@ -458,21 +423,22 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 0,
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
-    description: "Let the control pedal control FX1 rate",
+    description: "Effect 1 control pedal on/off",
+    encoding: RAW,
+  },
+  effect1_rate: {
+    name: "Effect 1 Rate",
+    section: "effect1",
+    cc: 63,
+    min: 0,
+    max: 127,
+    defaultValue: 64,
+    type: "continuous",
+    description: "Effect 1 rate/speed (0-127)",
+    encoding: RAW,
   },
 
   // ── Effect 2 ──
-  effect2_enable: {
-    name: "Effect 2 Enable",
-    section: "effect2",
-    cc: 80,
-    min: 0,
-    max: 1,
-    defaultValue: 0,
-    type: "toggle",
-    labels: { 0: "Off", 1: "On" },
-    description: "Effect 2 on/off",
-  },
   effect2_type: {
     name: "Effect 2 Type",
     section: "effect2",
@@ -483,16 +449,19 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Phase 1", 1: "Phase 2", 2: "Flanger", 3: "Chorus 1", 4: "Chorus 2", 5: "Vibe" },
     description: "Effect 2 type: Phase 1-2, Flanger, Chorus 1-2, or Vibe",
+    encoding: RAW,
   },
-  effect2_rate: {
-    name: "Effect 2 Rate",
+  effect2_enable: {
+    name: "Effect 2 Enable",
     section: "effect2",
-    cc: 62,
+    cc: 80,
     min: 0,
-    max: 127,
+    max: 1,
     defaultValue: 0,
-    type: "continuous",
-    description: "Effect 2 rate/speed (0-127, display scale: 0.0-10.5 Hz for Phase/Flanger/Vibe, 0.0-2.7 Hz for Chorus)",
+    type: "toggle",
+    labels: { 0: "Off", 1: "On" },
+    description: "Effect 2 on/off. Note: also doubles as sustain pedal CC64 — handled by Nord internally.",
+    encoding: RAW,
   },
   effect2_deep: {
     name: "Effect 2 Deep Mode",
@@ -503,12 +472,24 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 0,
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
-    description: "Effect 2 deep mode on/off (increases effect depth)",
+    description: "Effect 2 deep mode on/off",
+    encoding: RAW,
+  },
+  effect2_rate: {
+    name: "Effect 2 Rate",
+    section: "effect2",
+    cc: 62,
+    min: 0,
+    max: 127,
+    defaultValue: 64,
+    type: "continuous",
+    description: "Effect 2 rate/speed (0-127)",
+    encoding: RAW,
   },
 
-  // ── Speaker/Comp (Amp) ──
+  // ── Amp / Speaker / Compressor ──
   spkr_comp_type: {
-    name: "Speaker/Comp Type",
+    name: "Speaker/Compressor Type",
     section: "amp",
     cc: 81,
     min: 0,
@@ -516,10 +497,11 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 0,
     type: "discrete",
     labels: { 0: "Dist", 1: "Small", 2: "JC", 3: "Twin", 4: "Rotary", 5: "Comp" },
-    description: "Amp/speaker simulation: Dist, Small, JC, Twin, Rotary, or Comp",
+    description: "Amp/speaker/comp model: Dist(ortion), Small (amp), JC (Jazz Chorus), Twin (Fender), Rotary (Leslie), Comp(ressor)",
+    encoding: RAW,
   },
   spkr_comp_enable: {
-    name: "Speaker/Comp Enable",
+    name: "Speaker/Compressor Enable",
     section: "amp",
     cc: 86,
     min: 0,
@@ -527,17 +509,19 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 0,
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
-    description: "Speaker/comp simulation on/off",
+    description: "Amp/speaker/comp on/off",
+    encoding: RAW,
   },
   spkr_comp_drive: {
-    name: "Speaker/Comp Drive",
+    name: "Speaker/Compressor Drive",
     section: "amp",
     cc: 111,
     min: 0,
     max: 127,
     defaultValue: 0,
     type: "continuous",
-    description: "Amp overdrive amount (0-127, display scale 0.0-10.0)",
+    description: "Amp/speaker drive amount (0-127)",
+    encoding: RAW,
   },
 
   // ── Rotary Speaker ──
@@ -550,8 +534,10 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 0,
     type: "discrete",
     labels: { 0: "Slow", 127: "Fast" },
-    description: "Rotary speaker (Leslie) speed: Slow (0-63) or Fast (64-127)",
+    description: "Rotary speaker speed: Slow or Fast (Leslie)",
+    encoding: RAW,
   },
+
   rotary_stop_mode: {
     name: "Rotary Stop Mode",
     section: "rotary",
@@ -562,8 +548,8 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Rotary speaker stop mode on/off",
+    encoding: RAW,
   },
-  // rotor_pedal (CC 90) — removed: does not respond to MIDI CC on real hardware
 
   // ── Reverb ──
   reverb_type: {
@@ -576,6 +562,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Room", 1: "Stage Soft", 2: "Stage", 3: "Hall Soft", 4: "Hall" },
     description: "Reverb type: Room, Stage Soft, Stage, Hall Soft, or Hall",
+    encoding: RAW,
   },
   reverb_enable: {
     name: "Reverb Enable",
@@ -587,6 +574,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Reverb on/off",
+    encoding: RAW,
   },
   reverb_dry_wet: {
     name: "Reverb Dry/Wet",
@@ -594,21 +582,58 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     cc: 102,
     min: 0,
     max: 127,
-    defaultValue: 0,
+    defaultValue: 40,
     type: "continuous",
-    description: "Reverb wet/dry mix (0-127, display scale 0.0-10.0)",
+    description: "Reverb dry/wet mix (0=dry, 127=fully wet)",
+    encoding: RAW,
   },
 
   // ── Delay ──
+  delay_enable: {
+    name: "Delay Enable",
+    section: "delay",
+    cc: 94,
+    min: 0,
+    max: 1,
+    defaultValue: 0,
+    type: "toggle",
+    labels: { 0: "Off", 1: "On" },
+    description: "Delay on/off",
+    encoding: RAW,
+  },
   delay_tempo: {
     name: "Delay Tempo",
     section: "delay",
     cc: 92,
     min: 0,
     max: 127,
-    defaultValue: 0,
+    defaultValue: 64,
     type: "continuous",
-    description: "Delay tempo/time (0-127)",
+    description: "Delay tempo/time (0-127, display scale 100-750 ms)",
+    encoding: RAW,
+  },
+  delay_dry_wet: {
+    name: "Delay Dry/Wet",
+    section: "delay",
+    cc: 103,
+    min: 0,
+    max: 127,
+    defaultValue: 40,
+    type: "continuous",
+    description: "Delay dry/wet mix (0=dry, 127=fully wet)",
+    encoding: RAW,
+  },
+  delay_feedback: {
+    name: "Delay Feedback",
+    section: "delay",
+    cc: 104,
+    min: 0,
+    max: 3,
+    defaultValue: 0,
+    type: "discrete",
+    labels: { 0: "0", 1: "1", 2: "2", 3: "3" },
+    description: "Delay feedback amount",
+    encoding: RAW,
   },
   delay_ping_pong: {
     name: "Delay Ping Pong",
@@ -620,51 +645,10 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Delay ping-pong mode on/off",
-  },
-  delay_enable: {
-    name: "Delay Enable",
-    section: "delay",
-    cc: 94,
-    min: 0,
-    max: 1,
-    defaultValue: 0,
-    type: "toggle",
-    labels: { 0: "Off", 1: "On" },
-    description: "Delay on/off",
-  },
-  delay_dry_wet: {
-    name: "Delay Dry/Wet",
-    section: "delay",
-    cc: 103,
-    min: 0,
-    max: 127,
-    defaultValue: 0,
-    type: "continuous",
-    description: "Delay dry/wet mix (0-127, display scale 0.0-10.0)",
-  },
-  delay_feedback: {
-    name: "Delay Feedback",
-    section: "delay",
-    cc: 104,
-    min: 0,
-    max: 3,
-    defaultValue: 0,
-    type: "discrete",
-    labels: { 0: "0", 1: "1", 2: "2", 3: "3" },
-    description: "Delay feedback amount (0-3)",
+    encoding: RAW,
   },
 
   // ── EQ ──
-  eq_treble: {
-    name: "EQ Treble",
-    section: "eq",
-    cc: 113,
-    min: 0,
-    max: 127,
-    defaultValue: 64,
-    type: "continuous",
-    description: "Treble EQ (0-127, center/flat = 64, display scale -15.0 to +15.0 dB)",
-  },
   eq_enable: {
     name: "EQ Enable",
     section: "eq",
@@ -675,6 +659,18 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "EQ on/off",
+    encoding: RAW,
+  },
+  eq_treble: {
+    name: "EQ Treble",
+    section: "eq",
+    cc: 113,
+    min: 0,
+    max: 127,
+    defaultValue: 64,
+    type: "continuous",
+    description: "Treble EQ (0-127, center/flat = 64, display scale -15.0 to +15.0 dB)",
+    encoding: RAW,
   },
   eq_mid: {
     name: "EQ Mid",
@@ -684,17 +680,19 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     max: 127,
     defaultValue: 64,
     type: "continuous",
-    description: "Mid EQ gain (0-127, center/flat = 64, display scale -15.0 to +15.0 dB)",
+    description: "Mid EQ (0-127, center/flat = 64, display scale -15.0 to +15.0 dB)",
+    encoding: RAW,
   },
   eq_mid_freq: {
-    name: "EQ Mid Frequency",
+    name: "EQ Mid Freq",
     section: "eq",
     cc: 117,
     min: 0,
     max: 127,
     defaultValue: 64,
     type: "continuous",
-    description: "Mid EQ frequency sweep (0-127, display scale 200-8000 Hz)",
+    description: "Mid EQ center frequency (0-127, display scale 200-8000 Hz)",
+    encoding: RAW,
   },
   eq_bass: {
     name: "EQ Bass",
@@ -705,6 +703,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 64,
     type: "continuous",
     description: "Bass EQ (0-127, center/flat = 64, display scale -15.0 to +15.0 dB)",
+    encoding: RAW,
   },
 
   // ── Global ──
@@ -717,6 +716,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 100,
     type: "continuous",
     description: "Master output volume / gain level (0-127)",
+    encoding: RAW,
   },
 
   // ── Part Controls ──
@@ -730,6 +730,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Organ", 1: "Piano", 2: "Sample Synth" },
     description: "Select sound engine for the Lower part",
+    encoding: RAW,
   },
   part_upper_engine_select: {
     name: "Part Upper Engine Select",
@@ -741,6 +742,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Organ", 1: "Piano", 2: "Sample Synth" },
     description: "Select sound engine for the Upper part",
+    encoding: RAW,
   },
   part_lower_enable: {
     name: "Part Lower Enable",
@@ -752,6 +754,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Enable/disable the Lower part",
+    encoding: RAW,
   },
   part_upper_enable: {
     name: "Part Upper Enable",
@@ -763,6 +766,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Enable/disable the Upper part",
+    encoding: RAW,
   },
   part_mix: {
     name: "Part Mix",
@@ -773,6 +777,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     defaultValue: 64,
     type: "continuous",
     description: "Mix balance between Lower and Upper parts (0=Lower, 64=center, 127=Upper)",
+    encoding: RAW,
   },
   program_setlist_mode: {
     name: "Program/Set List Mode",
@@ -784,6 +789,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Program", 1: "Set List" },
     description: "Toggle between Program mode and Set List mode",
+    encoding: RAW,
   },
   setlist_part_select: {
     name: "Set List Part Select",
@@ -795,6 +801,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "A", 1: "B", 2: "C", 3: "D" },
     description: "Select part A/B/C/D of the current set list song",
+    encoding: RAW,
   },
   kb_split_mode: {
     name: "Keyboard Split Mode",
@@ -806,6 +813,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Keyboard split mode on/off",
+    encoding: RAW,
   },
   kb_split_point: {
     name: "Keyboard Split Point",
@@ -817,6 +825,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "C3", 1: "F3", 2: "C4", 3: "F4", 4: "C5", 5: "F5" },
     description: "Keyboard split point note",
+    encoding: RAW,
   },
   transpose_enable: {
     name: "Transpose Enable",
@@ -828,6 +837,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Transpose on/off",
+    encoding: RAW,
   },
   transpose_amount: {
     name: "Transpose Amount",
@@ -839,6 +849,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "-6", 1: "-5", 2: "-4", 3: "-3", 4: "-2", 5: "-1", 6: "0", 7: "+1", 8: "+2", 9: "+3", 10: "+4", 11: "+5", 12: "+6" },
     description: "Transpose amount in semitones (-6 to +6, 6=no transpose)",
+    encoding: RAW,
   },
   octave_shift_lower: {
     name: "Octave Shift Lower",
@@ -850,6 +861,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "-7", 1: "-6", 2: "-5", 3: "-4", 4: "-3", 5: "-2", 6: "-1", 7: "0", 8: "+1", 9: "+2", 10: "+3", 11: "+4", 12: "+5", 13: "+6" },
     description: "Octave shift for the Lower part (7=no shift, range depends on split point)",
+    encoding: RAW,
   },
   octave_shift_upper: {
     name: "Octave Shift Upper",
@@ -861,6 +873,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "-7", 1: "-6", 2: "-5", 3: "-4", 4: "-3", 5: "-2", 6: "-1", 7: "0", 8: "+1", 9: "+2", 10: "+3", 11: "+4", 12: "+5", 13: "+6" },
     description: "Octave shift for the Upper part (7=no shift, range depends on split point)",
+    encoding: RAW,
   },
   sustain_pedal_enable_lower: {
     name: "Sustain Pedal Enable Lower",
@@ -872,6 +885,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Enable sustain pedal for the Lower part",
+    encoding: RAW,
   },
   sustain_pedal_enable_upper: {
     name: "Sustain Pedal Enable Upper",
@@ -883,6 +897,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Enable sustain pedal for the Upper part",
+    encoding: RAW,
   },
   ctrl_pedal_enable_lower: {
     name: "Ctrl Pedal Enable Lower",
@@ -894,6 +909,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Enable control (expression) pedal for the Lower part",
+    encoding: RAW,
   },
   ctrl_pedal_enable_upper: {
     name: "Ctrl Pedal Enable Upper",
@@ -905,6 +921,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "toggle",
     labels: { 0: "Off", 1: "On" },
     description: "Enable control (expression) pedal for the Upper part",
+    encoding: RAW,
   },
 
   // ── Effect Part Selects ──
@@ -918,6 +935,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Lower", 1: "Upper" },
     description: "Which part(s) Effect 1 applies to",
+    encoding: RAW,
   },
   effect2_part_select: {
     name: "Effect 2 Part Select",
@@ -929,6 +947,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Lower", 1: "Upper" },
     description: "Which part(s) Effect 2 applies to",
+    encoding: RAW,
   },
   spkr_comp_part_select: {
     name: "Speaker/Comp Part Select",
@@ -940,6 +959,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Lower", 1: "Upper" },
     description: "Which part(s) Speaker/Comp applies to. Note: when both engines are Organ and amp type is Rotary, hardware forces Both regardless of this value.",
+    encoding: RAW,
   },
   delay_part_select: {
     name: "Delay Part Select",
@@ -951,6 +971,7 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Lower", 1: "Upper" },
     description: "Which part(s) Delay applies to",
+    encoding: RAW,
   },
   eq_part_select: {
     name: "EQ Part Select",
@@ -962,137 +983,74 @@ export const NORD_ELECTRO_5D_PARAMS: Record<string, NordParameter> = {
     type: "discrete",
     labels: { 0: "Lower", 1: "Upper", 2: "Both" },
     description: "Which part(s) EQ applies to",
+    encoding: RAW,
   },
 };
 
-/** Check if a parameter is per-part (bi-timbral) */
-export function isPerPartParam(key: string): boolean {
-  const param = NORD_ELECTRO_5D_PARAMS[key];
-  return param?.perPart === true;
-}
+// ── Lookup helpers ──
 
-/** Get a parameter by its key name */
-export function getParam(key: string): NordParameter | undefined {
-  return NORD_ELECTRO_5D_PARAMS[key];
-}
-
-/** Find a parameter by fuzzy name match */
-export function findParam(name: string): { key: string; param: NordParameter } | undefined {
-  const lower = name.toLowerCase().replace(/[\s_-]+/g, "");
-
-  // Exact key match
-  if (NORD_ELECTRO_5D_PARAMS[name]) {
-    return { key: name, param: NORD_ELECTRO_5D_PARAMS[name] };
-  }
-
-  // Normalized key match
-  for (const [key, param] of Object.entries(NORD_ELECTRO_5D_PARAMS)) {
-    if (key.toLowerCase().replace(/[\s_-]+/g, "") === lower) {
-      return { key, param };
-    }
-  }
-
-  // Name substring match
-  for (const [key, param] of Object.entries(NORD_ELECTRO_5D_PARAMS)) {
-    if (param.name.toLowerCase().replace(/[\s_-]+/g, "").includes(lower)) {
-      return { key, param };
-    }
-  }
-
-  return undefined;
-}
-
-/** Get all parameters in a section */
-export function getParamsBySection(section: string): Record<string, NordParameter> {
-  const result: Record<string, NordParameter> = {};
-  for (const [key, param] of Object.entries(NORD_ELECTRO_5D_PARAMS)) {
-    if (param.section === section) {
-      result[key] = param;
-    }
-  }
-  return result;
-}
-
-/** All section names */
-export function getSections(): string[] {
-  const sections = new Set<string>();
-  for (const param of Object.values(NORD_ELECTRO_5D_PARAMS)) {
-    sections.add(param.section);
-  }
-  return [...sections];
-}
-
-/** Build reverse lookup: CC number → { key, param } */
-const ccToParamMap = new Map<number, { key: string; param: NordParameter }>();
-for (const [key, param] of Object.entries(NORD_ELECTRO_5D_PARAMS)) {
+const ccToParamMap = new Map<number, { key: string; param: KeyboardParameter }>();
+for (const [key, param] of Object.entries(PARAMS)) {
   ccToParamMap.set(param.cc, { key, param });
 }
 
-/** Look up a parameter by its CC number */
-export function getParamByCC(cc: number): { key: string; param: NordParameter } | undefined {
-  return ccToParamMap.get(cc);
-}
+/** Create a ParameterMap from the Nord Electro 5D params */
+export function createParameterMap(): ParameterMap {
+  return {
+    params: PARAMS,
 
-/** Scale a discrete label index to MIDI 0-127 range */
-function discreteToMidi(index: number, max: number): number {
-  if (max <= 0) return 0;
-  return Math.round((index / max) * 127);
-}
+    resolveValue: genericResolveValue,
+    formatValue: genericFormatValue,
 
-/** Convert a MIDI 0-127 value back to discrete label index */
-export function midiToDiscrete(midiValue: number, max: number): number {
-  if (max <= 0) return 0;
-  return Math.round((midiValue / 127) * max);
-}
+    findParam(name: string): { key: string; param: KeyboardParameter } | undefined {
+      const lower = name.toLowerCase().replace(/[\s_-]+/g, "");
 
-/** Resolve a string label to a numeric MIDI value for a parameter */
-export function resolveValue(param: NordParameter, value: number | string): number {
-  if (typeof value === "number") {
-    if (param.drawbar) {
-      return drawbarToMidi(value);
-    }
-    if (param.modelIndex) {
-      return modelIndexToMidi(Math.max(0, Math.round(value)));
-    }
-    if (param.oneBased) {
-      return Math.max(0, Math.min(127, Math.round(value) - 1));
-    }
-    if (param.type === "discrete" || param.type === "toggle") {
-      const clamped = Math.max(param.min, Math.min(param.max, Math.round(value)));
-      return discreteToMidi(clamped, param.max);
-    }
-    return Math.max(0, Math.min(127, Math.round(value)));
-  }
-
-  // String label resolution
-  const lower = value.toLowerCase();
-
-  if (param.labels) {
-    for (const [numStr, label] of Object.entries(param.labels)) {
-      if (label.toLowerCase() === lower) {
-        const index = Number(numStr);
-        return discreteToMidi(index, param.max);
+      // Exact key match
+      if (PARAMS[name]) {
+        return { key: name, param: PARAMS[name] };
       }
-    }
-  }
 
-  // Try parsing as number
-  const parsed = Number(value);
-  if (!isNaN(parsed)) {
-    if (param.drawbar) return drawbarToMidi(parsed);
-    if (param.modelIndex) return modelIndexToMidi(Math.max(0, Math.round(parsed)));
-    if (param.oneBased) return Math.max(0, Math.min(127, Math.round(parsed) - 1));
-    if (param.type === "discrete" || param.type === "toggle") {
-      const clamped = Math.max(param.min, Math.min(param.max, Math.round(parsed)));
-      return discreteToMidi(clamped, param.max);
-    }
-    return Math.max(0, Math.min(127, Math.round(parsed)));
-  }
+      // Normalized key match
+      for (const [key, param] of Object.entries(PARAMS)) {
+        if (key.toLowerCase().replace(/[\s_-]+/g, "") === lower) {
+          return { key, param };
+        }
+      }
 
-  throw new Error(
-    `Cannot resolve value "${value}" for parameter "${param.name}". ` +
-      (param.labels
-        ? `Valid labels: ${Object.values(param.labels).join(", ")}`
-        : `Expected a number between ${param.min} and ${param.max}`)
-  );
+      // Name substring match
+      for (const [key, param] of Object.entries(PARAMS)) {
+        if (param.name.toLowerCase().replace(/[\s_-]+/g, "").includes(lower)) {
+          return { key, param };
+        }
+      }
+
+      return undefined;
+    },
+
+    getParamByCC(cc: number): { key: string; param: KeyboardParameter } | undefined {
+      return ccToParamMap.get(cc);
+    },
+
+    getSections(): string[] {
+      const sections = new Set<string>();
+      for (const param of Object.values(PARAMS)) {
+        sections.add(param.section);
+      }
+      return [...sections];
+    },
+
+    getParamsBySection(section: string): Record<string, KeyboardParameter> {
+      const result: Record<string, KeyboardParameter> = {};
+      for (const [key, param] of Object.entries(PARAMS)) {
+        if (param.section === section) {
+          result[key] = param;
+        }
+      }
+      return result;
+    },
+
+    isPerPart(key: string): boolean {
+      return PARAMS[key]?.perPart === true;
+    },
+  };
 }

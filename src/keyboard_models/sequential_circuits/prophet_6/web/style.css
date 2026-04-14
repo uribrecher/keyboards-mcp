@@ -1,0 +1,120 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  background: #1a1a1a;
+  color: #e0e0e0;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #252525;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #c8a050;
+  letter-spacing: 1px;
+}
+
+#status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 10px;
+}
+#status.connected { background: #1a3a1a; color: #4caf50; }
+#status.disconnected { background: #3a1a1a; color: #f44336; }
+
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.section {
+  background: #252525;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #c8a050;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #333;
+}
+
+.param-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  transition: background 0.15s;
+}
+
+.param-row.flash {
+  background: rgba(200, 160, 80, 0.15);
+  border-radius: 4px;
+}
+
+.param-name {
+  font-size: 12px;
+  color: #aaa;
+  flex: 1;
+}
+
+.param-bar-container {
+  width: 80px;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  margin: 0 8px;
+  overflow: hidden;
+}
+
+.param-bar {
+  height: 100%;
+  background: #c8a050;
+  border-radius: 3px;
+  transition: width 0.1s;
+}
+
+.param-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e0e0e0;
+  width: 40px;
+  text-align: right;
+}
+
+.param-toggle {
+  font-size: 11px;
+  font-weight: 700;
+  width: 40px;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.param-toggle.on { background: #c8a050; color: #1a1a1a; }
+.param-toggle.off { background: #333; color: #666; }
+
+footer {
+  margin-top: 16px;
+  padding: 10px 20px;
+  background: #252525;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #666;
+}
