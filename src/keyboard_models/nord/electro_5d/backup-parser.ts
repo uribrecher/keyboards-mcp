@@ -7,7 +7,7 @@
 
 import AdmZip from "adm-zip";
 import { basename, extname, join } from "node:path";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 
 // ── Types ──
 
@@ -446,6 +446,33 @@ export function parseSingleProgram(buf: Buffer, fileName: string): ProgramEntry 
     params: decodeProgramPayload(payload),
     payloadHex: payload.toString("hex"),
   };
+}
+
+// ── Backup Detection ──
+
+const NORD_EXTENSIONS = new Set([".ne5p", ".ne5l", ".ne5t", ".ne5s", ".ne5b", ".npno", ".nsmp"]);
+
+export function detectBackup(filePath: string): boolean {
+  const stat = statSync(filePath);
+
+  if (stat.isDirectory()) {
+    const files = readdirSync(filePath);
+    return files.some((f) => extname(f).toLowerCase() === ".ne5p");
+  }
+
+  // Fast path: check file extension
+  if (extname(filePath).toLowerCase() === ".ne5b") return true;
+
+  // Fallback: open as ZIP and look for Nord-specific entries
+  try {
+    const zip = new AdmZip(filePath);
+    return zip.getEntries().some((e) => {
+      const ext = extname(e.entryName).toLowerCase();
+      return NORD_EXTENSIONS.has(ext);
+    });
+  } catch {
+    return false;
+  }
 }
 
 // ── Programs Folder Parser ──
