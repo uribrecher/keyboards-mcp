@@ -4,6 +4,9 @@
  */
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("electronAPI", {
+contextBridge.exposeInMainWorld("mockRunnerAPI", {
+  getModels: () => ipcRenderer.invoke("get-models"),
+  selectModel: (id) => ipcRenderer.invoke("select-model", id),
+  getCurrentModel: () => ipcRenderer.invoke("get-current-model"),
   openBackupDialog: () => ipcRenderer.invoke("open-backup-dialog"),
 });

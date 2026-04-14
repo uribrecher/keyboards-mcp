@@ -1,8 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { MidiManager } from "./midi/midi-manager.js";
-import { ParameterState } from "./nord/parameter-state.js";
-import { getParamByCC, isPerPartParam } from "./nord/nord-electro-5d-map.js";
+import { ModelHolder } from "./shared/model-holder.js";
 import { registerListDevices } from "./tools/list-devices.js";
 import { registerConnect } from "./tools/connect.js";
 import { registerSetParameters } from "./tools/set-parameters.js";
@@ -15,43 +14,30 @@ import { registerGetLastBackupLocation } from "./tools/get-last-backup-location.
 import { registerIsConnected } from "./tools/is-connected.js";
 import { registerLoadProgram } from "./tools/load-program.js";
 import { registerLoadSong } from "./tools/load-song.js";
-import { loadBackupCache } from "./nord/backup-cache.js";
-import { registerWebSearch } from "./tools/web-search.js";
-
-// Load cached inventory data from previous extract_backup (if available)
-loadBackupCache();
+import { registerSystemPrompt } from "./tools/system-prompt.js";
 
 const server = new McpServer({
-  name: "nord-electro-5d",
-  version: "1.0.0",
+  name: "keyboards-mcp",
+  version: "2.0.0",
 });
 
 const midiManager = new MidiManager();
-const paramState = new ParameterState();
+const holder = new ModelHolder();
 
-// Wire up MIDI input listener to update state
-midiManager.setOnCC((msg) => {
-  const entry = getParamByCC(msg.controller);
-  if (!entry) return;
-
-  // Update state (all CCs come on global channel, treat as upper/global)
-  paramState.set(entry.key, msg.value, isPerPartParam(entry.key) ? "upper" : undefined);
-});
-
-// Register all tools
+// Register all tools — they self-guard via holder.requireModel()
 registerListDevices(server, midiManager);
-registerConnect(server, midiManager);
-registerSetParameters(server, midiManager, paramState);
-registerApplyPatch(server, midiManager, paramState);
-registerGetState(server, paramState);
-registerListParameters(server);
-registerListPresets(server);
-registerExtractBackup(server);
-registerGetLastBackupLocation(server);
-registerIsConnected(server, midiManager);
-registerLoadProgram(server, midiManager);
-registerLoadSong(server, midiManager);
-registerWebSearch(server);
+registerConnect(server, midiManager, holder);
+registerSetParameters(server, midiManager, holder);
+registerApplyPatch(server, midiManager, holder);
+registerGetState(server, holder);
+registerListParameters(server, holder);
+registerListPresets(server, holder);
+registerIsConnected(server, midiManager, holder);
+registerLoadProgram(server, midiManager, holder);
+registerLoadSong(server, midiManager, holder);
+registerExtractBackup(server, holder);
+registerGetLastBackupLocation(server, holder);
+registerSystemPrompt(server, holder);
 
 // Start the server
 const transport = new StdioServerTransport();

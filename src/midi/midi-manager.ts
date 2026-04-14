@@ -19,6 +19,7 @@ export class MidiManager {
   private mockWs: WebSocket | null = null;
   private onCCCallback: ((msg: { controller: number; value: number; channel: number }) => void) | null = null;
   private onProgramChangeCallback: ((msg: { number: number; channel: number }) => void) | null = null;
+  private onMockDisconnectCallback: (() => void) | null = null;
   private channel: Channel = 0;
   private lowerChannel: Channel = 1;
   private upperChannel: Channel = 2;
@@ -57,15 +58,17 @@ export class MidiManager {
     return { success: true, portName: targetPort.name };
   }
 
-  autoConnect(): { success: boolean; portName: string } {
+  autoConnect(patterns?: string[]): { success: boolean; portName: string } {
     const ports = this.listOutputPorts();
-    const nordPort = ports.find((p) => p.name.toLowerCase().includes("nord"));
-    if (!nordPort) {
+    const match = patterns
+      ? ports.find((p) => patterns.some((pat) => p.name.toLowerCase().includes(pat.toLowerCase())))
+      : ports.find((p) => !p.name.toLowerCase().includes("mock"));
+    if (!match) {
       throw new Error(
-        `No Nord device found. Available ports: ${ports.map((p) => p.name).join(", ") || "(none)"}`
+        `No matching MIDI device found. Available ports: ${ports.map((p) => p.name).join(", ") || "(none)"}`
       );
     }
-    return this.connect(nordPort.name);
+    return this.connect(match.name);
   }
 
   disconnect(): void {
@@ -164,6 +167,10 @@ export class MidiManager {
     this.onProgramChangeCallback = callback;
   }
 
+  setOnMockDisconnect(callback: () => void): void {
+    this.onMockDisconnectCallback = callback;
+  }
+
   connectInput(portNameOrIndex: string | number): { success: boolean; portName: string } {
     this.disconnectInput();
 
@@ -208,17 +215,17 @@ export class MidiManager {
     return { success: true, portName: targetPort.name };
   }
 
-  autoConnectInput(): { success: boolean; portName: string } {
+  autoConnectInput(patterns?: string[]): { success: boolean; portName: string } {
     const ports = this.listInputPorts();
-    const nordPort = ports.find(
-      (p) => p.name.toLowerCase().includes("nord") && !p.name.toLowerCase().includes("mock")
-    );
-    if (!nordPort) {
+    const match = patterns
+      ? ports.find((p) => patterns.some((pat) => p.name.toLowerCase().includes(pat.toLowerCase())) && !p.name.toLowerCase().includes("mock"))
+      : ports.find((p) => !p.name.toLowerCase().includes("mock"));
+    if (!match) {
       throw new Error(
-        `No Nord input port found. Available: ${ports.map((p) => p.name).join(", ") || "(none)"}`
+        `No matching MIDI input port found. Available: ${ports.map((p) => p.name).join(", ") || "(none)"}`
       );
     }
-    return this.connectInput(nordPort.name);
+    return this.connectInput(match.name);
   }
 
   disconnectInput(): void {
@@ -283,6 +290,14 @@ export class MidiManager {
     try {
       const ws = new WebSocket("ws://localhost:3000?client=mcp");
       ws.on("error", () => {}); // Swallow — best-effort signaling
+      ws.on("close", () => {
+        // Mock device was unloaded — trigger full disconnect
+        if (this.mockWs === ws) {
+          console.error("Mock device disconnected — dropping MIDI connection");
+          this.disconnect();
+          this.onMockDisconnectCallback?.();
+        }
+      });
       this.mockWs = ws;
     } catch {
       // WebSocket connection is best-effort; MIDI forwarding still works

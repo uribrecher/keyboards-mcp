@@ -1,17 +1,11 @@
-export interface Preset {
-  name: string;
-  description: string;
-  genre: string;
-  parameters: Record<string, number | string>;
-  part?: "lower" | "upper";
-}
-
 /**
- * Built-in preset patches for common keyboard sounds.
- * Each preset includes full parts configuration (upper/lower enable, engine select, split mode)
- * so it works regardless of the keyboard's current state.
+ * Built-in preset patches for common Nord Electro 5D keyboard sounds.
+ * Each preset includes full parts configuration so it works regardless of current state.
  * Values use drawbar positions (0-8) for drawbar params and labels where available.
  */
+
+import type { Preset } from "../../../shared/types.js";
+
 export const PRESETS: Preset[] = [
   {
     name: "Jazz Organ (Jimmy Smith)",
@@ -20,28 +14,18 @@ export const PRESETS: Preset[] = [
       "Perfect for jazz standards, soul jazz, and Jimmy Smith-style grooves.",
     genre: "jazz",
     parameters: {
-      // Parts configuration
       part_upper_engine_select: "Organ",
       part_upper_enable: "On",
       part_lower_enable: "Off",
       kb_split_mode: "Off",
-      // Organ
       organ_model: "B3",
-      drawbar_1: 8,
-      drawbar_2: 8,
-      drawbar_3: 8,
-      drawbar_4: 0,
-      drawbar_5: 0,
-      drawbar_6: 0,
-      drawbar_7: 0,
-      drawbar_8: 0,
-      drawbar_9: 0,
+      drawbar_1: 8, drawbar_2: 8, drawbar_3: 8, drawbar_4: 0, drawbar_5: 0,
+      drawbar_6: 0, drawbar_7: 0, drawbar_8: 0, drawbar_9: 0,
       vibrato_type: "C3",
       vibrato_enable: "On",
       percussion: "On",
       percussion_harmonic: "2nd",
       percussion_speed_level: "Fast/Normal",
-      // Amp / Effects
       rotary_speed: "Slow",
       effect1_enable: "Off",
       effect2_enable: "Off",
@@ -62,26 +46,16 @@ export const PRESETS: Preset[] = [
       "Great for gospel, church, and praise music.",
     genre: "gospel",
     parameters: {
-      // Parts configuration
       part_upper_engine_select: "Organ",
       part_upper_enable: "On",
       part_lower_enable: "Off",
       kb_split_mode: "Off",
-      // Organ
       organ_model: "B3",
-      drawbar_1: 8,
-      drawbar_2: 8,
-      drawbar_3: 8,
-      drawbar_4: 8,
-      drawbar_5: 0,
-      drawbar_6: 8,
-      drawbar_7: 0,
-      drawbar_8: 0,
-      drawbar_9: 8,
+      drawbar_1: 8, drawbar_2: 8, drawbar_3: 8, drawbar_4: 8, drawbar_5: 0,
+      drawbar_6: 8, drawbar_7: 0, drawbar_8: 0, drawbar_9: 8,
       vibrato_type: "C3",
       vibrato_enable: "On",
       percussion: "Off",
-      // Amp / Effects
       rotary_speed: "Fast",
       effect1_enable: "Off",
       effect2_enable: "Off",
@@ -101,26 +75,16 @@ export const PRESETS: Preset[] = [
       "Inspired by Jon Lord / Deep Purple, also great for classic rock and blues rock.",
     genre: "rock",
     parameters: {
-      // Parts configuration
       part_upper_engine_select: "Organ",
       part_upper_enable: "On",
       part_lower_enable: "Off",
       kb_split_mode: "Off",
-      // Organ
       organ_model: "B3",
-      drawbar_1: 8,
-      drawbar_2: 8,
-      drawbar_3: 8,
-      drawbar_4: 8,
-      drawbar_5: 8,
-      drawbar_6: 8,
-      drawbar_7: 8,
-      drawbar_8: 8,
-      drawbar_9: 8,
+      drawbar_1: 8, drawbar_2: 8, drawbar_3: 8, drawbar_4: 8, drawbar_5: 8,
+      drawbar_6: 8, drawbar_7: 8, drawbar_8: 8, drawbar_9: 8,
       vibrato_type: "C3",
       vibrato_enable: "On",
       percussion: "Off",
-      // Amp / Effects
       rotary_speed: "Fast",
       effect1_enable: "Off",
       effect2_enable: "Off",
@@ -142,15 +106,12 @@ export const PRESETS: Preset[] = [
       "Classic sound for ballads, smooth jazz, neo-soul, and R&B.",
     genre: "ballad",
     parameters: {
-      // Parts configuration
       part_upper_engine_select: "Piano",
       part_upper_enable: "On",
       part_lower_enable: "Off",
       kb_split_mode: "Off",
-      // Piano
       piano_type: "EP1",
       piano_model: 0,
-      // Amp / Effects
       effect1_type: "Trem 1",
       effect1_enable: "On",
       effect1_rate: 40,
@@ -177,15 +138,12 @@ export const PRESETS: Preset[] = [
       "Great for funk, soul, Motown, and Supertramp-style pop.",
     genre: "funk",
     parameters: {
-      // Parts configuration
       part_upper_engine_select: "Piano",
       part_upper_enable: "On",
       part_lower_enable: "Off",
       kb_split_mode: "Off",
-      // Piano
       piano_type: "EP2",
       piano_model: 0,
-      // Amp / Effects
       effect1_type: "Trem 1",
       effect1_enable: "On",
       effect1_rate: 65,
@@ -208,15 +166,12 @@ export const PRESETS: Preset[] = [
       "Stevie Wonder / Herbie Hancock style, perfect for funk and disco.",
     genre: "funk",
     parameters: {
-      // Parts configuration
       part_upper_engine_select: "Piano",
       part_upper_enable: "On",
       part_lower_enable: "Off",
       kb_split_mode: "Off",
-      // Piano
       piano_type: "Clav",
       piano_model: 0,
-      // Amp / Effects
       effect1_type: "Wah",
       effect1_enable: "On",
       effect1_rate: 80,
@@ -239,15 +194,12 @@ export const PRESETS: Preset[] = [
       "Versatile sound for pop, classical, singer-songwriter, and worship.",
     genre: "pop",
     parameters: {
-      // Parts configuration
       part_upper_engine_select: "Piano",
       part_upper_enable: "On",
       part_lower_enable: "Off",
       kb_split_mode: "Off",
-      // Piano
       piano_type: "Grand",
       piano_model: 0,
-      // Amp / Effects
       effect1_enable: "Off",
       effect2_enable: "Off",
       spkr_comp_enable: "Off",
@@ -267,15 +219,12 @@ export const PRESETS: Preset[] = [
       "Great for country, boogie-woogie, and vintage rock & roll.",
     genre: "country",
     parameters: {
-      // Parts configuration
       part_upper_engine_select: "Piano",
       part_upper_enable: "On",
       part_lower_enable: "Off",
       kb_split_mode: "Off",
-      // Piano
       piano_type: "Upright",
       piano_model: 0,
-      // Amp / Effects
       effect1_enable: "Off",
       effect2_type: "Chorus 1",
       effect2_enable: "On",
