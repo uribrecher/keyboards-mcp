@@ -21,6 +21,7 @@ import {
 interface ParamState {
   value: number;
   label: string;
+  name: string;
   section: string;
   type: string;
   position?: number;
@@ -290,6 +291,7 @@ export class MockEngine {
     const entry: ParamState = {
       value: midiValue,
       label: this.labelFor(param, midiValue),
+      name: param.name,
       section: param.section,
       type: param.type,
     };
