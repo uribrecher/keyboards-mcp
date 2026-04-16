@@ -121,8 +121,7 @@ Regardless of approach, the first tests cover:
 1. **Connect** — start mock, start MCP, call `connect_to_keyboard`, verify MCP reports connected
 2. **Set parameters** — set a few parameters (drawbar, effect toggle, continuous), assert mock state matches expected values
 3. **Get state** — call `get_current_state` via MCP, verify it reflects what was sent
-4. **Apply preset** — call `apply_patch` with a known preset, verify all preset values appear in mock state
-5. **List parameters** — call `list_parameters`, verify response includes expected parameter names and sections
+4. **List parameters** — call `list_parameters`, verify response includes expected parameter names and sections
 
 ## Test Execution
 

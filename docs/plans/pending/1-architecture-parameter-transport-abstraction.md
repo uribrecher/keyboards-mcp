@@ -86,8 +86,8 @@ interface KeyboardDevice {
   getState(section?: string): ToolResult;
   loadProgram(bank: number, slot: number): ToolResult | Promise<ToolResult>;
   loadSong(bank: number, slot: number, part?: string): ToolResult | Promise<ToolResult>;
-  applyPatch(presetName?: string, params?: Record<string, number | string>, part?: string): ToolResult;
-  listPresets(genre?: string): ToolResult;
+  listPrograms(filter?: string): ToolResult;   // query backup inventory by name
+  listSongs(filter?: string): ToolResult;      // query set list inventory by name
   getSystemPrompt(): ToolResult;
 }
 ```
@@ -269,7 +269,7 @@ Create the `KeyboardModel` (type) and `KeyboardDevice` (instance) interfaces. Ex
 Pick `getState` or `listParameters` — move the logic into the Nord device, make the tool a thin wrapper calling `device.getState()`. Verify nothing breaks.
 
 ### Phase 3: Migrate remaining tools
-Move `setParameters`, `applyPatch`, `loadProgram`, `loadSong`, `listPresets`, `getSystemPrompt` into the device. Model provides `createDevice()` factory.
+Move `setParameters`, `loadProgram`, `loadSong`, `getSystemPrompt` into the device. Model provides `createDevice()` factory. Add `listPrograms` and `listSongs` (query backup inventory). Remove `applyPatch` and `listPresets` tools.
 
 ### Phase 4: Implement a DT1/RQ1 model
 Build the Juno-X (or another Roland keyboard) using the new interfaces. This validates the abstraction actually works for non-CC transports.
@@ -298,6 +298,8 @@ Tool descriptions must not contain model-specific details (no "drawbar values 0-
 Device-specific parameter details come from two places:
 - `device.getSystemPrompt()` — signal path, engine capabilities, sound design tips (template from model, instance-specific info like backup inventory from device)
 - `device.listParameters()` — all parameters with names, ranges, types, labels, descriptions (no transport details like CC numbers — just what an agent needs to set values)
+
+The system prompt should include a **terminology glossary**: in keyboard jargon, "program", "preset", and "patch" are near-synonymous — they all refer to a stored sound configuration. Online resources use these interchangeably. In this system, stored sounds are called **programs** and are managed via `listPrograms` / `loadProgram`.
 
 ### Mock engine reusable parts
 

@@ -52,12 +52,12 @@ This keeps single-device usage identical to today while requiring explicit targe
 
 **Affected tools:**
 - `set_parameters` — adds optional `device: number`
-- `apply_patch` — adds optional `device: number`
 - `load_program` — adds optional `device: number`
 - `load_song` — adds optional `device: number`
 - `get_current_state` — adds optional `device: number`
 - `list_parameters` — adds optional `device: number` (different models have different params)
-- `list_presets` — adds optional `device: number`
+- `list_programs` — adds optional `device: number` (queries per-instance backup inventory)
+- `list_songs` — adds optional `device: number` (queries per-instance set list inventory)
 - `get_system_prompt` — adds optional `device: number`
 
 **Tools that change behavior:**
@@ -121,13 +121,13 @@ Refactored to implement the `MidiConnection` interface from the architecture pla
 - Accepts optional `device` parameter.
 - Calls `pool.disconnect(index)` which calls `device.detach()` and removes from pool.
 
-#### `src/tools/set-parameters.ts`, `apply-patch.ts`, `load-program.ts`, `load-song.ts`
+#### `src/tools/set-parameters.ts`, `load-program.ts`, `load-song.ts`
 
 - Add optional `device` parameter to schema.
 - Resolve device: `device` param → `pool.require(device).device`, or single-device fallback via `pool.requireSingle().device`.
-- Delegate to `device.setParameters()` / `device.applyPatch()` / etc. — thin wrappers only.
+- Delegate to `device.setParameters()` / `device.loadProgram()` / etc. — thin wrappers only.
 
-#### `src/tools/get-state.ts`, `list-parameters.ts`, `list-presets.ts`, `get-system-prompt.ts`
+#### `src/tools/get-state.ts`, `list-parameters.ts`, `list-programs.ts`, `list-songs.ts`, `get-system-prompt.ts`
 
 - Add optional `device` parameter.
 - Same resolution logic, delegate to device methods.
