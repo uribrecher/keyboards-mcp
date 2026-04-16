@@ -35,11 +35,14 @@ digraph recreate_sound {
     "Create todo list per part" [shape=box];
     "Pick one part to focus on" [shape=box];
     "Step 3: Identify Synthesis Type" [shape=box];
+    "Step 3.5: Choose Target Device" [shape=box, style=bold];
     "Trained model available?" [shape=diamond];
     "Step 4a: Inverse Synth (ML)" [shape=box, style=bold];
     "Step 4b: Research + Analyze (fallback)" [shape=box];
     "Step 5: Apply & Validate" [shape=box];
     "Good enough?" [shape=diamond];
+    "More parts remaining?" [shape=diamond];
+    "Next part" [shape=box];
     "Done" [shape=doublecircle];
 
     "User names a song" -> "Step 1: Fetch & Separate";
@@ -49,14 +52,18 @@ digraph recreate_sound {
     "Multiple keyboard parts?" -> "Pick one part to focus on" [label="no"];
     "Create todo list per part" -> "Pick one part to focus on";
     "Pick one part to focus on" -> "Step 3: Identify Synthesis Type";
-    "Step 3: Identify Synthesis Type" -> "Trained model available?";
+    "Step 3: Identify Synthesis Type" -> "Step 3.5: Choose Target Device";
+    "Step 3.5: Choose Target Device" -> "Trained model available?";
     "Trained model available?" -> "Step 4a: Inverse Synth (ML)" [label="yes"];
     "Trained model available?" -> "Step 4b: Research + Analyze (fallback)" [label="no"];
     "Step 4a: Inverse Synth (ML)" -> "Step 5: Apply & Validate";
     "Step 4b: Research + Analyze (fallback)" -> "Step 5: Apply & Validate";
     "Step 5: Apply & Validate" -> "Good enough?";
-    "Good enough?" -> "Done" [label="yes"];
+    "Good enough?" -> "More parts remaining?" [label="yes"];
     "Good enough?" -> "Step 5: Apply & Validate" [label="no — refine"];
+    "More parts remaining?" -> "Next part" [label="yes"];
+    "More parts remaining?" -> "Done" [label="no"];
+    "Next part" -> "Pick one part to focus on";
 }
 ```
 
@@ -113,6 +120,44 @@ Search for interviews, studio session notes, gear lists for the song/album. For 
 
 **After identifying the type**, call `list_models` to check which trained inverse models are available, and pick the best match.
 
+## Step 3.5: Choose Target Device
+
+Before designing or predicting parameters, determine which connected device is the best fit for the identified sound. This step is critical when the MCP is connected to multiple devices.
+
+### Device selection process
+
+1. **Query the device pool** — call `is_connected` to list all connected devices with their indices.
+2. **Get each device's capabilities** — call `get_system_prompt(device=N)` and `list_parameters(device=N)` for each connected device. The system prompt describes the device's synthesis engine, signal path, and sound design capabilities.
+3. **Score devices against the sound requirements** using the criteria below.
+4. **Select the best match** and note its device index for Steps 4 and 5.
+
+### Scoring criteria
+
+Evaluate each device against the requirements identified in Step 3. The criteria are ordered by importance:
+
+| Criterion | What to check | Example |
+|-----------|--------------|---------|
+| **Synthesis type match** | Does the device support the required synthesis method? An additive sound needs a device with additive synthesis (e.g., organ drawbars). A subtractive sound needs oscillators + filters. | Sound needs drawbar organ → Nord (has organ engine) scores higher than Prophet-6 (subtractive only) |
+| **Polyphony** | Is the sound polyphonic (chords, pads) or monophonic (bass, lead)? A monophonic device cannot reproduce a polyphonic part. | Polyphonic pad → skip monophonic devices |
+| **Parameter coverage** | Does the device have the controls needed to shape this sound? Check for required oscillator types, filter types, envelope stages, modulation routing. | Sound needs PWM → device must have pulse width parameter |
+| **Timbral range** | Can the device reach the target timbre? A device with only saw/square oscillators cannot produce FM bell tones. | Metallic bell → FM-capable device scores higher |
+| **Effects availability** | Does the device have the effects heard in the sound (rotary speaker, chorus, specific reverb types)? | Leslie sound → device with rotary speaker effect scores higher |
+
+### When only one device is connected
+
+Skip this step — the single device is the target by default (backwards compatible with single-device usage).
+
+### When no device is a good fit
+
+If no connected device can reasonably produce the sound, tell the user:
+- Which device is the closest match and what compromises are needed
+- What kind of device would be ideal for this sound
+- Offer to proceed with the best available option
+
+### Multiple parts across multiple devices
+
+When recreating a song with multiple keyboard parts (from Step 2), different parts may be assigned to different devices. Track which device is assigned to which part in the todo list. This is the primary benefit of multi-device support for sound recreation.
+
 ## Step 4a: Inverse Synth — ML-Based Parameter Prediction (Primary)
 
 When a trained model exists for the identified synthesis type, use it to predict the parameter vector directly from the audio.
@@ -128,8 +173,8 @@ inverse_synth(
 **Returns** a ranked list of predicted parameter vectors with confidence scores. The model's timbre embedding is trained to see through effects, polyphony, and noise — it predicts the **dry patch parameters** regardless of what's in the mix.
 
 **Choosing the right model:**
-- If the user's connected keyboard matches the identified hardware → use that exact model (e.g., `prophet-6`)
-- If not → use the closest model for the synthesis type (e.g., any `subtractive_*` model), then map the predicted params to the user's hardware controls
+- If the target device (from Step 3.5) matches an available inverse model → use that exact model (e.g., `prophet-6`)
+- If not → use the closest model for the synthesis type (e.g., any `subtractive_*` model), then map the predicted params to the target device's controls
 - If `top_k > 1`, briefly describe the differences between predictions to the user
 
 ## Step 4b: Research + Spectral Analysis (Fallback)
@@ -159,23 +204,23 @@ Stems are almost always **wet** (effects from mixing). When setting parameters:
 
 ### Apply the parameters
 
-Use keyboards-mcp to apply the predicted (or manually designed) parameters:
+Use keyboards-mcp to apply the predicted (or manually designed) parameters to the target device chosen in Step 3.5:
 
 ```
 # Always check available params first
-list_parameters()
+list_parameters(device=1)
 
-# Apply the predicted parameter vector
-set_parameters(parameters=[
+# Apply the predicted parameter vector to the target device
+set_parameters(device=1, parameters=[
   {name: "osc1_shape", value: 127},
   {name: "lp_freq", value: 92},
   ...
 ])
 ```
 
-**If the connected keyboard differs from the model's target synth**, map parameters intelligently:
+**If the inverse model's target synth differs from the target device**, map parameters intelligently:
 - Match by function (oscillator shape → oscillator shape, filter cutoff → filter cutoff)
-- Skip parameters that don't exist on the user's hardware
+- Skip parameters that don't exist on the target device
 - Note any limitations to the user
 
 ### Validate with A/B comparison
@@ -209,3 +254,7 @@ If no audio capture is available, ask the user to play and describe what sounds 
 | Ignoring effects processing | The inverse model predicts dry params — add effects separately to match the wet stem |
 | Skipping validation | Always offer A/B comparison when audio capture is available |
 | Trusting a low-confidence prediction blindly | If confidence < 0.6, try `top_k=3` and compare, or fall back to Step 4b |
+| Sending to wrong device | Always pass the `device` index from Step 3.5 to every MCP tool call |
+| Skipping device selection | When multiple devices are connected, always run Step 3.5 — don't default to device 1 |
+| Ignoring synthesis type mismatch | A subtractive synth cannot reproduce an additive organ sound well — pick the right device |
+| Assigning polyphonic part to mono device | Check polyphony requirements against device capabilities before committing |
