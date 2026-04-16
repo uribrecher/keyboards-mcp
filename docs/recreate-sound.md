@@ -196,6 +196,8 @@ When no trained model is available for the synthesis type, fall back to manual a
 2. Check keyboard magazines, YouTube recreations, gear databases
 3. For famous songs, exact presets and settings are often documented
 
+**Terminology note:** Online sources use "patch", "preset", and "program" interchangeably — they all mean a stored sound configuration. In this system, stored sounds are called **programs** (`listPrograms` / `loadProgram`).
+
 ### Spectral-guided parameter estimation
 Use `spectrum_analyze` output to manually map spectral features to synth parameters:
 - `synth_hints` in the analysis output provides direct parameter suggestions
