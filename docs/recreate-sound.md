@@ -120,6 +120,8 @@ Search for interviews, studio session notes, gear lists for the song/album. For 
 
 **After identifying the type**, call `list_models` to check which trained inverse models are available, and pick the best match.
 
+**Critical constraint:** Inverse models are trained per **synthesis type**, not per device. Only use `inverse_synth` when the target device's synthesis engine matches the model's type. Sample-based keyboards (e.g., Nord piano/sample engine) are NOT valid targets for `inverse_synth` — always use the fallback research workflow (Step 4b) for sample-based sounds.
+
 ## Step 3.5: Choose Target Device
 
 Before designing or predicting parameters, determine which connected device is the best fit for the identified sound. This step is critical when the MCP is connected to multiple devices.
@@ -160,22 +162,30 @@ When recreating a song with multiple keyboard parts (from Step 2), different par
 
 ## Step 4a: Inverse Synth — ML-Based Parameter Prediction (Primary)
 
-When a trained model exists for the identified synthesis type, use it to predict the parameter vector directly from the audio.
+When a trained model exists for the identified synthesis type **and** the target device matches that synthesis type, use it to predict a raw parameter vector from the audio.
 
 ```
 inverse_synth(
   audio_path=other.wav,       # or a trimmed section with the target sound
-  synth_model="prophet-6",    # matched to connected hardware or closest available
+  synth_type="subtractive",   # matches the synthesis type, NOT a specific device
   top_k=3                     # get top 3 predictions for comparison
 )
 ```
 
-**Returns** a ranked list of predicted parameter vectors with confidence scores. The model's timbre embedding is trained to see through effects, polyphony, and noise — it predicts the **dry patch parameters** regardless of what's in the mix.
+**Returns** a ranked list of raw parameter vectors (0.0-1.0 normalized) with confidence scores and vector labels. The model's timbre embedding is trained to see through effects, polyphony, and noise — it predicts the **dry patch parameters** regardless of what's in the mix.
 
 **Choosing the right model:**
-- If the target device (from Step 3.5) matches an available inverse model → use that exact model (e.g., `prophet-6`)
-- If not → use the closest model for the synthesis type (e.g., any `subtractive_*` model), then map the predicted params to the target device's controls
+- Match by **synthesis type**: subtractive sound → `subtractive` model, FM sound → `fm` model, organ sound → `organ` model
+- The target device (from Step 3.5) must be of the same synthesis type. If not, use Step 4b (fallback).
+- **Never use `inverse_synth` for sample-based keyboards** (e.g., Nord piano/sample engine) — these don't have a synthesizable parameter space
 - If `top_k > 1`, briefly describe the differences between predictions to the user
+
+**Mapping vector to device parameters:**
+This is the agent's responsibility. The vector labels (e.g., `osc1_shape`, `lp_freq`) are abstract synthesis parameter names. The agent must:
+1. Call `list_parameters(device=N)` on the target device
+2. Match vector labels to device parameter names by function (e.g., `lp_freq` → the device's filter cutoff parameter)
+3. Scale from 0.0-1.0 to the device's parameter range
+4. Skip vector entries that have no equivalent on the target device, and note the gap to the user
 
 ## Step 4b: Research + Spectral Analysis (Fallback)
 
@@ -250,11 +260,12 @@ If no audio capture is available, ask the user to play and describe what sounds 
 |---------|-----|
 | Guessing from genre stereotypes | Research the specific song — don't assume "80s pop = DX7" |
 | Trying to recreate all parts at once | One sound at a time, create todos for multiple parts |
-| Using wrong inverse model | Check `list_models` and match to synthesis type, not just hardware name |
+| Using wrong inverse model | Check `list_models` and match to **synthesis type** — one model per type, not per device |
+| Using inverse_synth for sample-based sounds | Nord piano/sample engine is a sampler, not a synth — use the research fallback (Step 4b) |
 | Ignoring effects processing | The inverse model predicts dry params — add effects separately to match the wet stem |
 | Skipping validation | Always offer A/B comparison when audio capture is available |
 | Trusting a low-confidence prediction blindly | If confidence < 0.6, try `top_k=3` and compare, or fall back to Step 4b |
 | Sending to wrong device | Always pass the `device` index from Step 3.5 to every MCP tool call |
 | Skipping device selection | When multiple devices are connected, always run Step 3.5 — don't default to device 1 |
-| Ignoring synthesis type mismatch | A subtractive synth cannot reproduce an additive organ sound well — pick the right device |
+| Ignoring synthesis type mismatch | A subtractive synth cannot reproduce an additive organ sound well — pick the right device. inverse_synth type must match target device type. |
 | Assigning polyphonic part to mono device | Check polyphony requirements against device capabilities before committing |

@@ -1,5 +1,7 @@
 # Test Automation Framework
 
+> **Execution order: 2 of 7** — Depends on: architecture plan. Should be implemented early to validate the architecture refactor and all subsequent changes.
+
 ## Goal
 
 Automated end-to-end testing for keyboards-mcp: launch a headless mock device, connect the MCP server to it, call MCP tools, and assert on the mock's observed state.
@@ -18,7 +20,7 @@ Automated end-to-end testing for keyboards-mcp: launch a headless mock device, c
 
 New file: `src/mock-runner/cli.ts`
 
-- Plain Node entry point that imports `MockEngine` directly
+- Plain Node entry point that loads the `KeyboardModel` from the registry, calls `model.createMockHandler()`, and creates a thin `MockEngine(port, handler)`
 - Accepts `--model <id>` flag (required), plus optional `--ws-port`, `--lower-channel`, `--upper-channel`
 - Creates the virtual MIDI port and WebSocket server, no Electron/BrowserWindow
 - Prints a ready marker to stdout (e.g., `MOCK_READY`) so the test harness knows when to proceed
@@ -27,6 +29,10 @@ New file: `src/mock-runner/cli.ts`
 Usage: `node dist/mock-runner/cli.js --model nord-electro-5d`
 
 Package script: `"mock:headless": "node dist/mock-runner/cli.js"`
+
+### Prerequisite
+
+This plan assumes the **architecture plan** has been implemented first. `MockEngine` must already be the thin shell that accepts a `MockHandler`, and models must implement `createMockHandler()`.
 
 ## Architecture — Two Approaches
 
@@ -127,3 +133,11 @@ npm run build && node --test dist/tests/smoke.test.js
 Package script: `"test": "node --test dist/tests/**/*.test.js"`
 
 Tests live in `tests/` at the project root (alongside `src/`), compiled to `dist/tests/`.
+
+## Future: Multi-Device Tests
+
+The initial smoke tests cover single-device scenarios. Once the **multi-device plan** is implemented, extend the harness to:
+- Spawn multiple headless mocks simultaneously (different models, different ports)
+- Connect the MCP server to multiple devices
+- Test device-indexed tool calls (`set_parameters(device=1, ...)` vs `device=2`)
+- Test the auto-resolve behavior (single device = no index needed, multiple = required)
