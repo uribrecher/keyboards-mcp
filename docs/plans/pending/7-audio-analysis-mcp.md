@@ -1,5 +1,7 @@
 # Audio Analysis MCP Server
 
+> **Execution order: 7 of 7** — Separate Python repo. Phase 1 (audio pipeline) has no dependencies on keyboards-mcp plans. Phase 2+ (inverse synthesis) needs the architecture plan for the parameter contract. Can be developed in parallel with plans 2-6.
+
 ## Context
 
 A synthesizer is a mathematical function: `f(params) → audio`. Recreating a song's keyboard sound means solving the inverse: `f⁻¹(audio) → params`. Today the AI agent can research gear and set parameters, but cannot listen — requiring human ears in the loop.
@@ -200,33 +202,24 @@ A/B spectral diff — fallback for iterative matching when no trained model exis
 
 #### 6. `inverse_synth`
 
-**The core tool.** Given audio and a target synth model, predict the parameter vector.
+**The core tool.** Given audio and a target synthesis type, predict a raw parameter vector.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | audio_path | string | yes | Path to audio file (stem or recording) |
-| synth_model | string | yes | Target synth ID (e.g. `prophet-6`, `dx7`, `b3-organ`) |
+| synth_type | string | yes | Synthesis type: `subtractive`, `fm`, `organ` |
 | top_k | int | no | Return top K predictions ranked by confidence (default: 1) |
 
-**Returns:** Predicted parameter vector(s) with confidence scores:
+**Returns:** A raw numeric vector — not device-specific parameter names. The vector represents the synthesis type's parameter space (e.g., subtractive: oscillator shapes, filter cutoff, envelopes).
 
 ```json
 {
-  "synth_model": "prophet-6",
+  "synth_type": "subtractive",
   "predictions": [
     {
       "confidence": 0.87,
-      "parameters": {
-        "osc1_shape": 127,
-        "osc1_pulse_width": 64,
-        "osc2_shape": 127,
-        "osc2_freq": 76,
-        "lp_freq": 92,
-        "lp_resonance": 12,
-        "vca_env_attack": 3,
-        "vca_env_sustain": 127,
-        ...
-      },
+      "vector": [0.99, 0.50, 0.99, 0.59, 0.72, 0.09, 0.02, 0.99, ...],
+      "vector_labels": ["osc1_shape", "osc1_pulse_width", "osc2_shape", "osc2_freq", "lp_freq", "lp_resonance", "vca_env_attack", "vca_env_sustain", ...],
       "notes": "Pulse wave oscillators with moderate LP filter — consistent with Prophet-style organ pad"
     }
   ],
@@ -235,20 +228,26 @@ A/B spectral diff — fallback for iterative matching when no trained model exis
 }
 ```
 
+**Design decisions:**
+- **One model per synthesis type**, not per hardware device. A `subtractive` model covers Prophet-6, Moog, Juno-X, etc.
+- **Output is a normalized vector (0.0-1.0)**, not device-specific 0-127 values. The vector represents abstract synthesis parameters.
+- **Mapping vector → device params is an open research problem.** Options under investigation include: vector DB lookup against known patches, per-device mapping models, or direct parameter-name matching when the device's params align with the vector labels.
+- **Constrained pairing:** Each synthesis type model should only be paired with devices of the matching type. A sample-based keyboard (e.g., Nord piano/sample engine) is NOT a valid target for `inverse_synth` — use the fallback research workflow (Step 4b) instead.
+
 **Implementation:**
 1. Convert audio to mel spectrogram (standardized input representation)
-2. Load trained model checkpoint for the specified synth
+2. Load trained model checkpoint for the specified synthesis type
 3. Forward pass → raw parameter predictions (0-1 normalized)
-4. Scale to synth-specific ranges (0-127 for MIDI CC)
+4. Return as-is — scaling to device-specific ranges happens downstream
 5. Optionally return multiple predictions if `top_k > 1` (useful when the many-to-one problem means multiple param combos could match)
 
 #### 7. `train_model`
 
-Generate training data and train (or fine-tune) an inverse model for a specific synth.
+Generate training data and train (or fine-tune) an inverse model for a synthesis type.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| synth_model | string | yes | Target synth ID |
+| synth_type | string | yes | Synthesis type: `subtractive`, `fm`, `organ` |
 | num_samples | int | no | Training samples to generate (default: 50000) |
 | epochs | int | no | Training epochs (default: 100) |
 | resume_from | string | no | Checkpoint path to resume/fine-tune from |
@@ -293,12 +292,13 @@ List available trained inverse models with their metadata.
 {
   "models": [
     {
-      "synth_model": "prophet-6",
+      "synth_type": "subtractive",
       "version": "v1.2",
-      "parameters": 31,
+      "vector_size": 31,
+      "vector_labels": ["osc1_shape", "osc1_pulse_width", ...],
       "training_samples": 50000,
       "validation_accuracy": 0.84,
-      "checkpoint_path": "trained_models/subtractive_prophet6/v1.2.pt"
+      "checkpoint_path": "trained_models/subtractive/v1.2.pt"
     }
   ]
 }
@@ -441,12 +441,13 @@ Because the model was trained with all of these augmentations, the timbre encode
 ```
 1. fetch_audio("youtube.com/watch?v=...")         → full_mix.wav
 2. stem_separate(full_mix.wav)                     → other.wav (keyboards)
-3. inverse_synth(other.wav, "prophet-6")           → predicted param vector
-4. Agent calls keyboards-mcp set_parameters(...)   → synth is configured
-5. (Optional) audio_render + audio_compare         → validate & fine-tune
+3. inverse_synth(other.wav, "subtractive")         → raw parameter vector (0-1)
+4. Agent maps vector to target device params       → (open research problem)
+5. Agent calls keyboards-mcp set_parameters(...)   → synth is configured
+6. (Optional) audio_render + audio_compare         → validate & fine-tune
 ```
 
-Steps 1-3 replace the entire research + manual patch design process. The agent goes from "play That's All" to a parameter vector in seconds (after stems are separated).
+Steps 1-3 replace the research + manual patch design process. Step 4 (vector → device params) is under active research — initial approach may be direct parameter-name matching for devices whose params align with the vector labels.
 
 ## Agent Workflow (without trained model — fallback)
 
@@ -477,17 +478,18 @@ Steps 1-3 replace the entire research + manual patch design process. The agent g
 12. `models/trainer.py`: training loop with validation
 13. `models/inference.py`: load checkpoint, predict
 
-### Phase 3: First Trained Model
-14. Generate 50K samples for Prophet-6 parameter space
-15. Train inverse model, validate on held-out set
-16. `inverse_synth` tool: wire up inference to MCP
-17. `train_model` tool: expose training pipeline to agent
-18. `list_models` tool: model inventory
+### Phase 3: First Trained Model (subtractive)
+14. Define the subtractive synthesis parameter vector (oscillators, filter, envelopes, LFO)
+15. Generate 50K samples using subtractive renderer
+16. Train inverse model, validate on held-out set
+17. `inverse_synth` tool: wire up inference to MCP
+18. `train_model` tool: expose training pipeline to agent
+19. `list_models` tool: model inventory
 
-### Phase 4: Expand
-19. Additional renderers (FM, organ, sample-based)
-20. Train models per synth type
-21. Fine-tuning workflow: pre-train on synth type, fine-tune on specific model
+### Phase 4: Expand synthesis types
+20. Additional renderers (FM, organ)
+21. Train models per synthesis type
+22. Research vector → device param mapping (vector DB, name matching, learned mapping)
 
 ## Verification
 

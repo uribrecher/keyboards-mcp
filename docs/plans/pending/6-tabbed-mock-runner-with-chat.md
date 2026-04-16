@@ -1,5 +1,7 @@
 # Tabbed Multi-Mock Runner with Persistent Chat
 
+> **Execution order: 6 of 7** — Depends on: architecture plan (thin engine + MockHandler), per-instance backup plan (tab labeling + label-keyed backup). Independent of multi-device plan (this is Electron UI, not MCP server).
+
 ## Problem
 
 The agent chat UI currently lives inside the Nord model's web UI (`keyboard_models/nord/electro_5d/web/app.js`). This is wrong because:
@@ -70,15 +72,15 @@ Port assignment: sequential from 3000. When a tab is closed, its port is freed a
 - New IPC handlers:
   - `create-tab` → returns a new `tabId`
   - `close-tab(tabId)` → stops engine, frees port, removes from map
-  - `select-model-for-tab(tabId, modelId)` → loads model, creates engine, returns `{ wsPort, modelUiPath, displayName }`
+  - `select-model-for-tab(tabId, modelId)` → loads `KeyboardModel` from registry, calls `model.createMockHandler()`, creates thin `MockEngine(port, handler)`, returns `{ wsPort, modelUiPath, displayName }`
 - Removes old `select-model` handler (replaced by `select-model-for-tab`).
 - `get-models` stays the same.
 
 ### `src/mock-runner/engine.ts`
 
-**Before:** WebSocket port hardcoded to 3000.
+**Before:** WebSocket port hardcoded to 3000. Engine contains model-specific logic (state building, CC routing, label formatting).
 
-**After:** Constructor accepts a `port` parameter. Everything else unchanged — each instance is fully independent.
+**After:** Per the architecture plan, the engine is a **thin shell**. Constructor accepts a `port` parameter and a `MockHandler` from the model. The engine owns only MIDI virtual port creation, WebSocket lifecycle, and broadcasting. All MIDI handling is delegated to `handler.onMIDI()`. Each tab's engine instance is fully independent.
 
 ### `src/mock-runner/shell/` (persistent host)
 
@@ -128,10 +130,13 @@ Updated IPC bridge to expose the new tab-oriented methods:
 ## What Doesn't Change
 
 - **MCP tools** — unchanged, they work via MIDI port names
-- **Model implementations** — unchanged (except Nord losing chat code)
+- **KeyboardModel / KeyboardDevice implementations** — unchanged (except Nord losing chat code). Models already provide `createMockHandler()` per the architecture plan.
 - **`model-registry.ts`** — unchanged
 - **`agent.ts` behavior** — unchanged (just default port)
-- **Mock handler / state manager** — unchanged per model
+
+### Prerequisite
+
+This plan assumes the **architecture plan** has been implemented first. The engine must already be the thin shell that delegates to `MockHandler` instances created via `KeyboardModel.createMockHandler()`.
 
 ## Chat Panel Details
 

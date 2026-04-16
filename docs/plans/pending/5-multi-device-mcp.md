@@ -1,5 +1,7 @@
 # Multi-Device MCP
 
+> **Execution order: 5 of 7** — Depends on: architecture plan (KeyboardDevice with `attach()`/`detach()`), per-instance backup plan (label-keyed backup storage).
+
 ## Problem
 
 The MCP server can only connect to one MIDI device at a time. The single-device assumption is baked into every layer: `ModelHolder` is a singleton, `MidiManager` holds one output, and all tools implicitly target "the" connected device.
@@ -12,15 +14,12 @@ For recreating sounds that involve multiple keyboards (e.g., organ on the Nord, 
 
 Replace the singleton `ModelHolder` + `MidiManager` pair with a **device pool** — an indexed collection of connected devices.
 
-Each device in the pool is a self-contained unit:
+Each entry in the pool wraps a `KeyboardDevice` (instance) — which already owns its connection, state, and model back-reference internally. The pool adds an index and tracks the collection.
 
 ```typescript
-interface ConnectedDevice {
-  index: number;                // 1-based, assigned on connect
-  model: KeyboardModel;
-  stateManager: StateManager;
-  midi: MidiManager;            // Own output + optional forward
-  displayName: string;          // e.g., "Nord Electro 5D"
+interface PoolEntry {
+  index: number;                // 1-based, stable for session lifetime
+  device: KeyboardDevice;       // The instance — owns connection, state, backup data
 }
 ```
 
@@ -28,15 +27,15 @@ A new `DevicePool` class replaces `ModelHolder`:
 
 ```typescript
 class DevicePool {
-  devices: Map<number, ConnectedDevice>;
+  devices: Map<number, PoolEntry>;
   nextIndex: number;
 
-  connect(model, midi): number;       // Returns assigned index
-  disconnect(index): void;
-  get(index): ConnectedDevice;
-  require(index): ConnectedDevice;    // Throws if not found
-  list(): ConnectedDevice[];
-  requireSingle(): ConnectedDevice;   // For backwards compat when only 1 device
+  connect(device: KeyboardDevice): number;  // Adds to pool, returns assigned index
+  disconnect(index): void;                  // Calls device.detach(), removes from pool
+  get(index): PoolEntry;
+  require(index): PoolEntry;               // Throws if not found
+  list(): PoolEntry[];
+  requireSingle(): PoolEntry;             // For backwards compat when only 1 device
 }
 ```
 
@@ -62,9 +61,9 @@ This keeps single-device usage identical to today while requiring explicit targe
 - `get_system_prompt` — adds optional `device: number`
 
 **Tools that change behavior:**
-- `connect_to_keyboard` — no longer unloads previous device. Adds to pool. Returns the assigned index in the response text.
+- `connect_to_keyboard` — no longer unloads previous device. Creates a `KeyboardDevice` via `model.createDevice()`, attaches the connection, adds to pool. Accepts optional `label` parameter for user-assigned instance name. Returns the assigned index in the response text.
 - `disconnect_from_keyboard` — takes optional `device: number`. If omitted and multiple connected, returns error listing devices. Disconnects the specified device from the pool.
-- `is_connected` — reports all connected devices with their indices, models, and connection status.
+- `is_connected` — reports all connected devices with their indices, model names, labels, and connection status.
 
 ### Connection Flow
 
@@ -75,18 +74,18 @@ connect_to_keyboard(port: "Nord") → unloads previous → loads Nord → done
 
 **After (multi device):**
 ```
-connect_to_keyboard(port: "Nord")     → pool index 1, returns "Connected Nord Electro 5D as device 1"
-connect_to_keyboard(port: "Prophet")  → pool index 2, returns "Connected Prophet-6 as device 2"
-set_parameters(device: 1, ...)        → targets Nord
-set_parameters(device: 2, ...)        → targets Prophet-6
-disconnect_from_keyboard(device: 1)   → removes Nord, Prophet stays as device 2
+connect_to_keyboard(port: "Nord", label: "studio Nord")  → pool index 1, returns "Connected Nord Electro 5D 'studio Nord' as device 1"
+connect_to_keyboard(port: "Prophet")                     → pool index 2, returns "Connected Prophet-6 as device 2"
+set_parameters(device: 1, ...)                           → targets studio Nord
+set_parameters(device: 2, ...)                           → targets Prophet-6
+disconnect_from_keyboard(device: 1)                      → removes studio Nord, Prophet stays as device 2
 ```
 
 Indices are stable for the session — disconnecting device 1 does not renumber device 2.
 
 ### HW + Mock Synced Pairs
 
-When `connect_to_keyboard` is called with both a hardware port and a forward port (mock), this remains a **single device** in the pool. The `MidiManager` for that device handles forwarding internally, exactly as today.
+When `connect_to_keyboard` is called with both a hardware port and a forward port (mock), this remains a **single device** in the pool. The `MidiConnection` for that device handles forwarding internally, exactly as today.
 
 This means a user can have:
 - Device 1: Real Nord + Nord Mock (synced pair)
@@ -98,7 +97,7 @@ Both are independently addressable by index.
 
 #### `src/shared/device-pool.ts` (new file)
 
-Replaces `model-holder.ts`. Manages the `Map<number, ConnectedDevice>` with connect/disconnect/get/list/require methods.
+Replaces `model-holder.ts`. Manages the `Map<number, PoolEntry>` with connect/disconnect/get/list/require methods. On `connect()`, adds the `KeyboardDevice` to the pool. On `disconnect()`, calls `device.detach()` and removes from pool.
 
 #### `src/shared/model-holder.ts`
 
@@ -106,30 +105,32 @@ Removed. All references replaced with `DevicePool`.
 
 #### `src/midi/midi-manager.ts`
 
-No structural changes. Each `ConnectedDevice` in the pool gets its own `MidiManager` instance. The class itself stays the same — one output, optional forward, channel config.
+Refactored to implement the `MidiConnection` interface from the architecture plan. Each `ConnectedDevice` in the pool gets its own instance. The class provides `sendCC()`, `sendSysEx()`, `sendNRPN()`, `sendProgramChange()`, `sendCCBatch()`, `onCC()`, `onSysEx()`.
 
 #### `src/tools/connect.ts`
 
 - No longer calls `holder.unload()` before connecting.
-- Creates a new `MidiManager` instance for the new connection.
-- Calls `pool.connect(model, midi)` to add to pool.
+- Loads the `KeyboardModel` from registry, calls `model.createDevice()` to get a `KeyboardDevice`.
+- Creates a `MidiConnection`, calls `device.attach(connection)`.
+- Sets `device.label` if the user provided one.
+- Calls `pool.connect(device)` to add to pool.
 - Returns the assigned index in the response.
 
 #### `src/tools/disconnect.ts`
 
 - Accepts optional `device` parameter.
-- Calls `pool.disconnect(index)` which stops the MIDI manager and cleans up.
+- Calls `pool.disconnect(index)` which calls `device.detach()` and removes from pool.
 
 #### `src/tools/set-parameters.ts`, `apply-patch.ts`, `load-program.ts`, `load-song.ts`
 
 - Add optional `device` parameter to schema.
-- Resolve device: `device` param → `pool.require(device)`, or single-device fallback via `pool.requireSingle()`.
-- Use the resolved device's `model`, `stateManager`, and `midi` instead of the global singleton.
+- Resolve device: `device` param → `pool.require(device).device`, or single-device fallback via `pool.requireSingle().device`.
+- Delegate to `device.setParameters()` / `device.applyPatch()` / etc. — thin wrappers only.
 
 #### `src/tools/get-state.ts`, `list-parameters.ts`, `list-presets.ts`, `get-system-prompt.ts`
 
 - Add optional `device` parameter.
-- Same resolution logic.
+- Same resolution logic, delegate to device methods.
 
 #### `src/tools/is-connected.ts`
 
@@ -140,17 +141,19 @@ No structural changes. Each `ConnectedDevice` in the pool gets its own `MidiMana
 
 - Creates `DevicePool` instead of `ModelHolder`.
 - Passes `pool` to all tool registration functions instead of `holder`.
-- `MidiManager` is no longer created here — each connection creates its own.
+- `MidiConnection` is no longer created here — each connection creates its own.
 
 ### What Doesn't Change
 
-- **Keyboard models** — no changes to any model implementation.
-- **`model-registry.ts`** — unchanged, still discovers and loads models.
-- **`parameter-resolution.ts`** — unchanged, works per-parameter.
-- **`parameter-state.ts`** — unchanged, each device gets its own instance.
+- **Keyboard models** — no changes to model implementations (they already implement `KeyboardModel` with `createDevice()` factory, and `KeyboardDevice` with `attach()`/`detach()`).
+- **`model-registry.ts`** — unchanged, still discovers and loads `KeyboardModel` types.
 - **Mock runner / engine** — unchanged (this is about the MCP server side).
 - **`agent.ts`** — unchanged, agent uses MCP tools which now support multi-device.
-- **MIDI protocol** — unchanged, each MidiManager talks to one MIDI port.
+- **MIDI protocol** — unchanged, each MidiConnection talks to one MIDI port.
+
+### Prerequisite
+
+This plan assumes the **architecture plan** has been implemented first. `KeyboardModel` must provide `createDevice()`, and `KeyboardDevice` must implement `attach(connection)`, `detach()`, and all tool methods.
 
 ### System Prompt Updates
 
