@@ -1,0 +1,152 @@
+# Tabbed Multi-Mock Runner with Persistent Chat
+
+## Problem
+
+The agent chat UI currently lives inside the Nord model's web UI (`keyboard_models/nord/electro_5d/web/app.js`). This is wrong because:
+
+1. Chat disappears when the model chooser is showing
+2. Other keyboard models would need to duplicate the chat code
+3. Chat is an agent concern, not a model concern
+
+Additionally, the mock runner only supports one model at a time.
+
+## Design
+
+### Layout
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Mock Runner Shell (always present, never reloaded)                      │
+├───────────────────────────────────────────────┬──────────────────────────┤
+│ [Nord Electro 5D] [Prophet-6] [+]            │                          │
+├───────────────────────────────────────────────┤   Chat Panel             │
+│                                               │   (agent @ :2999)        │
+│   <iframe>                                    │                          │
+│   Active tab's content:                       │   Independent of tabs.   │
+│   - Model chooser (new tab)                   │   MCP controls all       │
+│   - Model UI (after selection)                │   running mocks + real   │
+│                                               │   devices.               │
+│                                               │                          │
+└───────────────────────────────────────────────┴──────────────────────────┘
+```
+
+### Port Assignment
+
+| Service          | Port |
+|------------------|------|
+| Agent HTTP/SSE   | 2999 |
+| Mock Engine tab 1| 3000 |
+| Mock Engine tab 2| 3001 |
+| Mock Engine tab N| 3000 + N-1 |
+
+### Tab Lifecycle
+
+1. **App starts:** One tab, showing model chooser in the iframe.
+2. **Model selected:** Main process creates a MockEngine on the next available port (starting at 3000). Shell updates the tab label to the model display name, iframe navigates to the model's web UI with `?wsPort=<port>` query parameter.
+3. **[+] clicked:** New tab added, shows model chooser. Previous tab's iframe is hidden (not destroyed) so its WebSocket connection stays alive.
+4. **Tab closed (x):** Main process stops that tab's MockEngine (closes virtual MIDI port + WebSocket). Iframe destroyed. If last tab is closed, a fresh model-chooser tab appears.
+5. **Tab switched:** Active iframe shown, others hidden via CSS (`display: none`).
+
+### Engine Management
+
+Main process maintains a `Map<tabId, { model, engine, wsPort }>`.
+
+Each `MockEngine` instance gets its own:
+- WebSocket server on its assigned port
+- Virtual MIDI port named after the keyboard model
+- Independent channel state
+
+Port assignment: sequential from 3000. When a tab is closed, its port is freed and can be reused.
+
+## Architecture Changes
+
+### `src/mock-runner/main.ts`
+
+**Before:** Holds a single model + engine. Calls `mainWindow.loadFile()` to swap between shell and model UI.
+
+**After:**
+- Loads shell once at startup. Never calls `loadFile()` again.
+- Holds `Map<tabId, { model, engine, wsPort }>` for active tabs.
+- New IPC handlers:
+  - `create-tab` → returns a new `tabId`
+  - `close-tab(tabId)` → stops engine, frees port, removes from map
+  - `select-model-for-tab(tabId, modelId)` → loads model, creates engine, returns `{ wsPort, modelUiPath, displayName }`
+- Removes old `select-model` handler (replaced by `select-model-for-tab`).
+- `get-models` stays the same.
+
+### `src/mock-runner/engine.ts`
+
+**Before:** WebSocket port hardcoded to 3000.
+
+**After:** Constructor accepts a `port` parameter. Everything else unchanged — each instance is fully independent.
+
+### `src/mock-runner/shell/` (persistent host)
+
+**Before:** Simple model picker that gets replaced on model selection.
+
+**After:** Permanent layout host with three areas:
+
+1. **Tab bar** — Horizontal tab strip at the top of the left panel. Each tab shows the model display name (or "New" for model chooser tabs). Close button (x) on each tab. Plus (+) button at the end.
+
+2. **Iframe container** — Below the tab bar. Holds one `<iframe>` per tab. Only the active tab's iframe is visible (`display: none` for others). New tabs load `chooser.html`. After model selection, iframe navigates to the model's `web/index.html?wsPort=<port>`.
+
+3. **Chat panel** — Right side, always visible. Contains the chat UI extracted from the Nord model. Connects to agent at `http://localhost:2999`. Shows agent connection status. Chat history persisted in `localStorage`.
+
+**Shell JS responsibilities:**
+- Tab state management (create, switch, close)
+- IPC calls to main process for engine lifecycle
+- Chat UI rendering and agent communication
+- Listening for `postMessage` from model chooser iframes
+
+### `src/mock-runner/shell/chooser.html` (new file)
+
+The model chooser extracted into a standalone page loadable in an iframe. On model selection, sends `window.parent.postMessage({ type: 'model-selected', modelId })` to the shell.
+
+### `src/keyboard_models/nord/electro_5d/web/`
+
+**Chat code removed** from `app.js` and `index.html`. The model UI becomes purely the mock hardware display.
+
+**WebSocket connection** updated to read port from URL query parameter:
+```js
+const wsPort = new URLSearchParams(location.search).get('wsPort') || '3000';
+const ws = new WebSocket(`ws://localhost:${wsPort}`);
+```
+
+### `src/agent.ts`
+
+Default port changed from 3001 to 2999. No other changes — the agent is fully independent and MCP tools address devices by MIDI port name, not by tab.
+
+### `src/mock-runner/preload.cjs`
+
+Updated IPC bridge to expose the new tab-oriented methods:
+- `createTab()` → IPC `create-tab`
+- `closeTab(tabId)` → IPC `close-tab`
+- `selectModelForTab(tabId, modelId)` → IPC `select-model-for-tab`
+- `getModels()` → unchanged
+- `openBackupDialog()` → unchanged
+
+## What Doesn't Change
+
+- **MCP tools** — unchanged, they work via MIDI port names
+- **Model implementations** — unchanged (except Nord losing chat code)
+- **`model-registry.ts`** — unchanged
+- **`agent.ts` behavior** — unchanged (just default port)
+- **Mock handler / state manager** — unchanged per model
+
+## Chat Panel Details
+
+The chat panel extracted from the Nord UI into the shell includes:
+
+- Chat message history (rendered as formatted bubbles)
+- Input area with send button
+- Agent connection status indicator
+- Reset conversation button
+- Re-extract backup button
+- SSE streaming for agent responses (text, tool_use, tool_result events)
+- `localStorage` persistence for chat history
+
+The chat connects to `http://localhost:2999` and is fully independent of which tab is active or which mocks are running.
+
+## Window Size
+
+Increase default window size from 1400x900 to accommodate the persistent chat panel alongside model UIs. Exact dimensions TBD during implementation, but likely ~1600x950 or wider.
