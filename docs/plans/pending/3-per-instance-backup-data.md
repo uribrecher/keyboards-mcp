@@ -10,25 +10,37 @@ Backup data (programs, piano models, samples, set lists) is currently stored as 
 
 ```
 extract_backup(file_path) 
-  → model.backupParser.parseBackup(file_path)
-  → writes data/backup_cache.json (single global file)
-  → writes data/last_backup_path.txt
+  → model.backup.parseBackup(file_path)
+  → model.backupCache.set(data) → writes data/backup_cache.json (single global file)
+  → model.backupCache.setLastBackupPath() → writes data/last_backup_path.txt
+  → device.backupData = data (updates active device instance)
   → returns formatted markdown inventory
 
-MockHandler.init()
-  → backupCache.load()  (reads data/backup_cache.json)
-  → buildInventoryFromCache()
-  → applyProgramParams() on Program Change
-  → getExtraState() includes piano/sample names for UI
+MockHandler.init(lowerChannel, upperChannel)
+  → backupCache.load() (reads data/backup_cache.json)
+  → buildInventoryFromCache() (piano models, sample names for UI)
+
+MockHandler.onMIDI({ type: "program", ... })
+  → applyProgramParams() from cached backup data
+  → returns { state: fullState } for UI broadcast
+
+MockHandler.onCacheReload()
+  → re-reads backup cache from disk, rebuilds inventory
+
+KeyboardDevice (MCP side)
+  → device.backupData holds this instance's inventory
+  → device.listPrograms() / device.listSongs() query backupData
+  → device.getSystemPrompt() includes backup inventory summary
 ```
 
 ### Key files
 
-- `src/tools/extract-backup.ts` — MCP tool registration
+- `src/tools/extract-backup.ts` — MCP tool, writes to cache and updates device.backupData
 - `src/keyboard_models/nord/electro_5d/backup-cache.ts` — cache read/write, path: `data/backup_cache.json`
 - `src/keyboard_models/nord/electro_5d/backup-parser.ts` — binary parsing, `BackupMetadata` type
-- `src/keyboard_models/nord/electro_5d/mock-handler.ts` — loads cache on init, applies program params
-- `src/keyboard_models/nord/electro_5d/index.ts` — model entry point
+- `src/keyboard_models/nord/electro_5d/mock-handler.ts` — MockHandler with onMIDI(), loads cache on init
+- `src/keyboard_models/nord/electro_5d/device.ts` — KeyboardDevice, owns backupData for tool methods
+- `src/keyboard_models/nord/electro_5d/index.ts` — model entry point, createDevice() factory
 
 ## Design
 
@@ -80,24 +92,41 @@ Add optional `label` parameter. Returns the last backup path for the specified l
 
 ### KeyboardDevice changes
 
-Per the architecture plan, `KeyboardDevice` already has `backupData?: BackupData`. The backup cache module needs to support reading/writing by label:
+`KeyboardDevice` already has `backupData?: BackupData`. The `BackupCacheCapability` interface (in `keyboard-model.ts`) needs to be extended with label support:
 
 ```typescript
-// In backup-cache.ts (conceptual)
-interface BackupCache {
-  save(data: BackupMetadata, label?: string): void;    // writes to data/backups/<label>/
-  load(label?: string): BackupMetadata | null;         // reads from data/backups/<label>/
-  listLabels(): string[];                               // lists known backup labels
+// Current interface (single global cache):
+interface BackupCacheCapability {
+  load(): void;
+  get(): BackupData | null;
+  set(data: BackupData): void;
+  reload(): boolean;
+  getLastBackupPath(): string | null;
+  setLastBackupPath(path: string): void;
+}
+
+// Updated interface (label-keyed):
+interface BackupCacheCapability {
+  load(label?: string): void;                    // reads from data/backups/<label>/
+  get(label?: string): BackupData | null;
+  set(data: BackupData, label?: string): void;   // writes to data/backups/<label>/
+  reload(label?: string): boolean;
   getLastBackupPath(label?: string): string | null;
+  setLastBackupPath(path: string, label?: string): void;
+  listLabels(): string[];                         // lists known backup labels
 }
 ```
 
+The `label` parameter defaults to `"_default"` for backwards compatibility.
+
 ### MockHandler changes
 
-MockHandler currently calls `backupCache.load()` globally on init. After this change:
+MockHandler currently calls `backupCache.load()` globally on `init()` and reads from a single cache file. After this change:
 
-- MockHandler receives its backup data via constructor or init parameter (injected by whoever creates it)
-- For MCP-connected mocks (forward port): the connected device's `backupData` is forwarded to the mock handler via the existing cache reload mechanism
+- `MockHandler.init()` receives a label and loads that label's cache: `backupCache.load(label)`
+- `MockHandler.onCacheReload()` reloads the same label's cache
+- For the mock runner: the tab's label determines which cache to load
+- For MCP-connected mocks (forward port): the connected device's label is used to select the right cache
 
 ### Mock runner tab labeling
 
