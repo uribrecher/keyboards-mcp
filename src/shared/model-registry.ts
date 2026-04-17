@@ -11,8 +11,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const modelsDir = join(__dirname, "..", "keyboard_models");
 
-let activeModel: KeyboardModel | null = null;
-
 /** Scan keyboard_models/ for all available models */
 export async function discoverModels(): Promise<KeyboardModelInfo[]> {
   const models: KeyboardModelInfo[] = [];
@@ -123,11 +121,3 @@ export async function findLastBackupPath(): Promise<string | null> {
   return null;
 }
 
-export function getActiveModel(): KeyboardModel {
-  if (!activeModel) throw new Error("No keyboard model loaded. Call setActiveModel() first.");
-  return activeModel;
-}
-
-export function setActiveModel(model: KeyboardModel): void {
-  activeModel = model;
-}

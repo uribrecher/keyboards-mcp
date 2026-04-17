@@ -148,11 +148,11 @@ export class Prophet6Device implements KeyboardDevice {
     return textResult(`${this.model.info.displayName} does not support set list loading.`);
   }
 
-  listPrograms(_filter?: string): ToolResult {
+  listPrograms(_filter?: string, _bank?: number): ToolResult {
     return textResult(`${this.model.info.displayName} does not support program inventory.`);
   }
 
-  listSongs(_filter?: string): ToolResult {
+  listSongs(_filter?: string, _bank?: number): ToolResult {
     return textResult(`${this.model.info.displayName} does not support set list inventory.`);
   }
 

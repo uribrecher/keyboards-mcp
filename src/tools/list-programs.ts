@@ -13,14 +13,18 @@ export function registerListPrograms(server: McpServer, holder: ModelHolder): vo
           .string()
           .optional()
           .describe("Optional name filter (case-insensitive substring match)"),
+        bank: z
+          .number()
+          .optional()
+          .describe("Optional bank number to filter by"),
       },
     },
-    async ({ filter }) => {
+    async ({ filter, bank }) => {
       let device;
       try { device = holder.requireDevice(); }
       catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
 
-      return device.listPrograms(filter);
+      return device.listPrograms(filter, bank);
     },
   );
 }

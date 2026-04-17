@@ -9,7 +9,6 @@ import type { KeyboardModel } from "../../../shared/keyboard-model.js";
 import type { MidiSender } from "../../../shared/midi-sender.js";
 import { NordElectro5DDevice } from "./device.js";
 import { createParameterMap } from "./midi-map.js";
-import { PRESETS, findPreset, getPresetsByGenre } from "./presets.js";
 import { NordElectro5DState } from "./state-manager.js";
 import { validateParameterBatch } from "./validation.js";
 import { createBackupCache } from "./backup-cache.js";
@@ -20,7 +19,7 @@ import {
   formatBackupAsMarkdown,
   type BackupMetadata,
 } from "./backup-parser.js";
-import { createNordElectro5DMockHandlerV2 } from "./mock-handler-v2.js";
+import { createNordElectro5DMockHandler } from "./mock-handler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const parameterMap = createParameterMap();
@@ -38,10 +37,6 @@ const model: KeyboardModel = {
   createStateManager() {
     return new NordElectro5DState(parameterMap);
   },
-
-  presets: PRESETS,
-  findPreset,
-  getPresetsByGenre,
 
   backup: {
     async detectBackup(filePath: string) {
@@ -162,7 +157,7 @@ SOUND DESIGN TIPS:
   mockUiDir: join(__dirname, "..", "..", "..", "..", "src", "keyboard_models", "nord", "electro_5d", "web"),
 
   createMockHandler() {
-    return createNordElectro5DMockHandlerV2();
+    return createNordElectro5DMockHandler();
   },
 
   createDevice() {

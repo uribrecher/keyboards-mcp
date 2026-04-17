@@ -34,10 +34,3 @@ export interface KeyboardParameter {
   perPart?: boolean;
 }
 
-export interface Preset {
-  name: string;
-  description: string;
-  genre: string;
-  parameters: Record<string, number | string>;
-  part?: string;
-}
