@@ -9,8 +9,6 @@ import type { KeyboardModel } from "../../../shared/keyboard-model.js";
 import type { MidiSender } from "../../../shared/midi-sender.js";
 import { NordElectro5DDevice } from "./device.js";
 import { createParameterMap } from "./midi-map.js";
-import { NordElectro5DState } from "./state-manager.js";
-import { validateParameterBatch } from "./validation.js";
 import { createBackupCache } from "./backup-cache.js";
 import {
   detectBackup,
@@ -30,12 +28,6 @@ const model: KeyboardModel = {
     displayName: "Nord Electro 5D",
     manufacturer: "Nord",
     midiPortPatterns: ["nord"],
-  },
-
-  parameterMap,
-
-  createStateManager() {
-    return new NordElectro5DState(parameterMap);
   },
 
   backup: {
@@ -85,12 +77,6 @@ const model: KeyboardModel = {
   },
 
   backupCache: createBackupCache(),
-
-  validateParameterBatch(parameters, state, targetPart) {
-    // Map from {key, value} to include resolved keys
-    const resolved = parameters.map(({ key, value }) => ({ key, value }));
-    return validateParameterBatch(resolved, state, targetPart, parameterMap);
-  },
 
   agentSystemPrompt: `KEYBOARD: Nord Electro 5D
 
@@ -161,7 +147,12 @@ SOUND DESIGN TIPS:
   },
 
   createDevice() {
-    return new NordElectro5DDevice(model);
+    return new NordElectro5DDevice(model, {
+      parameterMap,
+      programLoader: model.programLoader!,
+      songLoader: model.songLoader!,
+      systemPromptTemplate: model.agentSystemPrompt!,
+    });
   },
 };
 

@@ -15,6 +15,11 @@ import type { ToolResult } from "../../../shared/tool-result.js";
 import { textResult } from "../../../shared/tool-result.js";
 import { GenericParameterState } from "../../../shared/parameter-state.js";
 
+export interface Prophet6DeviceDeps {
+  parameterMap: ParameterMap;
+  systemPromptTemplate?: string;
+}
+
 export class Prophet6Device implements KeyboardDevice {
   readonly model: KeyboardModel;
   label?: string;
@@ -23,15 +28,24 @@ export class Prophet6Device implements KeyboardDevice {
   private connection: MidiConnection | null = null;
   private state: StateManager;
   private parameterMap: ParameterMap;
+  private systemPromptTemplate?: string;
 
-  constructor(model: KeyboardModel) {
+  constructor(model: KeyboardModel, deps: Prophet6DeviceDeps) {
     this.model = model;
-    this.parameterMap = model.parameterMap;
+    this.parameterMap = deps.parameterMap;
+    this.systemPromptTemplate = deps.systemPromptTemplate;
     this.state = new GenericParameterState([], this.parameterMap);
   }
 
   attach(connection: MidiConnection): void {
     this.connection = connection;
+
+    // Listen for incoming CCs to update internal state
+    connection.onCC((cc, value) => {
+      const entry = this.parameterMap.getParamByCC(cc);
+      if (!entry) return;
+      this.state.set(entry.key, value);
+    });
   }
 
   detach(): void {
@@ -157,7 +171,7 @@ export class Prophet6Device implements KeyboardDevice {
   }
 
   getSystemPrompt(): ToolResult {
-    const template = this.model.agentSystemPrompt;
+    const template = this.systemPromptTemplate;
     if (!template) {
       return textResult(
         `${this.model.info.displayName} does not provide a system prompt.`,
