@@ -123,6 +123,37 @@ export interface MockHandler {
   onCacheReload?(ctx: MockContext): void;
 }
 
+// ── New mock handler (thin engine architecture) ──
+
+/** Raw MIDI message received by the mock handler */
+export type MidiMessage =
+  | { type: "cc"; controller: number; value: number; channel: number }
+  | { type: "program"; number: number; channel: number }
+  | { type: "sysex"; bytes: number[] };
+
+/** What the handler returns after processing a MIDI message */
+export interface MockHandlerResult {
+  /** Full state message to broadcast to UI (if changed) */
+  state?: Record<string, any>;
+  /** Console log line */
+  log?: string;
+}
+
+/**
+ * New MockHandler interface for the thin engine architecture.
+ * The handler owns ALL state and logic — the engine is just MIDI I/O + WebSocket.
+ */
+export interface MockHandlerV2 {
+  /** Called once when the mock engine starts */
+  init(lowerChannel: number, upperChannel: number): void;
+  /** Process any MIDI message. Returns state to broadcast and/or a log line. */
+  onMIDI(msg: MidiMessage): MockHandlerResult;
+  /** Return the complete current state (for new WebSocket clients) */
+  getFullState(includeInventory: boolean): Record<string, any>;
+  /** Reload cached data (e.g., backup cache) */
+  onCacheReload?(): void;
+}
+
 // ── Device instance (new architecture) ──
 
 /**
@@ -201,8 +232,8 @@ export interface KeyboardModel {
   /** Path to the web/ UI directory for the mock device */
   mockUiDir?: string;
 
-  /** Optional: create a mock device handler for model-specific behavior */
-  createMockHandler?(): MockHandler;
+  /** Optional: create a mock device handler */
+  createMockHandler?(): MockHandlerV2;
 
   /** Factory: create a new device instance for this model (new architecture) */
   createDevice?(): KeyboardDevice;

@@ -11,7 +11,7 @@ import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
-import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
+import type { KeyboardModel, KeyboardModelInfo, MockHandlerV2 } from "../shared/keyboard-model.js";
 import { MockEngine } from "./engine.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -74,11 +74,17 @@ async function switchModelInner(modelId: string): Promise<void> {
   const model = await loadModelById(modelId);
   currentModel = model;
 
-  // Create and start engine
-  engine = new MockEngine(model, {
+  // Create handler and engine
+  const handler = model.createMockHandler?.();
+  if (!handler) {
+    console.error(`Model ${model.info.displayName} does not provide a mock handler.`);
+    return;
+  }
+  engine = new MockEngine(handler, {
     lowerChannel: LOWER_CH,
     upperChannel: UPPER_CH,
     wsPort: WS_PORT,
+    portName: `${model.info.displayName} Mock`,
   });
   engine.start();
 

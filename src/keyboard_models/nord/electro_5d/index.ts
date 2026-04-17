@@ -20,7 +20,7 @@ import {
   formatBackupAsMarkdown,
   type BackupMetadata,
 } from "./backup-parser.js";
-import { createNordElectro5DMockHandler } from "./mock-handler.js";
+import { createNordElectro5DMockHandlerV2 } from "./mock-handler-v2.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const parameterMap = createParameterMap();
@@ -162,7 +162,7 @@ SOUND DESIGN TIPS:
   mockUiDir: join(__dirname, "..", "..", "..", "..", "src", "keyboard_models", "nord", "electro_5d", "web"),
 
   createMockHandler() {
-    return createNordElectro5DMockHandler();
+    return createNordElectro5DMockHandlerV2();
   },
 
   createDevice() {
