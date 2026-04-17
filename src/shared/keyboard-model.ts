@@ -7,6 +7,8 @@
 
 import type { KeyboardParameter, Preset } from "./types.js";
 import type { MidiSender } from "./midi-sender.js";
+import type { MidiConnection } from "./midi-connection.js";
+import type { ToolResult } from "./tool-result.js";
 
 // ── Model metadata ──
 
@@ -121,7 +123,46 @@ export interface MockHandler {
   onCacheReload?(ctx: MockContext): void;
 }
 
-// ── The main interface ──
+// ── Device instance (new architecture) ──
+
+/**
+ * A specific physical unit or mock instance of a keyboard model.
+ * Each device has its own MIDI connection, state, and optionally backup data.
+ * Multiple devices of the same model can coexist.
+ */
+export interface KeyboardDevice {
+  /** Back-reference to the model type */
+  readonly model: KeyboardModel;
+
+  /** User-assigned instance name (e.g. "studio Nord", "gig Nord") */
+  label?: string;
+
+  /** This instance's backup inventory (programs, samples, etc.) */
+  backupData?: BackupData;
+
+  // ── Connection lifecycle ──
+  attach(connection: MidiConnection): void;
+  detach(): void;
+
+  // ── Tool implementations ──
+  listParameters(section?: string): ToolResult;
+  setParameters(
+    params: Array<{ name: string; value: number | string }>,
+    part?: string,
+  ): ToolResult;
+  getState(section?: string): ToolResult;
+  loadProgram(bank: number, slot: number): ToolResult | Promise<ToolResult>;
+  loadSong(
+    bank: number,
+    slot: number,
+    part?: string,
+  ): ToolResult | Promise<ToolResult>;
+  listPrograms(filter?: string): ToolResult;
+  listSongs(filter?: string): ToolResult;
+  getSystemPrompt(): ToolResult;
+}
+
+// ── The main interface (legacy shape, will be refactored incrementally) ──
 
 export interface KeyboardModel {
   info: KeyboardModelInfo;
@@ -162,4 +203,7 @@ export interface KeyboardModel {
 
   /** Optional: create a mock device handler for model-specific behavior */
   createMockHandler?(): MockHandler;
+
+  /** Factory: create a new device instance for this model (new architecture) */
+  createDevice?(): KeyboardDevice;
 }

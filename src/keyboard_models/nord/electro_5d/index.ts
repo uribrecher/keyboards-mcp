@@ -7,6 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { KeyboardModel } from "../../../shared/keyboard-model.js";
 import type { MidiSender } from "../../../shared/midi-sender.js";
+import { NordElectro5DDevice } from "./device.js";
 import { createParameterMap } from "./midi-map.js";
 import { PRESETS, findPreset, getPresetsByGenre } from "./presets.js";
 import { NordElectro5DState } from "./state-manager.js";
@@ -162,6 +163,10 @@ SOUND DESIGN TIPS:
 
   createMockHandler() {
     return createNordElectro5DMockHandler();
+  },
+
+  createDevice() {
+    return new NordElectro5DDevice(model);
   },
 };
 

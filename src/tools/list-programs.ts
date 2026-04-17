@@ -2,25 +2,25 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ModelHolder } from "../shared/model-holder.js";
 
-export function registerGetState(server: McpServer, holder: ModelHolder): void {
+export function registerListPrograms(server: McpServer, holder: ModelHolder): void {
   server.registerTool(
-    "get_current_state",
+    "list_programs",
     {
-      description: "Get the current state of all (or a section of) keyboard parameters. " +
-        "Shows what values have been sent to the keyboard in this session.",
+      description: "List stored programs from the device's backup inventory. " +
+        "Requires a backup to have been extracted first via extract_backup.",
       inputSchema: {
-        section: z
+        filter: z
           .string()
           .optional()
-          .describe("Optional section filter (e.g. organ, piano, effect1, reverb, etc.)"),
+          .describe("Optional name filter (case-insensitive substring match)"),
       },
     },
-    async ({ section }) => {
+    async ({ filter }) => {
       let device;
       try { device = holder.requireDevice(); }
       catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
 
-      return device.getState(section);
+      return device.listPrograms(filter);
     },
   );
 }

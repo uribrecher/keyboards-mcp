@@ -1,6 +1,7 @@
 import easymidi from "easymidi";
 import type { Channel } from "easymidi";
 import WebSocket from "ws";
+import type { MidiConnection } from "../shared/midi-connection.js";
 
 export interface PortInfo {
   index: number;
@@ -9,7 +10,7 @@ export interface PortInfo {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export class MidiManager {
+export class MidiManager implements MidiConnection {
   private output: easymidi.Output | null = null;
   private connectedPortName: string | null = null;
   private input: easymidi.Input | null = null;
@@ -139,11 +140,11 @@ export class MidiManager {
     }
   }
 
-  sendProgramChange(program: number): void {
+  sendProgramChange(program: number, channel?: Channel): void {
     if (!this.output) throw new Error("Not connected to any MIDI device");
     const msg = {
       number: Math.max(0, Math.min(127, Math.round(program))),
-      channel: this.channel,
+      channel: channel ?? this.channel,
     };
     this.output.send("program", msg);
     // Also forward to mock device if connected
@@ -157,6 +158,34 @@ export class MidiManager {
       this.sendCC(msg.controller, msg.value, msg.channel);
       if (delayMs > 0) await delay(delayMs);
     }
+  }
+
+  sendSysEx(bytes: number[]): void {
+    if (!this.output) throw new Error("Not connected to any MIDI device");
+    // easymidi expects a Buffer for sysex, wrapped as { bytes: Buffer }
+    this.output.send("sysex", { bytes: Buffer.from(bytes) } as any);
+    if (this.forwardOutput) {
+      try { this.forwardOutput.send("sysex", { bytes: Buffer.from(bytes) } as any); } catch {}
+    }
+  }
+
+  sendNRPN(msb: number, lsb: number, value: number, channel?: Channel): void {
+    const ch = channel ?? this.channel;
+    // NRPN is 4 CC messages: CC99 (param MSB), CC98 (param LSB), CC6 (value MSB), CC38 (value LSB)
+    this.sendCC(99, msb, ch);
+    this.sendCC(98, lsb, ch);
+    this.sendCC(6, (value >> 7) & 0x7f, ch);
+    this.sendCC(38, value & 0x7f, ch);
+  }
+
+  /** MidiConnection interface: register a CC listener */
+  onCC(callback: (cc: number, value: number, channel: number) => void): void {
+    this.setOnCC((msg) => callback(msg.controller, msg.value, msg.channel));
+  }
+
+  /** MidiConnection interface: register a SysEx listener (stub — requires input port) */
+  onSysEx(_callback: (bytes: number[]) => void): void {
+    // SysEx input listening not yet implemented — requires input port handling
   }
 
   setOnCC(callback: (msg: { controller: number; value: number; channel: number }) => void): void {

@@ -23,52 +23,18 @@ export function registerLoadSong(
       },
     },
     async ({ bank, slot, part }) => {
-      let model;
-      try { model = holder.requireModel(); }
+      let device;
+      try { device = holder.requireDevice(); }
       catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
-
-      if (!model.songLoader) {
-        return {
-          content: [{ type: "text", text: `${model.info.displayName} does not support set list loading.` }],
-          isError: true,
-        };
-      }
 
       if (!midi.isConnected()) {
         return {
-          content: [{ type: "text" as const, text: "Not connected. Use connect_to_keyboard first." }],
+          content: [{ type: "text", text: "Not connected. Use connect_to_keyboard first." }],
           isError: true,
         };
       }
 
-      const loader = model.songLoader;
-      const parts = loader.parts ?? ["A", "B", "C", "D"];
-      const partLabel = part ?? parts[0];
-
-      await loader.loadSong(midi, bank, slot, partLabel);
-
-      // Build response with song/program info from backup cache
-      const backup = model.backupCache?.get();
-      let text = `Set list ${bank}, song ${slot}, part ${partLabel}`;
-
-      if (backup && "setLists" in backup && "programs" in backup) {
-        const setLists = (backup as any).setLists as Array<{ bank: number; slot: number; name: string; programs: Array<{ bank: number; slot: number }> }>;
-        const programs = (backup as any).programs as Array<{ bank: number; slot: number; name: string }>;
-        const entry = setLists.find((s) => s.bank === bank && s.slot === slot - 1);
-
-        if (entry) {
-          text = `Loaded "${entry.name}" — set list ${bank}, song ${slot}, part ${partLabel}`;
-          const progByBankSlot = new Map(programs.map((p) => [`${p.bank}:${p.slot}`, p.name]));
-          const partNames = entry.programs.map((ref, i) => {
-            const name = progByBankSlot.get(`${ref.bank}:${ref.slot}`) ?? `B${ref.bank}:${ref.slot + 1}`;
-            const marker = parts[i] === partLabel ? " ←" : "";
-            return `  ${parts[i]}: ${name}${marker}`;
-          });
-          text += "\n" + partNames.join("\n");
-        }
-      }
-
-      return { content: [{ type: "text" as const, text }] };
+      return device.loadSong(bank, slot, part);
     },
   );
 }

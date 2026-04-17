@@ -5,10 +5,10 @@ import { ModelHolder } from "./shared/model-holder.js";
 import { registerListDevices } from "./tools/list-devices.js";
 import { registerConnect } from "./tools/connect.js";
 import { registerSetParameters } from "./tools/set-parameters.js";
-import { registerApplyPatch } from "./tools/apply-patch.js";
 import { registerGetState } from "./tools/get-state.js";
 import { registerListParameters } from "./tools/list-parameters.js";
-import { registerListPresets } from "./tools/list-presets.js";
+import { registerListPrograms } from "./tools/list-programs.js";
+import { registerListSongs } from "./tools/list-songs.js";
 import { registerExtractBackup } from "./tools/extract-backup.js";
 import { registerGetLastBackupLocation } from "./tools/get-last-backup-location.js";
 import { registerIsConnected } from "./tools/is-connected.js";
@@ -24,14 +24,14 @@ const server = new McpServer({
 const midiManager = new MidiManager();
 const holder = new ModelHolder();
 
-// Register all tools — they self-guard via holder.requireModel()
+// Register all tools — they self-guard via holder.requireDevice()
 registerListDevices(server, midiManager);
 registerConnect(server, midiManager, holder);
 registerSetParameters(server, midiManager, holder);
-registerApplyPatch(server, midiManager, holder);
 registerGetState(server, holder);
 registerListParameters(server, holder);
-registerListPresets(server, holder);
+registerListPrograms(server, holder);
+registerListSongs(server, holder);
 registerIsConnected(server, midiManager, holder);
 registerLoadProgram(server, midiManager, holder);
 registerLoadSong(server, midiManager, holder);

@@ -142,6 +142,11 @@ export function registerConnect(server: McpServer, midi: MidiManager, holder: Mo
           }
         }
 
+        // Attach MIDI connection to device instance
+        if (holder.device) {
+          holder.device.attach(midi);
+        }
+
         return {
           content: [
             {
