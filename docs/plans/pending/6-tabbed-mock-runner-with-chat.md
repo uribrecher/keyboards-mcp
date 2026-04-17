@@ -106,7 +106,7 @@ The model chooser extracted into a standalone page loadable in an iframe. On mod
 
 ### `src/keyboard_models/nord/electro_5d/web/`
 
-**Chat code removed** from `app.js` and `index.html`. The model UI becomes purely the mock hardware display.
+**Chat code and extract-backup button removed** from `app.js` and `index.html`. The model UI becomes purely the mock hardware display — no workflow actions, no agent communication. These move to the shell (see below).
 
 **WebSocket connection** updated to read port from URL query parameter:
 ```js
@@ -146,11 +146,32 @@ The chat panel extracted from the Nord UI into the shell includes:
 - Input area with send button
 - Agent connection status indicator
 - Reset conversation button
-- Re-extract backup button
+- Extract backup button (opens device picker modal, see below)
 - SSE streaming for agent responses (text, tool_use, tool_result events)
 - `localStorage` persistence for chat history
 
 The chat connects to `http://localhost:2999` and is fully independent of which tab is active or which mocks are running.
+
+## Backup Extraction — Moved to Shell
+
+The extract-backup button is currently in the Nord model's web UI (`app.js`). This is a framework/workflow concern, not a model display concern. It moves to the shell, accessible from two entry points:
+
+1. **Shell menu** (File → Extract Backup...)
+2. **Chat panel** — "Extract backup" button
+
+Both trigger the same flow — a **device picker modal**:
+
+1. Modal opens showing a list of all open tabs: label + model name. The currently active tab is pre-selected.
+2. User confirms or picks a different device.
+3. File picker opens → user selects backup file.
+4. IPC to main process: `extract-backup(filePath, label)`
+5. Backup cache stored under `data/backups/<label>/` (per Plan 3).
+6. Mock handler for that tab reloads cache via `onCacheReload()`.
+7. If MCP is connected to this device, `device.backupData` is updated too.
+
+If only one tab is open, the modal can be skipped (single device, no ambiguity). If no tabs are open (model chooser showing), the button is disabled.
+
+The Nord model UI (`web/app.js`) loses the backup button entirely — it becomes a pure hardware display.
 
 ## Window Size
 
