@@ -171,43 +171,38 @@ export interface KeyboardDevice {
   getSystemPrompt(): ToolResult;
 }
 
-// ── The main interface (legacy shape, will be refactored incrementally) ──
+// ── The main interface ──
 
 export interface KeyboardModel {
   info: KeyboardModelInfo;
-  parameterMap: ParameterMap;
 
-  /** Create a fresh state manager instance for this model */
-  createStateManager(): StateManager;
+  // ── Factories ──
 
-  /** Optional: backup file parsing */
-  backup?: BackupCapability;
+  /** Create a new device instance for this model */
+  createDevice?(): KeyboardDevice;
 
-  /** Optional: program loading (bank select + program change) */
-  programLoader?: ProgramLoaderCapability;
-
-  /** Optional: set list / song loading */
-  songLoader?: SongLoaderCapability;
-
-  /** Optional: backup data cache */
-  backupCache?: BackupCacheCapability;
-
-  /** Optional: model-specific validation warnings for parameter batches */
-  validateParameterBatch?(
-    parameters: Array<{ key: string; value: number | string }>,
-    state: StateManager,
-    targetPart: string,
-  ): string[];
-
-  /** Model-specific system prompt for AI agents (signal path, engine capabilities, etc.) */
-  agentSystemPrompt?: string;
+  /** Create a mock device handler for this model */
+  createMockHandler?(): MockHandler;
 
   /** Path to the web/ UI directory for the mock device */
   mockUiDir?: string;
 
-  /** Optional: create a mock device handler */
-  createMockHandler?(): MockHandler;
+  // ── Backup (no connection required) ──
 
-  /** Factory: create a new device instance for this model (new architecture) */
-  createDevice?(): KeyboardDevice;
+  /** Optional: backup file parsing */
+  backup?: BackupCapability;
+
+  /** Optional: backup data cache (persisted to disk) */
+  backupCache?: BackupCacheCapability;
+
+  // ── Internal (used by model's own index.ts and createDevice, not by external consumers) ──
+
+  /** Program loading capability — used by device internally */
+  programLoader?: ProgramLoaderCapability;
+
+  /** Set list / song loading capability — used by device internally */
+  songLoader?: SongLoaderCapability;
+
+  /** System prompt template — used by device's getSystemPrompt() */
+  agentSystemPrompt?: string;
 }

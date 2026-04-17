@@ -3,13 +3,11 @@
  * Starts empty — populated when connect_to_keyboard auto-detects a device.
  */
 
-import type { KeyboardModel, KeyboardDevice, StateManager } from "./keyboard-model.js";
+import type { KeyboardModel, KeyboardDevice } from "./keyboard-model.js";
 
 export class ModelHolder {
   model: KeyboardModel | null = null;
   device: KeyboardDevice | null = null;
-  /** @deprecated Use device instead — kept for tools not yet migrated */
-  stateManager: StateManager | null = null;
 
   get isLoaded(): boolean {
     return this.model !== null;
@@ -31,21 +29,14 @@ export class ModelHolder {
     return this.device;
   }
 
-  /** @deprecated Use requireDevice() — kept for tools not yet migrated */
-  requireState(): StateManager {
-    if (!this.stateManager) {
-      throw new Error("No keyboard detected. Use connect_to_keyboard first.");
-    }
-    return this.stateManager;
-  }
-
-  /** Load a model: create device (if supported) and state manager */
+  /** Load a model: create device instance and load backup data */
   load(model: KeyboardModel): void {
     this.model = model;
-    this.stateManager = model.createStateManager();
+
+    // Load backup cache so backup data is available
     model.backupCache?.load();
 
-    // New architecture: create a device instance
+    // Create device instance
     if (model.createDevice) {
       this.device = model.createDevice();
       // Load backup data onto device if available
@@ -63,6 +54,5 @@ export class ModelHolder {
     }
     this.model = null;
     this.device = null;
-    this.stateManager = null;
   }
 }

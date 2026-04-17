@@ -79,18 +79,6 @@ export function registerConnect(server: McpServer, midi: MidiManager, holder: Mo
           holder.unload();
         });
 
-        // Wire up MIDI input listener to update state
-        midi.setOnCC((msg) => {
-          if (!holder.isLoaded) return;
-          const entry = holder.model!.parameterMap.getParamByCC(msg.controller);
-          if (!entry) return;
-          holder.stateManager!.set(
-            entry.key,
-            msg.value,
-            holder.model!.parameterMap.isPerPart(entry.key) ? "upper" : undefined,
-          );
-        });
-
         // Set MIDI channels
         if (channel !== undefined) {
           midi.setChannel((channel - 1) as any);

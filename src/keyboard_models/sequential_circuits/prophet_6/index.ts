@@ -6,7 +6,6 @@
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { KeyboardModel } from "../../../shared/keyboard-model.js";
-import { GenericParameterState } from "../../../shared/parameter-state.js";
 import { createParameterMap } from "./midi-map.js";
 import { Prophet6Device } from "./device.js";
 
@@ -19,12 +18,6 @@ const model: KeyboardModel = {
     displayName: "Prophet-6",
     manufacturer: "Sequential Circuits",
     midiPortPatterns: ["prophet", "sequential", "dsi"],
-  },
-
-  parameterMap,
-
-  createStateManager() {
-    return new GenericParameterState([], parameterMap);
   },
 
   agentSystemPrompt: `KEYBOARD: Sequential Circuits Prophet-6
@@ -109,7 +102,10 @@ NOTES:
   mockUiDir: join(__dirname, "..", "..", "..", "..", "src", "keyboard_models", "sequential_circuits", "prophet_6", "web"),
 
   createDevice() {
-    return new Prophet6Device(model);
+    return new Prophet6Device(model, {
+      parameterMap,
+      systemPromptTemplate: model.agentSystemPrompt,
+    });
   },
 };
 

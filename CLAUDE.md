@@ -15,46 +15,57 @@ The MCP server communicates over stdio. Claude Code connects to it via `.mcp.jso
 
 ## Architecture
 
-**Model-delegated design.** MCP tools are thin wrappers — keyboard models own all business logic (parameter definitions, value encoding, state tracking, backup parsing, mock behavior).
+**Model-delegated design.** MCP tools are thin wrappers — keyboard devices own all business logic (parameter definitions, value encoding, state tracking, backup parsing, mock behavior).
 
 ```
-Claude Code ←MCP/stdio→ MCP Server ←MIDI CC→ Keyboard (or Mock)
-                              │
+Claude Code <-MCP/stdio-> MCP Server <-MIDI-> Keyboard (or Mock)
+                              |
                      tools/ (thin delegates)
-                              │
-                     shared/model-holder → KeyboardModel
-                              │
+                              |
+                     shared/model-holder -> KeyboardDevice
+                              |
                keyboard_models/<mfr>/<model>/
 ```
 
-### Core abstractions (`src/shared/`)
+### Core concepts
 
-- **`keyboard-model.ts`** — `KeyboardModel` interface: every model exports a default object implementing this. Capabilities are optional (backup, programLoader, songLoader, mockHandler).
+- **KeyboardModel** — A type of keyboard (e.g., "Nord Electro 5D"). One per model in the registry. Owns shared definitions (parameter map, system prompt template, backup parsing) and acts as a factory for device instances via `createDevice()`.
+- **KeyboardDevice** — A specific physical unit or mock instance. Owns its MIDI connection, state, backup data, and all tool method implementations. Multiple devices of the same model can coexist.
+- **MidiConnection** — Transport interface that devices code against. `MidiManager` implements it. Supports CC, SysEx, NRPN, and batch sends.
+- **MockHandler** — Interface for mock device behavior. Owns ALL state and logic; the engine is just MIDI I/O + WebSocket relay.
+
+### Core files (`src/shared/`)
+
+- **`keyboard-model.ts`** — `KeyboardModel`, `KeyboardDevice`, `MockHandler` interfaces. Central contract.
+- **`midi-connection.ts`** — `MidiConnection` interface (sendCC, sendSysEx, sendNRPN, onCC, onSysEx).
+- **`tool-result.ts`** — `ToolResult` type returned by device methods.
 - **`types.ts`** — `KeyboardParameter` with `ParamEncoding` (raw, drawbar, model-index, one-based, custom). Parameters are CC-addressed, 7-bit (0-127).
 - **`model-registry.ts`** — Discovers models from `keyboard_models/` filesystem, auto-detects from MIDI port names or backup files.
-- **`model-holder.ts`** — Holds the active model + state manager. Tools call `holder.requireModel()` which throws a user-friendly error if no model is loaded.
+- **`model-holder.ts`** — Holds the active device. Tools call `holder.requireDevice()` which throws a user-friendly error if no device is loaded.
 - **`parameter-resolution.ts`** — Encodes/decodes between user values (labels, drawbar positions, indices) and MIDI 0-127.
 
 ### Tool pattern (`src/tools/`)
 
 Every tool follows the same structure:
 1. Export a `register*(server, midi, holder)` function
-2. Guard with `holder.requireModel()` / `midi.isConnected()` as needed
-3. Delegate to model methods (parameterMap, programLoader, etc.)
-4. Return text content for the MCP response
+2. Guard with `holder.requireDevice()` / `midi.isConnected()` as needed
+3. Delegate to `device.method()` — one line of business logic
+4. Return the device's `ToolResult` directly
 
 ### Adding a keyboard model
 
 Create `src/keyboard_models/<manufacturer>/<model>/` with:
-- `index.ts` — default export implementing `KeyboardModel`
+- `index.ts` — default export implementing `KeyboardModel` with `createDevice()` and optionally `createMockHandler()`
+- `device.ts` — class implementing `KeyboardDevice` (owns connection, state, all tool logic)
 - `midi-map.ts` — `createParameterMap()` with CC definitions, encodings, labels
-- Optionally: state-manager, presets, backup-parser, mock-handler, `web/` UI directory
+- `mock-handler.ts` — optional `MockHandler` implementation (owns all mock state and logic)
+- Optionally: state-manager, backup-parser, backup-cache, `web/` UI directory
 
 The model is auto-discovered by `model-registry.ts` scanning the filesystem.
 
 ### Mock Runner (`src/mock-runner/`)
 
-Electron app: model picker shell → loads model's web UI in iframe. `MockEngine` creates a virtual MIDI port, listens for CC/Program Change, maintains channel state, broadcasts JSON via WebSocket (port 3000). Models provide a `MockHandler` for custom behavior (organ presets, backup-cached program names, etc.).
+Electron app: model picker shell -> loads model's web UI. The `MockEngine` is a thin shell (MIDI virtual port + WebSocket server + broadcast). All state and logic lives in the model's `MockHandler`, which receives raw MIDI messages via `onMIDI()` and returns state to broadcast.
 
 ### Agent mode (`src/agent.ts`)
 

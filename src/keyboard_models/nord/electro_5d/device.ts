@@ -6,16 +6,27 @@
 import type {
   KeyboardModel,
   KeyboardDevice,
+  KeyboardModelInfo,
   ParameterMap,
   StateManager,
   BackupData,
+  ProgramLoaderCapability,
+  SongLoaderCapability,
 } from "../../../shared/keyboard-model.js";
+import type { MidiSender } from "../../../shared/midi-sender.js";
 import type { MidiConnection } from "../../../shared/midi-connection.js";
 import type { ToolResult } from "../../../shared/tool-result.js";
 import { textResult } from "../../../shared/tool-result.js";
 import { formatValue } from "../../../shared/parameter-resolution.js";
 import { validateParameterBatch } from "./validation.js";
 import { NordElectro5DState } from "./state-manager.js";
+
+export interface NordDeviceDeps {
+  parameterMap: ParameterMap;
+  programLoader: ProgramLoaderCapability;
+  songLoader: SongLoaderCapability;
+  systemPromptTemplate: string;
+}
 
 export class NordElectro5DDevice implements KeyboardDevice {
   readonly model: KeyboardModel;
@@ -25,10 +36,16 @@ export class NordElectro5DDevice implements KeyboardDevice {
   private connection: MidiConnection | null = null;
   private state: StateManager;
   private parameterMap: ParameterMap;
+  private programLoader: ProgramLoaderCapability;
+  private songLoader: SongLoaderCapability;
+  private systemPromptTemplate: string;
 
-  constructor(model: KeyboardModel) {
+  constructor(model: KeyboardModel, deps: NordDeviceDeps) {
     this.model = model;
-    this.parameterMap = model.parameterMap;
+    this.parameterMap = deps.parameterMap;
+    this.programLoader = deps.programLoader;
+    this.songLoader = deps.songLoader;
+    this.systemPromptTemplate = deps.systemPromptTemplate;
     this.state = new NordElectro5DState(this.parameterMap);
   }
 
@@ -36,6 +53,17 @@ export class NordElectro5DDevice implements KeyboardDevice {
 
   attach(connection: MidiConnection): void {
     this.connection = connection;
+
+    // Listen for incoming CCs (from hardware input) to update internal state
+    connection.onCC((cc, value, channel) => {
+      const entry = this.parameterMap.getParamByCC(cc);
+      if (!entry) return;
+      this.state.set(
+        entry.key,
+        value,
+        this.parameterMap.isPerPart(entry.key) ? "upper" : undefined,
+      );
+    });
   }
 
   detach(): void {
@@ -197,7 +225,7 @@ export class NordElectro5DDevice implements KeyboardDevice {
 
   async loadProgram(bank: number, slot: number): Promise<ToolResult> {
     const conn = this.requireConnection();
-    const loader = this.model.programLoader;
+    const loader = this.programLoader;
 
     if (!loader) {
       return textResult(`${this.model.info.displayName} does not support program loading.`);
@@ -220,7 +248,7 @@ export class NordElectro5DDevice implements KeyboardDevice {
 
   async loadSong(bank: number, slot: number, part?: string): Promise<ToolResult> {
     const conn = this.requireConnection();
-    const loader = this.model.songLoader;
+    const loader = this.songLoader;
 
     if (!loader) {
       return textResult(`${this.model.info.displayName} does not support set list loading.`);
@@ -376,7 +404,7 @@ export class NordElectro5DDevice implements KeyboardDevice {
   }
 
   getSystemPrompt(): ToolResult {
-    const template = this.model.agentSystemPrompt;
+    const template = this.systemPromptTemplate;
     if (!template) {
       return textResult(
         `${this.model.info.displayName} does not provide a system prompt.`,
