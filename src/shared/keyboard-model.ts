@@ -5,7 +5,7 @@
  * never on a specific model's internals.
  */
 
-import type { KeyboardParameter, Preset } from "./types.js";
+import type { KeyboardParameter } from "./types.js";
 import type { MidiSender } from "./midi-sender.js";
 import type { MidiConnection } from "./midi-connection.js";
 import type { ToolResult } from "./tool-result.js";
@@ -103,28 +103,6 @@ export interface SongLoaderCapability {
 
 // ── Mock device handler ──
 
-export interface MockContext {
-  channelState: Map<number, Map<number, number>>;
-  lowerChannel: number;
-  upperChannel: number;
-  parameterMap: ParameterMap;
-}
-
-export interface MockHandler {
-  /** Called once when the mock engine starts */
-  init(ctx: MockContext): void;
-  /** Process a CC message. Return { handled: true } to skip generic state update. */
-  onCC(cc: number, value: number, channel: number, ctx: MockContext): { handled?: boolean } | void;
-  /** Process a Program Change message */
-  onProgramChange(program: number, channel: number, ctx: MockContext): void;
-  /** Return model-specific extra state to merge into WebSocket broadcasts */
-  getExtraState(includeInventory: boolean, ctx: MockContext): Record<string, any>;
-  /** Reload cached data (e.g., backup cache) */
-  onCacheReload?(ctx: MockContext): void;
-}
-
-// ── New mock handler (thin engine architecture) ──
-
 /** Raw MIDI message received by the mock handler */
 export type MidiMessage =
   | { type: "cc"; controller: number; value: number; channel: number }
@@ -140,10 +118,10 @@ export interface MockHandlerResult {
 }
 
 /**
- * New MockHandler interface for the thin engine architecture.
+ * Mock handler interface for the thin engine architecture.
  * The handler owns ALL state and logic — the engine is just MIDI I/O + WebSocket.
  */
-export interface MockHandlerV2 {
+export interface MockHandler {
   /** Called once when the mock engine starts */
   init(lowerChannel: number, upperChannel: number): void;
   /** Process any MIDI message. Returns state to broadcast and/or a log line. */
@@ -188,8 +166,8 @@ export interface KeyboardDevice {
     slot: number,
     part?: string,
   ): ToolResult | Promise<ToolResult>;
-  listPrograms(filter?: string): ToolResult;
-  listSongs(filter?: string): ToolResult;
+  listPrograms(filter?: string, bank?: number): ToolResult;
+  listSongs(filter?: string, bank?: number): ToolResult;
   getSystemPrompt(): ToolResult;
 }
 
@@ -201,11 +179,6 @@ export interface KeyboardModel {
 
   /** Create a fresh state manager instance for this model */
   createStateManager(): StateManager;
-
-  /** Built-in presets (may be empty) */
-  presets: Preset[];
-  findPreset(name: string): Preset | undefined;
-  getPresetsByGenre(genre: string): Preset[];
 
   /** Optional: backup file parsing */
   backup?: BackupCapability;
@@ -233,7 +206,7 @@ export interface KeyboardModel {
   mockUiDir?: string;
 
   /** Optional: create a mock device handler */
-  createMockHandler?(): MockHandlerV2;
+  createMockHandler?(): MockHandler;
 
   /** Factory: create a new device instance for this model (new architecture) */
   createDevice?(): KeyboardDevice;

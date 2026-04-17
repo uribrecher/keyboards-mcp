@@ -11,7 +11,7 @@ import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
-import type { KeyboardModel, KeyboardModelInfo, MockHandlerV2 } from "../shared/keyboard-model.js";
+import type { KeyboardModel, KeyboardModelInfo, MockHandler } from "../shared/keyboard-model.js";
 import { MockEngine } from "./engine.js";
 
 const __filename = fileURLToPath(import.meta.url);

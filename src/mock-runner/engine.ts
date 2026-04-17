@@ -2,13 +2,13 @@
  * Thin mock device engine.
  *
  * Owns only: MIDI virtual port, WebSocket server, broadcasting.
- * All state and logic lives in the MockHandlerV2 provided by the model.
+ * All state and logic lives in the MockHandler provided by the model.
  */
 
 import { createServer, type Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import easymidi from "easymidi";
-import type { MockHandlerV2, MidiMessage } from "../shared/keyboard-model.js";
+import type { MockHandler, MidiMessage } from "../shared/keyboard-model.js";
 
 export interface EngineOptions {
   lowerChannel: number;
@@ -18,7 +18,7 @@ export interface EngineOptions {
 }
 
 export class MockEngine {
-  private handler: MockHandlerV2;
+  private handler: MockHandler;
   private opts: EngineOptions;
 
   private midiInput: easymidi.Input | null = null;
@@ -27,7 +27,7 @@ export class MockEngine {
   private clients = new Set<WebSocket>();
   private mcpClients = new Set<WebSocket>();
 
-  constructor(handler: MockHandlerV2, opts: EngineOptions) {
+  constructor(handler: MockHandler, opts: EngineOptions) {
     this.handler = handler;
     this.opts = opts;
   }

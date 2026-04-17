@@ -6,7 +6,6 @@
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { KeyboardModel } from "../../../shared/keyboard-model.js";
-import type { Preset } from "../../../shared/types.js";
 import { GenericParameterState } from "../../../shared/parameter-state.js";
 import { createParameterMap } from "./midi-map.js";
 import { Prophet6Device } from "./device.js";
@@ -27,10 +26,6 @@ const model: KeyboardModel = {
   createStateManager() {
     return new GenericParameterState([], parameterMap);
   },
-
-  presets: [],
-  findPreset() { return undefined; },
-  getPresetsByGenre() { return []; },
 
   agentSystemPrompt: `KEYBOARD: Sequential Circuits Prophet-6
 

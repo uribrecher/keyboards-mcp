@@ -267,7 +267,7 @@ export class NordElectro5DDevice implements KeyboardDevice {
     return textResult(text);
   }
 
-  listPrograms(filter?: string): ToolResult {
+  listPrograms(filter?: string, bank?: number): ToolResult {
     if (!this.backupData || !("programs" in this.backupData)) {
       return textResult(
         "No backup data loaded. Use extract_backup first to load this device's inventory.",
@@ -281,30 +281,37 @@ export class NordElectro5DDevice implements KeyboardDevice {
     }>;
 
     let filtered = programs;
+    if (bank !== undefined) {
+      filtered = filtered.filter((p) => p.bank === bank);
+    }
     if (filter) {
       const lower = filter.toLowerCase();
-      filtered = programs.filter((p) => p.name.toLowerCase().includes(lower));
+      filtered = filtered.filter((p) => p.name.toLowerCase().includes(lower));
     }
 
     if (filtered.length === 0) {
+      const parts: string[] = [];
+      if (bank !== undefined) parts.push(`bank ${bank}`);
+      if (filter) parts.push(`name "${filter}"`);
       return textResult(
-        filter
-          ? `No programs matching "${filter}". Total programs: ${programs.length}`
-          : "No programs in backup data.",
+        `No programs matching ${parts.join(", ")}. Total programs: ${programs.length}`,
       );
     }
 
     const lines = filtered.map(
       (p) => `  ${p.bank}:${p.slot + 1}  ${p.name}`,
     );
-    const header = filter
-      ? `Programs matching "${filter}" (${filtered.length}/${programs.length}):`
+    const parts: string[] = [];
+    if (filter) parts.push(`name "${filter}"`);
+    if (bank !== undefined) parts.push(`bank ${bank}`);
+    const header = parts.length > 0
+      ? `Programs matching ${parts.join(", ")} (${filtered.length}/${programs.length}):`
       : `All programs (${programs.length}):`;
 
     return textResult(header + "\n" + lines.join("\n"));
   }
 
-  listSongs(filter?: string): ToolResult {
+  listSongs(filter?: string, bank?: number): ToolResult {
     if (!this.backupData || !("setLists" in this.backupData)) {
       return textResult(
         "No backup data loaded. Use extract_backup first to load this device's inventory.",
@@ -329,16 +336,20 @@ export class NordElectro5DDevice implements KeyboardDevice {
     const parts = ["A", "B", "C", "D"];
 
     let filtered = setLists;
+    if (bank !== undefined) {
+      filtered = filtered.filter((s) => s.bank === bank);
+    }
     if (filter) {
       const lower = filter.toLowerCase();
-      filtered = setLists.filter((s) => s.name.toLowerCase().includes(lower));
+      filtered = filtered.filter((s) => s.name.toLowerCase().includes(lower));
     }
 
     if (filtered.length === 0) {
+      const filterParts: string[] = [];
+      if (bank !== undefined) filterParts.push(`bank ${bank}`);
+      if (filter) filterParts.push(`name "${filter}"`);
       return textResult(
-        filter
-          ? `No songs matching "${filter}". Total songs: ${setLists.length}`
-          : "No songs in backup data.",
+        `No songs matching ${filterParts.join(", ")}. Total songs: ${setLists.length}`,
       );
     }
 
@@ -354,8 +365,11 @@ export class NordElectro5DDevice implements KeyboardDevice {
       }
     }
 
-    const header = filter
-      ? `Songs matching "${filter}" (${filtered.length}/${setLists.length}):`
+    const filterParts2: string[] = [];
+    if (filter) filterParts2.push(`name "${filter}"`);
+    if (bank !== undefined) filterParts2.push(`bank ${bank}`);
+    const header = filterParts2.length > 0
+      ? `Songs matching ${filterParts2.join(", ")} (${filtered.length}/${setLists.length}):`
       : `All songs (${setLists.length}):`;
 
     return textResult(header + "\n" + lines.join("\n"));
