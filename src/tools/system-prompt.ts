@@ -10,21 +10,11 @@ export function registerSystemPrompt(server: McpServer, holder: ModelHolder): vo
         "engine capabilities, and sound design guidelines. Requires an active connection.",
     },
     async () => {
-      let model;
-      try { model = holder.requireModel(); }
+      let device;
+      try { device = holder.requireDevice(); }
       catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
 
-      const prompt = model.agentSystemPrompt;
-      if (!prompt) {
-        return {
-          content: [{
-            type: "text",
-            text: `${model.info.displayName} does not provide a model-specific system prompt.`,
-          }],
-        };
-      }
-
-      return { content: [{ type: "text", text: prompt }] };
+      return device.getSystemPrompt();
     },
   );
 }

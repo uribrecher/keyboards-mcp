@@ -19,43 +19,18 @@ export function registerLoadProgram(
       },
     },
     async ({ bank, slot }) => {
-      let model;
-      try { model = holder.requireModel(); }
+      let device;
+      try { device = holder.requireDevice(); }
       catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
-
-      if (!model.programLoader) {
-        return {
-          content: [{ type: "text", text: `${model.info.displayName} does not support program loading.` }],
-          isError: true,
-        };
-      }
 
       if (!midi.isConnected()) {
         return {
-          content: [{ type: "text" as const, text: "Not connected. Use connect_to_keyboard first." }],
+          content: [{ type: "text", text: "Not connected. Use connect_to_keyboard first." }],
           isError: true,
         };
       }
 
-      const loader = model.programLoader;
-      if (bank < loader.bankRange.min || bank > loader.bankRange.max) {
-        return {
-          content: [{ type: "text", text: `Bank must be ${loader.bankRange.min}-${loader.bankRange.max} for ${model.info.displayName}.` }],
-          isError: true,
-        };
-      }
-      if (slot < loader.slotRange.min || slot > loader.slotRange.max) {
-        return {
-          content: [{ type: "text", text: `Slot must be ${loader.slotRange.min}-${loader.slotRange.max} for ${model.info.displayName}.` }],
-          isError: true,
-        };
-      }
-
-      await loader.loadProgram(midi, bank, slot);
-
-      return {
-        content: [{ type: "text" as const, text: `Loaded program ${bank}:${slot}` }],
-      };
+      return device.loadProgram(bank, slot);
     },
   );
 }

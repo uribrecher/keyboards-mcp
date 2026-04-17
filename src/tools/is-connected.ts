@@ -7,7 +7,7 @@ export function registerIsConnected(server: McpServer, midi: MidiManager, holder
     "is_connected",
     {
       description: "Check whether the MCP server currently has an active MIDI connection to a keyboard (or mock device). " +
-        "Call this before using tools that require a connection (set_parameters, apply_patch, load_program).",
+        "Call this before using tools that require a connection (set_parameters, load_program).",
     },
     async () => {
       const connected = midi.isConnected();

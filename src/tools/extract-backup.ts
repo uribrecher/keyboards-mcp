@@ -101,6 +101,11 @@ export function registerExtractBackup(server: McpServer, holder: ModelHolder): v
 
         cache?.set(data);
 
+        // Update device instance's backup data if connected
+        if (holder.device) {
+          holder.device.backupData = data;
+        }
+
         const dateMatch = basename(file_path).match(/(\d{4}-\d{2}-\d{2})/);
         const backupDate = dateMatch ? dateMatch[1] : undefined;
 
