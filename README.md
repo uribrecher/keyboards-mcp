@@ -2,7 +2,7 @@
 
 An MCP (Model Context Protocol) server for controlling MIDI keyboards. Supports pluggable keyboard models with auto-detection. Designed to be used with Claude Code or any MCP-compatible AI assistant.
 
-Currently supported: **Nord Electro 5D**, **Prophet-6**
+Currently supported: **Nord Electro 5D**, **Roland JUNO-X**, **Prophet-6**
 
 ## What it does
 
@@ -52,11 +52,11 @@ Create a directory under `src/keyboard_models/<manufacturer>/<model>/` with:
 
 - `index.ts` — Default export implementing the `KeyboardModel` interface
 - `device.ts` — Class implementing `KeyboardDevice` (owns connection, state, all tool logic)
-- `midi-map.ts` — Parameter definitions with CC mappings
+- `midi-map.ts` — Parameter definitions with CC mappings and/or SysEx addresses
 - `mock-handler.ts` — Optional `MockHandler` implementation for the mock device
 - `web/` — Optional mock device web UI (HTML/CSS/JS)
 
-The model is auto-discovered at startup. See `src/keyboard_models/nord/electro_5d/` for a reference implementation.
+The model is auto-discovered at startup. See `src/keyboard_models/nord/electro_5d/` for a CC-based reference implementation, or `src/keyboard_models/roland/juno_x/` for a model using both CC and Roland DT1/RQ1 SysEx addressing.
 
 ## Setup
 
