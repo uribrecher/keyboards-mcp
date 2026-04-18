@@ -69,6 +69,11 @@ export class MockEngine {
             if (msg.type === "reload-cache") {
               this.handler.onCacheReload?.();
               this.broadcast(this.handler.getFullState(true));
+            } else if (msg.type === "cc") {
+              // UI control → route through handler like a MIDI CC
+              this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel ?? 0 });
+            } else if (msg.type === "program") {
+              this.onMIDI({ type: "program", number: msg.number, channel: msg.channel ?? 0 });
             }
           } catch { /* ignore */ }
         });
