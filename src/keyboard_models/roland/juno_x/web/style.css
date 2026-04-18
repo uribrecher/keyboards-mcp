@@ -1,61 +1,62 @@
-/* Roland JUNO-X — Mock Device UI */
+/* Roland JUNO-X — Mock Device UI (hardware panel layout) */
 
 :root {
-  --roland-red: #d32f2f;
-  --roland-red-dark: #9a0007;
+  --roland-red:       #d32f2f;
+  --roland-red-dark:  #9a0007;
   --roland-red-light: #ff6659;
-  --panel-bg: #1e1e1e;
-  --section-bg: #2a2a2a;
-  --section-border: #3a3a3a;
-  --text: #dcdcdc;
-  --text-dim: #888;
-  --text-bright: #ffffff;
-  --blue-accent: #4fc3f7;
+  --panel-bg:         #1a1a1a;
+  --section-bg:       #222;
+  --section-border:   #333;
+  --text:             #dcdcdc;
+  --text-dim:         #888;
+  --text-bright:      #ffffff;
+  --blue-accent:      #4fc3f7;
   --blue-accent-dark: #0288d1;
-  --blue-accent-dim: #1a3a4a;
-  --led-on: #4fc3f7;
-  --led-off: #1a2a35;
-  --display-bg: #0a1520;
-  --display-text: #4fc3f7;
-  --knob-bg: #3a3a3a;
-  --knob-ring: #505050;
-  --fx-btn-bg: #333;
-  --fx-btn-active: #d32f2f;
-  --font: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --blue-accent-dim:  #1a3a4a;
+  --label-synth-bg:   #1565c0;
+  --label-effects-bg: #c62828;
+  --display-bg:       #0a1520;
+  --display-text:     #4fc3f7;
+  --tog-bg:           #2a2a2a;
+  --tog-active-bg:    #d32f2f;
+  --font:             'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  background: #111;
+  background: var(--panel-bg);
   font-family: var(--font);
   color: var(--text);
   display: flex;
   justify-content: center;
-  padding: 20px;
+  padding: 16px;
   min-height: 100vh;
 }
 
-/* ── Layout ── */
+/* ── Top-level layout ── */
 
 .layout {
   display: flex;
-  gap: 16px;
-  max-width: 1380px;
+  gap: 14px;
+  max-width: 1500px;
   width: 100%;
   align-items: flex-start;
 }
 
 .panel {
-  background: var(--panel-bg);
-  border-radius: 12px;
-  padding: 16px 20px;
+  background: #1e1e1e;
+  border-radius: 10px;
+  padding: 14px 16px;
   flex: 1;
   min-width: 0;
   box-shadow:
     0 6px 24px rgba(0,0,0,0.7),
-    inset 0 1px 0 rgba(255,255,255,0.06);
+    inset 0 1px 0 rgba(255,255,255,0.05);
   border: 1px solid #2a2a2a;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* ── Header ── */
@@ -63,9 +64,8 @@ body {
 .header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding-bottom: 12px;
-  margin-bottom: 12px;
+  gap: 14px;
+  padding-bottom: 10px;
   border-bottom: 3px solid var(--roland-red);
 }
 
@@ -73,48 +73,46 @@ body {
   display: flex;
   flex-direction: column;
   line-height: 1.1;
-  min-width: 120px;
+  min-width: 110px;
 }
 
 .brand-roland {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 3px;
-  color: #aaa;
+  color: #999;
   text-transform: uppercase;
 }
 
 .brand-model {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 800;
   letter-spacing: 4px;
   color: var(--text-bright);
-  text-shadow: 0 0 12px rgba(79,195,247,0.15);
 }
 
 .scene-display {
   background: var(--display-bg);
   border: 1px solid #1a3a4a;
-  border-radius: 6px;
-  padding: 6px 20px;
+  border-radius: 5px;
+  padding: 5px 16px;
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  width: 300px;
+  gap: 10px;
   flex-shrink: 0;
 }
 
 .scene-number {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--display-text);
   font-family: 'Courier New', monospace;
   letter-spacing: 2px;
-  min-width: 40px;
+  min-width: 36px;
 }
 
 .scene-name {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--display-text);
   opacity: 0.75;
   white-space: nowrap;
@@ -128,18 +126,18 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 5px;
 }
 
 .subtitle {
-  font-size: 10px;
-  color: rgba(255,255,255,0.4);
+  font-size: 9px;
+  color: rgba(255,255,255,0.35);
   letter-spacing: 2px;
   text-transform: uppercase;
 }
 
 .status {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 1px;
   padding: 3px 10px;
@@ -148,7 +146,7 @@ body {
 
 .status.connected {
   background: #0a1f2e;
-  color: var(--led-on);
+  color: var(--display-text);
   border: 1px solid #1a3a4a;
 }
 
@@ -163,22 +161,21 @@ body {
 .part-bar {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 18px;
   background: #222;
   border: 1px solid #333;
-  border-radius: 8px;
-  padding: 8px 14px;
-  margin-bottom: 14px;
+  border-radius: 7px;
+  padding: 7px 12px;
 }
 
 .engine-selector-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 
 .engine-selector-label {
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--text-dim);
@@ -190,25 +187,23 @@ body {
   color: var(--text);
   border: 1px solid #444;
   border-radius: 4px;
-  padding: 4px 8px;
+  padding: 3px 7px;
   font-size: 11px;
   font-family: var(--font);
   cursor: pointer;
   outline: none;
 }
 
-.engine-select:focus {
-  border-color: var(--blue-accent);
-}
+.engine-select:focus { border-color: var(--blue-accent); }
 
 .part-buttons {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .part-label {
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--text-dim);
@@ -221,101 +216,107 @@ body {
   color: var(--text-dim);
   border: 1px solid #444;
   border-radius: 4px;
-  padding: 4px 12px;
-  font-size: 12px;
+  padding: 3px 10px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
   letter-spacing: 1px;
-  transition: all 0.12s;
-  min-width: 32px;
+  transition: all 0.1s;
+  min-width: 28px;
   text-align: center;
 }
 
-.part-btn:hover {
-  background: #3a3a3a;
-  color: var(--text);
-}
+.part-btn:hover { background: #3a3a3a; color: var(--text); }
 
 .part-btn.active {
   background: var(--roland-red);
   color: #fff;
   border-color: var(--roland-red-light);
-  box-shadow: 0 0 8px rgba(211,47,47,0.4);
+  box-shadow: 0 0 7px rgba(211,47,47,0.4);
 }
 
 /* ── Synth Panels ── */
 
-.synth-panel {
+.synth-panel { display: flex; flex-direction: column; gap: 0; }
+.synth-panel.hidden { display: none; }
+
+/* ── Hardware panel row (single horizontal strip) ── */
+
+.hw-row {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.synth-panel.hidden {
-  display: none;
-}
-
-/* ── Panel Row ── */
-
-.panel-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-/* ── Panel Sections (cards) ── */
-
-.panel-section {
-  background: var(--section-bg);
-  border: 1px solid var(--section-border);
+  flex-direction: row;
+  align-items: stretch;
+  border: 1px solid #333;
   border-radius: 8px;
-  padding: 10px 14px;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+/* ── Section divider ── */
+
+.section-divider {
+  width: 1px;
+  background: #333;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+/* ── Individual hardware section ── */
+
+.hw-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* OSC and FILTER get extra space */
+.osc-section  { flex: 1; }
+.filter-section { flex: 1; }
+.hpf-section  { }
+.amp-section  { }
+.env-section  { }
+.effects-section { }
+
+/* ── Section label strip ── */
+
+.section-label {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 4px 6px;
+  color: #fff;
   flex-shrink: 0;
 }
 
-.section-title {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 3px;
-  color: var(--roland-red);
-  text-transform: uppercase;
-  text-align: center;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #3a3a3a;
-}
+.synth-label   { background: var(--label-synth-bg); }
+.effects-label { background: var(--label-effects-bg); }
 
-/* ── Controls container ── */
+/* ── Sliders row (holds all vertical slider columns) ── */
 
-.controls {
+.sliders-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-direction: row;
   align-items: flex-end;
+  gap: 0;
+  padding: 8px 6px 4px;
+  flex: 1;
 }
 
-/* ── Knob groups (horizontal range sliders) ── */
+/* ── Individual slider column ── */
 
-.knob-group {
+.slider-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  min-width: 60px;
+  gap: 3px;
+  width: 44px;
+  flex-shrink: 0;
 }
 
-.ctrl-label {
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  text-align: center;
-  display: block;
-}
+/* ── Value display above slider ── */
 
 .ctrl-value {
   font-size: 9px;
@@ -323,251 +324,226 @@ body {
   color: var(--display-text);
   font-family: 'Courier New', monospace;
   text-align: center;
-  min-width: 28px;
+  min-width: 32px;
+  width: 32px;
   background: var(--display-bg);
   border-radius: 3px;
-  padding: 1px 4px;
+  padding: 1px 2px;
+  flex-shrink: 0;
 }
 
-/* Horizontal range input (knob simulation) */
-.knob-group input[type="range"] {
+/* ── Label below slider ── */
+
+.ctrl-label {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  text-align: center;
+  display: block;
+  white-space: nowrap;
+}
+
+/* ── Vertical sliders ── */
+
+input.vslider[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  width: 70px;
-  height: 6px;
-  background: #1a1a1a;
-  border-radius: 3px;
-  outline: none;
-  border: 1px solid #444;
-  cursor: pointer;
-}
-
-.knob-group input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--blue-accent);
-  border: 2px solid var(--blue-accent-dark);
-  box-shadow: 0 0 6px rgba(79,195,247,0.4);
-  cursor: pointer;
-  transition: box-shadow 0.12s;
-}
-
-.knob-group input[type="range"]::-webkit-slider-thumb:hover {
-  box-shadow: 0 0 10px rgba(79,195,247,0.6);
-}
-
-.knob-group input[type="range"]::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--blue-accent);
-  border: 2px solid var(--blue-accent-dark);
-  box-shadow: 0 0 6px rgba(79,195,247,0.4);
-  cursor: pointer;
-}
-
-.knob-group input[type="range"]::-webkit-slider-runnable-track {
-  background: linear-gradient(to right, var(--blue-accent-dim), #222);
-  border-radius: 3px;
-  height: 6px;
-}
-
-/* ── Select groups ── */
-
-.select-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  min-width: 60px;
-}
-
-.ctrl-select {
-  background: #1a1a1a;
-  color: var(--text);
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 3px 6px;
-  font-size: 10px;
-  font-family: var(--font);
-  cursor: pointer;
-  outline: none;
-  width: 100%;
-  min-width: 60px;
-}
-
-.ctrl-select:focus {
-  border-color: var(--blue-accent);
-}
-
-/* ── Section sizing ── */
-
-.lfo-section {
-  min-width: 160px;
-}
-
-.osc-section {
-  min-width: 260px;
-  flex: 1;
-}
-
-.hpf-section {
-  min-width: 80px;
-}
-
-.filter-section {
-  min-width: 220px;
-  flex: 1;
-}
-
-.amp-section {
-  min-width: 90px;
-}
-
-/* ── ENV Section (vertical ADSR sliders) ── */
-
-.env-section {
-  align-self: flex-start;
-}
-
-.env-controls {
-  display: flex;
-  flex-direction: row;
-  gap: 14px;
-  align-items: flex-end;
-}
-
-.slider-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Vertical range slider for ADSR */
-.env-slider {
-  -webkit-appearance: slider-vertical;
-  appearance: auto;
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 24px;
+  width: 28px;
   height: 100px;
   cursor: pointer;
-  background: #1a1a1a;
-  border: 1px solid #444;
-  border-radius: 3px;
+  background: transparent;
   outline: none;
+  flex-shrink: 0;
+  padding: 0;
 }
 
-.env-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 20px;
-  height: 12px;
-  border-radius: 3px;
-  background: var(--blue-accent);
-  border: 2px solid var(--blue-accent-dark);
-  box-shadow: 0 0 6px rgba(79,195,247,0.4);
-  cursor: pointer;
-}
-
-.env-slider::-moz-range-thumb {
-  width: 20px;
-  height: 12px;
-  border-radius: 3px;
-  background: var(--blue-accent);
-  border: 2px solid var(--blue-accent-dark);
-  box-shadow: 0 0 6px rgba(79,195,247,0.4);
-  cursor: pointer;
-}
-
-.env-slider::-webkit-slider-runnable-track {
-  background: linear-gradient(to bottom, var(--blue-accent-dim), #1a1a1a);
+/* WebKit track */
+input.vslider[type="range"]::-webkit-slider-runnable-track {
+  background: #111;
+  border: 1px solid #3a3a3a;
   border-radius: 3px;
   width: 6px;
 }
 
-/* ── Bottom row: Chorus + FX ── */
-
-.bottom-row {
-  align-items: stretch;
+/* WebKit thumb */
+input.vslider[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--blue-accent);
+  border: 2px solid var(--blue-accent-dark);
+  box-shadow: 0 0 5px rgba(79,195,247,0.4);
+  cursor: pointer;
+  transition: box-shadow 0.1s;
+  margin-left: -10px;
 }
 
-.chorus-section {
-  min-width: 180px;
+input.vslider[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 10px rgba(79,195,247,0.7);
 }
 
-.chorus-controls {
+/* Firefox track */
+input.vslider[type="range"]::-moz-range-track {
+  background: #111;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  width: 6px;
+}
+
+/* Firefox thumb */
+input.vslider[type="range"]::-moz-range-thumb {
+  width: 26px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--blue-accent);
+  border: 2px solid var(--blue-accent-dark);
+  box-shadow: 0 0 5px rgba(79,195,247,0.4);
+  cursor: pointer;
+}
+
+/* ── Toggle/button row below sliders ── */
+
+.toggle-row {
   display: flex;
   flex-direction: row;
-  gap: 6px;
+  flex-wrap: wrap;
   align-items: center;
-}
-
-.fx-section {
-  flex: 1;
-}
-
-.fx-controls {
-  display: flex;
-  flex-direction: row;
-  gap: 16px;
-  align-items: center;
-}
-
-.fx-toggle-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  justify-content: center;
   gap: 4px;
+  padding: 4px 6px 6px;
+  min-height: 30px;
+  flex-shrink: 0;
 }
 
-.fx-toggle-label {
+.adsr-label {
   font-size: 8px;
   font-weight: 700;
-  letter-spacing: 1px;
+  letter-spacing: 2px;
   color: var(--text-dim);
   text-transform: uppercase;
+  justify-content: center;
 }
 
-/* ── FX Buttons (Chorus modes, effect toggles) ── */
+/* ── Toggle buttons ── */
 
-.fx-btn {
-  background: var(--fx-btn-bg);
+.tog-btn {
+  background: var(--tog-bg);
   color: var(--text-dim);
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 5px 12px;
-  font-size: 10px;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 0;
+  width: 28px;
+  height: 22px;
+  font-size: 7px;
   font-weight: 700;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   cursor: pointer;
   text-transform: uppercase;
-  transition: all 0.12s;
-  min-width: 36px;
+  transition: all 0.1s;
   text-align: center;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
-.fx-btn:hover {
-  background: #3a3a3a;
+.tog-btn:hover {
+  background: #333;
   color: var(--text);
 }
 
-.fx-btn.active {
-  background: var(--fx-btn-active);
+.tog-btn.active {
+  background: var(--roland-red);
   color: #fff;
   border-color: var(--roland-red-light);
-  box-shadow: 0 0 8px rgba(211,47,47,0.4);
+  box-shadow: 0 0 6px rgba(211,47,47,0.4);
 }
 
-.fx-btn.off.active {
+.tog-btn.off-btn.active {
   background: #444;
   color: var(--text-dim);
   border-color: #555;
   box-shadow: none;
+}
+
+/* ── Small inline select (waveform, filter type) ── */
+
+.ctrl-select-sm {
+  background: #1a1a1a;
+  color: var(--text);
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 1px 2px;
+  font-size: 8px;
+  font-family: var(--font);
+  cursor: pointer;
+  outline: none;
+  max-width: 60px;
+}
+
+.ctrl-select-sm:focus { border-color: var(--blue-accent); }
+
+/* ── Vertical select for HPF (4-step) ── */
+
+.ctrl-select-vert {
+  background: #1a1a1a;
+  color: var(--display-text);
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 9px;
+  font-family: 'Courier New', monospace;
+  cursor: pointer;
+  outline: none;
+  width: 36px;
+  text-align: center;
+}
+
+.ctrl-select-vert:focus { border-color: var(--blue-accent); }
+
+/* ── EFFECTS section inner layout ── */
+
+.effects-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 8px 4px;
+  flex: 1;
+}
+
+.effects-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.effects-col-label {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.chorus-btns,
+.fx-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chorus-btns .tog-btn,
+.fx-toggles .tog-btn {
+  width: 36px;
+  height: 22px;
+  font-size: 8px;
 }
 
 /* ── Placeholder panels ── */
@@ -580,7 +556,7 @@ body {
   padding: 48px 20px;
   gap: 12px;
   background: var(--section-bg);
-  border: 1px solid var(--section-border);
+  border: 1px solid #333;
   border-radius: 8px;
 }
 
@@ -592,7 +568,7 @@ body {
 }
 
 .placeholder-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 3px;
   color: var(--text-dim);
@@ -610,44 +586,47 @@ body {
 .footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  margin-top: 8px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 6px 10px;
   background: rgba(0,0,0,0.2);
-  border-radius: 6px;
+  border-radius: 5px;
+}
+
+.last-change-label {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  flex-shrink: 0;
 }
 
 .last-change {
   font-size: 10px;
   color: rgba(255,255,255,0.4);
   letter-spacing: 0.5px;
-  min-width: 260px;
-  text-align: right;
+  font-family: 'Courier New', monospace;
 }
 
 /* ── Flash animation for changed params ── */
 
 @keyframes flash {
-  0% { box-shadow: 0 0 0 2px rgba(79,195,247,0.8); }
+  0%   { box-shadow: 0 0 0 2px rgba(79,195,247,0.8); }
   100% { box-shadow: 0 0 0 2px transparent; }
 }
 
-.flash {
-  animation: flash 0.5s ease-out;
-}
+.flash { animation: flash 0.5s ease-out; }
 
 /* ── Chat Panel ── */
 
 .chat-panel {
-  width: 340px;
+  width: 320px;
   flex-shrink: 0;
   background: #1a1a1a;
-  border-radius: 12px;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 40px);
+  height: calc(100vh - 32px);
   position: sticky;
-  top: 20px;
+  top: 16px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.4);
   overflow: hidden;
   border: 1px solid #2a2a2a;
@@ -657,13 +636,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 10px 14px;
   background: #222;
   border-bottom: 1px solid #333;
 }
 
 .chat-title {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--text-dim);
@@ -674,26 +653,23 @@ body {
   color: var(--text-dim);
   border: 1px solid #444;
   border-radius: 4px;
-  padding: 3px 10px;
-  font-size: 9px;
+  padding: 3px 9px;
+  font-size: 8px;
   font-weight: 700;
   letter-spacing: 1px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.12s;
 }
 
-.chat-reset:hover {
-  background: #444;
-  color: var(--text);
-}
+.chat-reset:hover { background: #444; color: var(--text); }
 
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .chat-msg {
@@ -702,12 +678,12 @@ body {
   max-width: 90%;
 }
 
-.chat-msg.user { align-self: flex-end; }
+.chat-msg.user      { align-self: flex-end; }
 .chat-msg.assistant { align-self: flex-start; }
 
 .chat-bubble {
-  padding: 8px 12px;
-  border-radius: 12px;
+  padding: 7px 11px;
+  border-radius: 11px;
   font-size: 13px;
   line-height: 1.4;
   word-wrap: break-word;
@@ -731,7 +707,7 @@ body {
   margin: 4px 0;
   background: var(--display-bg);
   border: 1px solid #1a3a4a;
-  border-radius: 6px;
+  border-radius: 5px;
   font-size: 11px;
   font-family: 'Courier New', monospace;
   color: var(--display-text);
@@ -744,7 +720,7 @@ body {
 }
 
 .chat-thinking {
-  padding: 6px 12px;
+  padding: 5px 11px;
   font-size: 12px;
   color: var(--text-dim);
   font-style: italic;
@@ -764,8 +740,8 @@ body {
 
 .chat-input-area {
   display: flex;
-  gap: 8px;
-  padding: 12px;
+  gap: 7px;
+  padding: 10px;
   background: #222;
   border-top: 1px solid #333;
 }
@@ -774,47 +750,33 @@ body {
   flex: 1;
   background: #1a1a1a;
   border: 1px solid #444;
-  border-radius: 8px;
-  padding: 8px 12px;
+  border-radius: 7px;
+  padding: 7px 10px;
   color: var(--text);
   font-size: 13px;
   font-family: inherit;
   resize: none;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.12s;
 }
 
-.chat-input:focus {
-  border-color: var(--blue-accent);
-}
-
-.chat-input::placeholder {
-  color: #555;
-}
-
-.chat-input:disabled {
-  opacity: 0.5;
-}
+.chat-input:focus        { border-color: var(--blue-accent); }
+.chat-input::placeholder { color: #555; }
+.chat-input:disabled     { opacity: 0.5; }
 
 .chat-send {
   background: var(--roland-red);
   color: #fff;
   border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-size: 11px;
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 1px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.12s;
   align-self: flex-end;
 }
 
-.chat-send:hover {
-  background: var(--roland-red-light);
-}
-
-.chat-send:disabled {
-  background: #555;
-  cursor: not-allowed;
-}
+.chat-send:hover    { background: var(--roland-red-light); }
+.chat-send:disabled { background: #555; cursor: not-allowed; }
