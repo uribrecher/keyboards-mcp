@@ -58,3 +58,29 @@ This plan assumes the **architecture plan** has been implemented first. `MockHan
 3. Switch to Prophet-6 model, check UI — same
 4. Verify no hardcoded `PARAM_LABELS` remain in either UI file
 5. Add a new discrete param to a MIDI map and confirm it automatically gets a selector in the UI without any UI code changes
+
+## Test Coverage
+
+### Unit tests
+
+**`tests/unit/nord-electro-5d/mock-handler.test.ts`** — add:
+- **Labels in state:** Send a CC for a discrete param (e.g., `organ_model`). Assert the corresponding state entry includes a `labels` object with the expected keys/values from the MIDI map.
+- **Labels absent for continuous/toggle:** Send a CC for a continuous param (e.g., `drawbar_1`) and a toggle param (e.g., `organ_on`). Assert neither state entry has a `labels` field.
+- **Labels only on first state:** Call `getFullState()` twice. Assert `labels` is present in both (since the handler always builds full state).
+
+**`tests/unit/juno-x/mock-handler.test.ts`** — add:
+- **Labels in state for discrete params:** Same pattern — send a CC for a discrete JUNO-X param, verify `labels` in state entry.
+- **No labels for continuous/toggle params.**
+
+**`tests/unit/prophet-6/mock-handler.test.ts`** — add:
+- **Labels in state for discrete params:** Same pattern for Prophet-6 discrete params.
+- **No labels for continuous/toggle params.**
+
+### Integration tests
+
+**`tests/integration/mock-runner.test.ts`** — add:
+- **Labels broadcast via WebSocket:** For each model, spawn mock, call `waitForState()`, pick a known discrete param key and assert its state entry contains `labels`. This verifies labels survive the handler → engine → WebSocket → client path.
+
+### E2E tests
+
+No new E2E tests needed — labels are a mock UI concern, not an MCP tool concern. The MCP tools (`list_parameters`, `set_parameters`) are unaffected. Existing E2E tests remain as-is to verify no regressions.
