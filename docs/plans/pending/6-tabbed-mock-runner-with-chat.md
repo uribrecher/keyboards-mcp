@@ -1,6 +1,6 @@
 # Tabbed Multi-Mock Runner with Persistent Chat
 
-> **Execution order: 6 of 7** — Depends on: architecture plan (thin engine + MockHandler), per-instance backup plan (tab labeling + label-keyed backup). Independent of multi-device plan (this is Electron UI, not MCP server).
+> **Execution order: 6 of 7** — Depends on: architecture plan (thin engine + MockHandler), multi-device MCP plan (plan 4 — DevicePool, labels), per-instance backup plan (plan 5 — label-keyed backup storage for tab ↔ backup directory mapping).
 
 ## Problem
 
