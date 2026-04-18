@@ -77,7 +77,14 @@ export function createParameterMap(): JunoXParameterMap {
         }
       }
 
-      // Tier 3: name substring match
+      // Tier 3: exact name match (normalized)
+      for (const [key, param] of Object.entries(allParams)) {
+        if (param.name.toLowerCase().replace(/[\s_-]+/g, "") === lower) {
+          return { key, param };
+        }
+      }
+
+      // Tier 4: name substring match
       for (const [key, param] of Object.entries(allParams)) {
         if (param.name.toLowerCase().replace(/[\s_-]+/g, "").includes(lower)) {
           return { key, param };
