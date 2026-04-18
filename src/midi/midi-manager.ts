@@ -134,8 +134,8 @@ export class MidiManager implements MidiConnection {
       channel: channel ?? this.channel,
     };
     this.output.send("cc", msg);
-    // Also forward to mock device if connected
-    if (this.forwardOutput) {
+    // Also forward to mock device if connected (skip if same port as output)
+    if (this.forwardOutput && this.connectedForwardPortName !== this.connectedPortName) {
       try { this.forwardOutput.send("cc", msg); } catch {}
     }
   }
@@ -147,8 +147,7 @@ export class MidiManager implements MidiConnection {
       channel: channel ?? this.channel,
     };
     this.output.send("program", msg);
-    // Also forward to mock device if connected
-    if (this.forwardOutput) {
+    if (this.forwardOutput && this.connectedForwardPortName !== this.connectedPortName) {
       try { this.forwardOutput.send("program", msg); } catch {}
     }
   }
@@ -164,7 +163,7 @@ export class MidiManager implements MidiConnection {
     if (!this.output) throw new Error("Not connected to any MIDI device");
     // easymidi expects a raw array for sysex (checks args[0]===0xf0, args[length-1]===0xf7)
     this.output.send("sysex", bytes as any);
-    if (this.forwardOutput) {
+    if (this.forwardOutput && this.connectedForwardPortName !== this.connectedPortName) {
       try { this.forwardOutput.send("sysex", bytes as any); } catch {}
     }
   }

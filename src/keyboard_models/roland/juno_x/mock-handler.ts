@@ -7,11 +7,13 @@
 
 import type { MidiMessage, MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
 import { parseDT1 } from "../../../shared/roland-dt1.js";
-import { JUNO_X_MODEL_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT } from "./engines/engine-types.js";
+import { addAddresses } from "../../../shared/roland-dt1.js";
+import { JUNO_X_MODEL_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
 import { createAnalogSynthParams } from "./engines/analog-synth.js";
 import { createZCoreParams } from "./engines/zcore.js";
 import { createJunoXModelParams } from "./engines/juno-x-model.js";
 import { createRDPianoParams } from "./engines/rd-piano.js";
+import { createSceneParams } from "./scene-params.js";
 
 // ── Internal part state ──
 
@@ -39,6 +41,45 @@ function buildCcLookup(): Map<number, string> {
   return lookup;
 }
 
+// ── Build a SysEx address → param-name lookup for scene params ──
+
+function addrKey(addr: number[]): string {
+  return addr.map(b => b.toString(16).padStart(2, "0")).join(":");
+}
+
+function buildSysexLookup(): Map<string, string> {
+  const lookup = new Map<string, string>();
+  const sceneParams = createSceneParams();
+
+  for (const [key, param] of Object.entries(sceneParams)) {
+    if (!param.sysexAddress) continue;
+
+    if (param.perPart) {
+      // Register for each of the 5 parts
+      for (let p = 0; p < PART_COUNT; p++) {
+        const partOffset = SCENE_PART_OFFSETS[p];
+        if (!partOffset) continue;
+        const fullAddr = addAddresses(addAddresses(SCENE_BASE, partOffset), param.sysexAddress);
+        lookup.set(addrKey(fullAddr), `${param.name} [Part ${p + 1}]`);
+      }
+    } else {
+      const fullAddr = addAddresses(SCENE_BASE, param.sysexAddress);
+      lookup.set(addrKey(fullAddr), param.name);
+    }
+  }
+
+  // Also register RD Piano SysEx params (symreso)
+  const rdParams = createRDPianoParams();
+  for (const [key, param] of Object.entries(rdParams)) {
+    if (!param.sysexAddress) continue;
+    // RD Piano is Part 1 only, tone base = 02:20:00:00
+    const fullAddr = addAddresses([0x02, 0x20, 0x00, 0x00], param.sysexAddress);
+    lookup.set(addrKey(fullAddr), param.name);
+  }
+
+  return lookup;
+}
+
 // ── Factory ──
 
 export function createJunoXMockHandler(): MockHandler {
@@ -50,6 +91,7 @@ export function createJunoXMockHandler(): MockHandler {
   let pendingBankLSB = 0;
 
   const ccLookup: Map<number, string> = buildCcLookup();
+  const sysexLookup: Map<string, string> = buildSysexLookup();
 
   function initParts(lowerChannel: number, upperChannel: number): void {
     channels = [lowerChannel, upperChannel, 2, 3, 4];
@@ -137,7 +179,8 @@ export function createJunoXMockHandler(): MockHandler {
     }
 
     const { address, data } = dt1;
-    const addrKey = address.map(b => b.toString(16).padStart(2, "0")).join(":");
+    const ak = addrKey(address);
+    const paramName = sysexLookup.get(ak);
 
     // Route by address[0]
     if (address[0] === 0x01) {
@@ -147,28 +190,31 @@ export function createJunoXMockHandler(): MockHandler {
         // Scene Part (partIndex 0-4)
         const partIdx = subAddr - 0x10;
         for (let i = 0; i < data.length; i++) {
-          const key = `${addrKey}[${i}]`;
+          const key = `${ak}[${i}]`;
           parts[partIdx].sceneParams[key] = data[i];
         }
+        const label = paramName ?? `addr ${ak}`;
         return {
           state: getFullStateObj(),
-          log: `DT1 Scene Part ${partIdx + 1} @ ${addrKey} = [${data.join(",")}]`,
+          log: `DT1: ${label} = ${data.join(",")}`,
         };
       } else {
         // Scene global params
         for (let i = 0; i < data.length; i++) {
-          const key = `${addrKey}[${i}]`;
+          const key = `${ak}[${i}]`;
           sceneGlobal[key] = data[i];
         }
+        const label = paramName ?? `Scene @ ${ak}`;
         return {
           state: getFullStateObj(),
-          log: `DT1 Scene Global @ ${addrKey} = [${data.join(",")}]`,
+          log: `DT1: ${label} = ${data.join(",")}`,
         };
       }
     }
 
     // Any other DT1 prefix — just log
-    return { log: `DT1 @ ${addrKey} = [${data.join(",")}] (not routed)` };
+    const label = paramName ?? `addr ${ak}`;
+    return { log: `DT1: ${label} = ${data.join(",")} (not routed)` };
   }
 
   // ── MockHandler implementation ──
