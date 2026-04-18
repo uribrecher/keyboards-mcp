@@ -1,6 +1,6 @@
 # Dynamic UI Labels from MIDI Map
 
-> **Execution order: 4 of 7** — Depends on: architecture plan (MockHandler owns state building). Small, self-contained change.
+> **Execution order: 3 of 7** — Depends on: architecture plan (MockHandler owns state building). Small, self-contained change. No dependency on multi-device or backup plans.
 
 ## Context
 

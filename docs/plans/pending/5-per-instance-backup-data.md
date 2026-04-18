@@ -1,6 +1,6 @@
 # Per-Instance Backup Data
 
-> **Execution order: 3 of 7** — Depends on: architecture plan (KeyboardDevice with label). Multi-device plan builds on top of this naturally. Can be implemented right after architecture, before or alongside test automation.
+> **Execution order: 5 of 7** — Depends on: architecture plan (KeyboardDevice with label), multi-device MCP plan (plan 4 — DevicePool with labels, multiple connected devices). Moved after multi-device because label-keyed backup storage can't be meaningfully tested with only one device connected.
 
 ## Context
 
@@ -128,7 +128,9 @@ MockHandler currently calls `backupCache.load()` globally on `init()` and reads 
 - For the mock runner: the tab's label determines which cache to load
 - For MCP-connected mocks (forward port): the connected device's label is used to select the right cache
 
-### Mock runner tab labeling
+### Mock runner tab labeling (plan 6)
+
+> **Note:** The tab UI for label management is implemented in plan 6 (Tabbed Mock Runner). This plan provides the data layer (label-keyed storage). The tab ↔ backup directory mapping described below is exercised when plan 6 lands.
 
 Each mock tab gets an **auto-generated label** based on the selected model type with an incrementing counter:
 
@@ -166,13 +168,18 @@ Existing `data/backup_cache.json` and `data/last_backup_path.txt` are migrated t
 
 ## Verification
 
+### MCP-level (testable with multi-device from plan 4)
+
 1. Extract a backup with no label → stored in `data/backups/_default/`, mock loads it (backwards compat)
 2. Extract a backup with `label="studio"` → stored in `data/backups/studio/`
 3. Connect with `label="studio"` → auto-loads studio backup data
 4. Connect a second device with `label="gig"` and different backup → each device has independent inventory
-5. Mock runner: select Nord model → tab auto-labeled `nord-el-5d-#1`, starts empty
-6. Mock runner: extract backup on that tab → stored under `nord-el-5d-#1`
-7. Mock runner: close and re-create Nord tab → auto-labeled `nord-el-5d-#1` again → cached backup auto-loaded
-8. Mock runner: rename tab to `studio-nord` → backup directory re-keyed
-9. `get_last_backup_location(label="studio-nord")` → returns correct path
-10. Migration: start with existing `data/backup_cache.json` → auto-migrated to `_default/`
+5. `get_last_backup_location(label="studio")` → returns correct path
+6. Migration: start with existing `data/backup_cache.json` → auto-migrated to `_default/`
+
+### Mock runner tab integration (testable after plan 6)
+
+7. Mock runner: select Nord model → tab auto-labeled `nord-el-5d-#1`, starts empty
+8. Mock runner: extract backup on that tab → stored under `nord-el-5d-#1`
+9. Mock runner: close and re-create Nord tab → auto-labeled `nord-el-5d-#1` again → cached backup auto-loaded
+10. Mock runner: rename tab to `studio-nord` → backup directory re-keyed

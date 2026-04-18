@@ -1,6 +1,6 @@
 # Audio Analysis MCP Server
 
-> **Execution order: 7 of 7** — Separate Python repo. Phase 1 (audio pipeline) has no dependencies on keyboards-mcp plans. Phase 2+ (inverse synthesis) needs the architecture plan for the parameter contract. Can be developed in parallel with plans 2-6.
+> **Execution order: 7 of 7** — Separate Python repo. Phase 1 (audio pipeline) has no dependencies on keyboards-mcp plans. Phase 2+ (inverse synthesis) needs the architecture plan for the parameter contract. Can be developed in parallel with plans 3-6.
 
 ## Context
 
