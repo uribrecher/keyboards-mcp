@@ -155,7 +155,107 @@ function initPartButtons() {
   }
 }
 
+// ── Outgoing controls ──
+
+function sendCC(cc, value) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({
+    type: "cc",
+    controller: parseInt(cc, 10),
+    value: parseInt(value, 10),
+    channel: activePart - 1,
+  }));
+}
+
+function setLastChange(text) {
+  const el = document.getElementById("last-change");
+  if (el) el.textContent = text;
+}
+
+function initSliderControls() {
+  for (const el of document.querySelectorAll("input.vslider[data-cc]")) {
+    el.addEventListener("input", () => {
+      const cc = el.dataset.cc;
+      const value = el.value;
+      const valEl = document.getElementById("val-cc-" + cc);
+      if (valEl) valEl.textContent = value;
+      sendCC(cc, value);
+      setLastChange(`CC${cc} = ${value} (Part ${activePart})`);
+    });
+  }
+}
+
+function initSelectControls() {
+  for (const el of document.querySelectorAll("select[data-cc]")) {
+    el.addEventListener("change", () => {
+      const cc = el.dataset.cc;
+      const value = parseInt(el.value, 10);
+      const valEl = document.getElementById("val-cc-" + cc);
+      if (valEl) valEl.textContent = value;
+      sendCC(cc, value);
+      setLastChange(`CC${cc} = ${value} (Part ${activePart})`);
+    });
+  }
+}
+
+function initToggleButtons() {
+  for (const el of document.querySelectorAll("button.tog-btn[data-cc]")) {
+    el.addEventListener("click", () => {
+      el.classList.toggle("active");
+      const cc = el.dataset.cc;
+      const isOn = el.classList.contains("active");
+      const value = isOn
+        ? parseInt(el.dataset.valOn ?? "127", 10)
+        : parseInt(el.dataset.valOff ?? "0", 10);
+      sendCC(cc, value);
+      setLastChange(`CC${cc} = ${value} (Part ${activePart})`);
+    });
+  }
+}
+
+function initChorusButtons() {
+  const buttons = document.querySelectorAll("button.fx-chorus[data-mode]");
+  for (const el of buttons) {
+    el.addEventListener("click", () => {
+      for (const b of buttons) b.classList.remove("active");
+      el.classList.add("active");
+      setLastChange(`Chorus = ${el.dataset.mode}`);
+    });
+  }
+}
+
+function initFxButtons() {
+  for (const el of document.querySelectorAll("button.tog-btn[data-fx]")) {
+    el.addEventListener("click", () => {
+      el.classList.toggle("active");
+      const fx = el.dataset.fx;
+      const isOn = el.classList.contains("active");
+      setLastChange(`${fx} = ${isOn ? "ON" : "OFF"}`);
+    });
+  }
+}
+
+function initEngineSwitch() {
+  const sel = document.getElementById("engine-select");
+  if (!sel) return;
+  sel.addEventListener("change", () => {
+    const value = sel.value;
+    for (const panel of document.querySelectorAll(".synth-panel")) {
+      panel.classList.add("hidden");
+    }
+    const target = document.getElementById("panel-" + value);
+    if (target) target.classList.remove("hidden");
+    setLastChange(`Engine = ${value}`);
+  });
+}
+
 // ── Init ──
 
 initPartButtons();
 connect();
+initSliderControls();
+initSelectControls();
+initToggleButtons();
+initChorusButtons();
+initFxButtons();
+initEngineSwitch();
