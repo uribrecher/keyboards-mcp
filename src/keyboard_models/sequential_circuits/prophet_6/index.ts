@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import type { KeyboardModel } from "../../../shared/keyboard-model.js";
 import { createParameterMap } from "./midi-map.js";
 import { Prophet6Device } from "./device.js";
+import { createProphet6MockHandler } from "./mock-handler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const parameterMap = createParameterMap();
@@ -106,6 +107,10 @@ NOTES:
       parameterMap,
       systemPromptTemplate: model.agentSystemPrompt,
     });
+  },
+
+  createMockHandler() {
+    return createProphet6MockHandler();
   },
 };
 
