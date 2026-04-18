@@ -162,10 +162,10 @@ export class MidiManager implements MidiConnection {
 
   sendSysEx(bytes: number[]): void {
     if (!this.output) throw new Error("Not connected to any MIDI device");
-    // easymidi expects a Buffer for sysex, wrapped as { bytes: Buffer }
-    this.output.send("sysex", { bytes: Buffer.from(bytes) } as any);
+    // easymidi expects a raw array for sysex (checks args[0]===0xf0, args[length-1]===0xf7)
+    this.output.send("sysex", bytes as any);
     if (this.forwardOutput) {
-      try { this.forwardOutput.send("sysex", { bytes: Buffer.from(bytes) } as any); } catch {}
+      try { this.forwardOutput.send("sysex", bytes as any); } catch {}
     }
   }
 
