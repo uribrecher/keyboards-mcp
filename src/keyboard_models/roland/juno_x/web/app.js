@@ -214,25 +214,46 @@ function initToggleButtons() {
 }
 
 function initChorusButtons() {
+  // Chorus mode values for JUNO Chorus (type 09):
+  // OFF=switch off, I/II/I+II = switch on + mode
+  const CHORUS_MODES = { "OFF": 0, "I": 1, "II": 2, "I+II": 3 };
   const buttons = document.querySelectorAll("button.fx-chorus[data-mode]");
   for (const el of buttons) {
     el.addEventListener("click", () => {
       for (const b of buttons) b.classList.remove("active");
       el.classList.add("active");
-      setLastChange(`Chorus = ${el.dataset.mode}`);
+      const mode = el.dataset.mode;
+      // Send chorus switch + mode as a UI param message
+      sendUIParam("chorus_switch", mode === "OFF" ? 0 : 1);
+      if (mode !== "OFF") {
+        sendUIParam("chorus_mode", CHORUS_MODES[mode] ?? 1);
+      }
+      setLastChange(`Chorus = ${mode}`);
     });
   }
 }
 
 function initFxButtons() {
+  // Map FX button data-fx to scene param names
+  const FX_PARAMS = { delay: "delay_switch", reverb: "reverb_switch", drive: "drive_switch" };
   for (const el of document.querySelectorAll("button.tog-btn[data-fx]")) {
     el.addEventListener("click", () => {
       el.classList.toggle("active");
       const fx = el.dataset.fx;
       const isOn = el.classList.contains("active");
+      const paramName = FX_PARAMS[fx];
+      if (paramName) {
+        sendUIParam(paramName, isOn ? 1 : 0);
+      }
       setLastChange(`${fx} = ${isOn ? "ON" : "OFF"}`);
     });
   }
+}
+
+/** Send a named parameter value from the UI (for SysEx-addressed params that don't have CCs) */
+function sendUIParam(name, value) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: "param", name: name, value: value }));
 }
 
 function initEngineSwitch() {

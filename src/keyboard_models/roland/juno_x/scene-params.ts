@@ -169,6 +169,20 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
     },
 
     // Scene Chorus
+    chorus_type: {
+      name: "Chorus Type",
+      section: "scene-chorus",
+      min: 0, max: 9, defaultValue: 9, type: "discrete",
+      labels: {
+        0: "OFF", 1: "Chorus", 2: "CE-1", 3: "SDD-320",
+        4: "Delay", 5: "T-Ctrl Dly", 6: "Dly+Trem",
+        7: "2Tap PanDly", 8: "3Tap PanDly", 9: "JUNO Chorus",
+      },
+      description: "Selects the chorus algorithm type. JUNO Chorus (09) enables the classic I/II/I+II modes.",
+      encoding: { kind: "raw" },
+      sysexAddress: [0x00, 0x50, 0x00, 0x01],
+      sysexSize: 1,
+    },
     chorus_switch: {
       name: "Chorus Switch",
       section: "scene-chorus",
