@@ -316,7 +316,8 @@ export class MidiManager implements MidiConnection {
   private connectMockWs(): void {
     this.disconnectMockWs();
     try {
-      const ws = new WebSocket("ws://localhost:3000?client=mcp");
+      const wsPort = process.env.MOCK_WS_PORT ?? "3000";
+      const ws = new WebSocket(`ws://localhost:${wsPort}?client=mcp`);
       ws.on("error", () => {}); // Swallow — best-effort signaling
       ws.on("close", () => {
         // Mock device was unloaded — trigger full disconnect

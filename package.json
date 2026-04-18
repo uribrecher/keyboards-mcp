@@ -9,8 +9,14 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "mock:runner": "electron dist/mock-runner/main.js",
+    "mock:headless": "tsx src/mock-runner/cli.ts",
     "agent": "tsx src/agent.ts",
-    "run:mlx": "mlx_lm.server --model ${MLX_MODEL:-mlx-community/Qwen2.5-7B-Instruct-4bit} --port ${MLX_PORT:-8080}"
+    "run:mlx": "mlx_lm.server --model ${MLX_MODEL:-mlx-community/Qwen2.5-7B-Instruct-4bit} --port ${MLX_PORT:-8080}",
+    "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
+    "test:unit": "tsx --test 'tests/unit/**/*.test.ts'",
+    "test:integration": "tsx --test 'tests/integration/**/*.test.ts'",
+    "test:e2e": "tsx --test --test-concurrency=1 'tests/e2e/**/*.test.ts'",
+    "test:check": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "openai": "^4.80.0",

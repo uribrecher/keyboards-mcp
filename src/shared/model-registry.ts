@@ -11,6 +11,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const modelsDir = join(__dirname, "..", "keyboard_models");
 
+/** Find the model index file (.js or .ts) in a model directory */
+function findIndexFile(dir: string): string | null {
+  for (const ext of ["index.js", "index.ts"]) {
+    const p = join(dir, ext);
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
 /** Scan keyboard_models/ for all available models */
 export async function discoverModels(): Promise<KeyboardModelInfo[]> {
   const models: KeyboardModelInfo[] = [];
@@ -21,8 +30,8 @@ export async function discoverModels(): Promise<KeyboardModelInfo[]> {
     const mfrDir = join(modelsDir, mfr.name);
     for (const mdl of readdirSync(mfrDir, { withFileTypes: true })) {
       if (!mdl.isDirectory()) continue;
-      const indexPath = join(mfrDir, mdl.name, "index.js");
-      if (existsSync(indexPath)) {
+      const indexPath = findIndexFile(join(mfrDir, mdl.name));
+      if (indexPath) {
         const mod = await import(indexPath);
         const model: KeyboardModel = mod.default;
         models.push(model.info);
@@ -43,8 +52,8 @@ export async function loadModelById(modelId: string): Promise<KeyboardModel> {
     const mfrDir = join(modelsDir, mfr.name);
     for (const mdl of readdirSync(mfrDir, { withFileTypes: true })) {
       if (!mdl.isDirectory()) continue;
-      const indexPath = join(mfrDir, mdl.name, "index.js");
-      if (existsSync(indexPath)) {
+      const indexPath = findIndexFile(join(mfrDir, mdl.name));
+      if (indexPath) {
         const mod = await import(indexPath);
         const model: KeyboardModel = mod.default;
         if (model.info.id === modelId) return model;
@@ -80,8 +89,8 @@ export async function detectModelFromBackup(filePath: string): Promise<KeyboardM
     const mfrDir = join(modelsDir, mfr.name);
     for (const mdl of readdirSync(mfrDir, { withFileTypes: true })) {
       if (!mdl.isDirectory()) continue;
-      const indexPath = join(mfrDir, mdl.name, "index.js");
-      if (existsSync(indexPath)) {
+      const indexPath = findIndexFile(join(mfrDir, mdl.name));
+      if (indexPath) {
         const mod = await import(indexPath);
         const model: KeyboardModel = mod.default;
         if (model.backup?.detectBackup) {
@@ -106,8 +115,8 @@ export async function findLastBackupPath(): Promise<string | null> {
     const mfrDir = join(modelsDir, mfr.name);
     for (const mdl of readdirSync(mfrDir, { withFileTypes: true })) {
       if (!mdl.isDirectory()) continue;
-      const indexPath = join(mfrDir, mdl.name, "index.js");
-      if (existsSync(indexPath)) {
+      const indexPath = findIndexFile(join(mfrDir, mdl.name));
+      if (indexPath) {
         const mod = await import(indexPath);
         const model: KeyboardModel = mod.default;
         if (model.backupCache) {

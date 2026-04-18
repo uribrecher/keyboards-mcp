@@ -32,7 +32,7 @@ export class MockEngine {
     this.opts = opts;
   }
 
-  start(): void {
+  async start(): Promise<void> {
     // Init handler with channel config
     this.handler.init(this.opts.lowerChannel, this.opts.upperChannel);
 
@@ -97,11 +97,14 @@ export class MockEngine {
       this.onMIDI({ type: "sysex", bytes: [...msg.bytes] });
     });
 
-    this.httpServer.listen(this.opts.wsPort, () => {
-      console.log(`Mock device ready`);
-      console.log(`  MIDI port: "${this.opts.portName}" (virtual)`);
-      console.log(`  Lower channel: ${this.opts.lowerChannel}, Upper channel: ${this.opts.upperChannel}`);
-      console.log(`  WebSocket: ws://localhost:${this.opts.wsPort}`);
+    return new Promise<void>((resolve) => {
+      this.httpServer!.listen(this.opts.wsPort, () => {
+        console.log(`Mock device ready`);
+        console.log(`  MIDI port: "${this.opts.portName}" (virtual)`);
+        console.log(`  Lower channel: ${this.opts.lowerChannel}, Upper channel: ${this.opts.upperChannel}`);
+        console.log(`  WebSocket: ws://localhost:${this.opts.wsPort}`);
+        resolve();
+      });
     });
   }
 

@@ -86,7 +86,7 @@ async function switchModelInner(modelId: string): Promise<void> {
     wsPort: WS_PORT,
     portName: `${model.info.displayName} Mock`,
   });
-  engine.start();
+  await engine.start();
 
   // Update window
   if (mainWindow) {
