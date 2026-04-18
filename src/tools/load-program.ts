@@ -1,11 +1,10 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { MidiManager } from "../midi/midi-manager.js";
 import type { ModelHolder } from "../shared/model-holder.js";
 
 export function registerLoadProgram(
   server: McpServer,
-  midi: MidiManager,
+  _midi: unknown,
   holder: ModelHolder,
 ): void {
   server.registerTool(
@@ -22,13 +21,6 @@ export function registerLoadProgram(
       let device;
       try { device = holder.requireDevice(); }
       catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
-
-      if (!midi.isConnected()) {
-        return {
-          content: [{ type: "text", text: "Not connected. Use connect_to_keyboard first." }],
-          isError: true,
-        };
-      }
 
       return device.loadProgram(bank, slot);
     },

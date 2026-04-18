@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MidiManager } from "../midi/midi-manager.js";
 import type { ModelHolder } from "../shared/model-holder.js";
-import { autoDetectModel } from "../shared/model-registry.js";
+import { autoDetectModel, loadModelById } from "../shared/model-registry.js";
+import { WsMidiConnection } from "../midi/ws-midi-connection.js";
 
 export function registerConnect(server: McpServer, midi: MidiManager, holder: ModelHolder): void {
   server.registerTool(
@@ -45,6 +46,31 @@ export function registerConnect(server: McpServer, midi: MidiManager, holder: Mo
     },
     async ({ port, input_port, forward_port, channel, lower_channel, upper_channel }) => {
       try {
+        // WS transport mode (for CI/Docker — no real MIDI)
+        const wsUrl = process.env.MOCK_WS_URL;
+        if (wsUrl) {
+          const modelId = process.env.MOCK_MODEL_ID;
+          if (!modelId) {
+            return {
+              content: [{ type: "text", text: "MOCK_WS_URL is set but MOCK_MODEL_ID is missing." }],
+              isError: true,
+            };
+          }
+          const model = await loadModelById(modelId);
+          holder.unload();
+          holder.load(model);
+          const wsConn = await WsMidiConnection.connect(wsUrl);
+          if (holder.device) {
+            holder.device.attach(wsConn);
+          }
+          return {
+            content: [{
+              type: "text",
+              text: `Detected model: ${model.info.displayName}\nConnected via WebSocket: ${wsUrl}`,
+            }],
+          };
+        }
+
         // Auto-detect keyboard model from MIDI port names
         // If a specific port was given, prioritize it for model detection
         const outputPorts = midi.listOutputPorts();

@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { MidiManager } from "./midi/midi-manager.js";
+import { MidiManager, initMidiBackend } from "./midi/midi-manager.js";
 import { ModelHolder } from "./shared/model-holder.js";
 import { registerListDevices } from "./tools/list-devices.js";
 import { registerConnect } from "./tools/connect.js";
@@ -15,6 +15,8 @@ import { registerIsConnected } from "./tools/is-connected.js";
 import { registerLoadProgram } from "./tools/load-program.js";
 import { registerLoadSong } from "./tools/load-song.js";
 import { registerSystemPrompt } from "./tools/system-prompt.js";
+
+await initMidiBackend();
 
 const server = new McpServer({
   name: "keyboards-mcp",

@@ -1,5 +1,3 @@
-import easymidi from "easymidi";
-import type { Channel } from "easymidi";
 import WebSocket from "ws";
 import type { MidiConnection } from "../shared/midi-connection.js";
 
@@ -8,14 +6,29 @@ export interface PortInfo {
   name: string;
 }
 
+type Channel = number;
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ── Lazy easymidi loading ──
+// When MIDI_TRANSPORT=ws, easymidi is never imported (no ALSA dependency).
+let midi: any = null;
+
+export async function initMidiBackend(): Promise<void> {
+  if (process.env.MIDI_TRANSPORT === "ws") return;
+  try {
+    midi = (await import("easymidi")).default;
+  } catch (err) {
+    console.warn("easymidi not available:", (err as Error).message);
+  }
+}
+
 export class MidiManager implements MidiConnection {
-  private output: easymidi.Output | null = null;
+  private output: any | null = null;
   private connectedPortName: string | null = null;
-  private input: easymidi.Input | null = null;
+  private input: any | null = null;
   private connectedInputPortName: string | null = null;
-  private forwardOutput: easymidi.Output | null = null;
+  private forwardOutput: any | null = null;
   private connectedForwardPortName: string | null = null;
   private mockWs: WebSocket | null = null;
   private onCCCallback: ((msg: { controller: number; value: number; channel: number }) => void) | null = null;
@@ -26,12 +39,14 @@ export class MidiManager implements MidiConnection {
   private upperChannel: Channel = 2;
 
   listOutputPorts(): PortInfo[] {
-    const names = easymidi.getOutputs();
+    if (!midi) return [];
+    const names: string[] = midi.getOutputs();
     return names.map((name, index) => ({ index, name }));
   }
 
   listInputPorts(): PortInfo[] {
-    const names = easymidi.getInputs();
+    if (!midi) return [];
+    const names: string[] = midi.getInputs();
     return names.map((name, index) => ({ index, name }));
   }
 
@@ -54,7 +69,7 @@ export class MidiManager implements MidiConnection {
       );
     }
 
-    this.output = new easymidi.Output(targetPort.name);
+    this.output = new midi.Output(targetPort.name);
     this.connectedPortName = targetPort.name;
     return { success: true, portName: targetPort.name };
   }
@@ -218,7 +233,7 @@ export class MidiManager implements MidiConnection {
       );
     }
 
-    this.input = new easymidi.Input(targetPort.name);
+    this.input = new midi.Input(targetPort.name);
     this.connectedInputPortName = targetPort.name;
 
     // Set up message forwarding and callbacks
@@ -287,7 +302,7 @@ export class MidiManager implements MidiConnection {
       );
     }
 
-    this.forwardOutput = new easymidi.Output(targetPort.name);
+    this.forwardOutput = new midi.Output(targetPort.name);
     this.connectedForwardPortName = targetPort.name;
     this.connectMockWs();
     return { success: true, portName: targetPort.name };
@@ -316,7 +331,8 @@ export class MidiManager implements MidiConnection {
   private connectMockWs(): void {
     this.disconnectMockWs();
     try {
-      const ws = new WebSocket("ws://localhost:3000?client=mcp");
+      const wsPort = process.env.MOCK_WS_PORT ?? "3000";
+      const ws = new WebSocket(`ws://localhost:${wsPort}?client=mcp`);
       ws.on("error", () => {}); // Swallow — best-effort signaling
       ws.on("close", () => {
         // Mock device was unloaded — trigger full disconnect

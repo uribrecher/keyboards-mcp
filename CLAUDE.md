@@ -9,9 +9,52 @@ npm run build          # tsc → dist/
 npm run start          # MCP server (stdio transport)
 npm run dev            # MCP server via tsx (no build step)
 npm run mock:runner    # Electron mock device with model picker UI
+npm run mock:headless  # Headless mock (for testing), --model <id> required
 ```
 
 The MCP server communicates over stdio. Claude Code connects to it via `.mcp.json`. After code changes, reload the MCP server with `/mcp` in Claude Code before using MCP tools.
+
+## Testing
+
+```bash
+npm test               # Run all layers: unit → integration → E2E
+npm run test:unit      # Unit tests only (fast, no processes)
+npm run test:integration  # Integration tests (spawns headless mocks)
+npm run test:e2e       # E2E tests (spawns mock + MCP server)
+npm run test:check     # Type-check test files (no emit)
+```
+
+Tests use `node:test` + `node:assert` (zero dependencies) and run via `tsx` from source.
+
+### Test structure
+
+```
+tests/
+  unit/
+    parameter-resolution.test.ts   # Shared encoding round-trips
+    model-registry.test.ts         # Model discovery + factory guards
+    nord-electro-5d/               # Per-model handler + param map tests
+    juno-x/
+    prophet-6/
+  integration/
+    mock-runner.test.ts            # Headless mock spawn + WS state
+  e2e/
+    connect.test.ts                # MCP connect/disconnect
+    set-parameters.test.ts         # MCP set params + verify
+    get-state.test.ts              # MCP get state
+    list-parameters.test.ts        # MCP list params
+    multi-model.test.ts            # Regression: all models connect + basic tools
+  helpers/
+    mock-process.ts                # Headless mock child process helper
+    test-harness.ts                # Full harness (mock + MCP client)
+```
+
+### Adding tests for a new keyboard model
+
+1. Create `tests/unit/<model-name>/mock-handler.test.ts` — test state shape, CC routing, edge cases
+2. Create `tests/unit/<model-name>/parameter-map.test.ts` — no duplicate CCs, labels, findParam
+3. Add the model to `tests/unit/model-registry.test.ts` EXPECTED_MODELS array
+4. Add the model to `tests/e2e/multi-model.test.ts` MODELS array
 
 ## Architecture
 
