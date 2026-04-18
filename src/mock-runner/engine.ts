@@ -74,6 +74,9 @@ export class MockEngine {
               this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel ?? 0 });
             } else if (msg.type === "program") {
               this.onMIDI({ type: "program", number: msg.number, channel: msg.channel ?? 0 });
+            } else if (msg.type === "param") {
+              // UI named parameter (for SysEx-addressed params without CCs)
+              console.log(`UI: ${msg.name} = ${msg.value}`);
             }
           } catch { /* ignore */ }
         });
