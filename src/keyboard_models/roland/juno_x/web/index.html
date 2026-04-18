@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
   <div class="layout">
     <div class="panel">
 
@@ -17,12 +18,12 @@
           <span class="brand-model">JUNO-X</span>
         </div>
         <div class="scene-display" id="display-scene">
-          <div class="scene-number" id="val-scene-number">01</div>
-          <div class="scene-name" id="val-scene-name">Init Patch</div>
+          <span class="scene-number" id="val-scene-number">01</span>
+          <span class="scene-name" id="val-scene-name">Init Patch</span>
         </div>
         <div class="header-right">
-          <span class="subtitle">Mock MIDI Device</span>
-          <div id="mcp-status" class="status disconnected">MCP DISCONNECTED</div>
+          <span class="subtitle">MOCK MIDI DEVICE</span>
+          <div id="mcp-status" class="status disconnected">MCP</div>
         </div>
       </header>
 
@@ -50,203 +51,202 @@
       <!-- ===== ANALOG SYNTH PANEL ===== -->
       <main id="panel-analog-synth" class="synth-panel">
 
-        <!-- Top row: LFO + OSC + HPF + FILTER + AMP -->
-        <div class="panel-row">
+        <!-- Single horizontal row of all sections -->
+        <div class="hw-row">
 
           <!-- LFO -->
-          <section class="panel-section lfo-section">
-            <h3 class="section-title">LFO</h3>
-            <div class="controls">
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="64" data-cc="29" id="cc-lfo-rate">
-                <label for="cc-lfo-rate" class="ctrl-label">RATE</label>
+          <section class="hw-section">
+            <div class="section-label synth-label">LFO</div>
+            <div class="sliders-row">
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-29">64</div>
+                <input type="range" class="vslider" min="0" max="127" value="64" data-cc="29" id="cc-lfo-rate">
+                <label for="cc-lfo-rate" class="ctrl-label">RATE</label>
               </div>
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="0" data-cc="27" id="cc-lfo-delay">
-                <label for="cc-lfo-delay" class="ctrl-label">DELAY</label>
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-27">0</div>
-              </div>
-              <div class="select-group">
-                <label for="cc-lfo-waveform" class="ctrl-label">WAVEFORM</label>
-                <select data-cc="35" id="cc-lfo-waveform" class="ctrl-select">
-                  <option value="0">TRI</option>
-                  <option value="1">SAW</option>
-                  <option value="2">SQR</option>
-                  <option value="3">RND</option>
-                </select>
-              </div>
-              <div class="select-group">
-                <label for="cc-lfo-sync" class="ctrl-label">SYNC</label>
-                <select data-cc="117" id="cc-lfo-sync" class="ctrl-select">
-                  <option value="0">OFF</option>
-                  <option value="1">ON</option>
-                </select>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="27" id="cc-lfo-delay">
+                <label for="cc-lfo-delay" class="ctrl-label">DLY</label>
               </div>
             </div>
+            <div class="toggle-row">
+              <select class="ctrl-select-sm" data-cc="35" id="cc-lfo-waveform">
+                <option value="0">TRI</option>
+                <option value="1">SAW</option>
+                <option value="2">SQR</option>
+                <option value="3">RND</option>
+              </select>
+              <button class="tog-btn" data-cc="117" id="cc-lfo-sync" data-val-off="0" data-val-on="127">SYNC</button>
+            </div>
           </section>
+
+          <div class="section-divider"></div>
 
           <!-- OSC -->
-          <section class="panel-section osc-section">
-            <h3 class="section-title">OSC</h3>
-            <div class="controls">
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="0" data-cc="16" id="cc-osc-pw-ssaw">
-                <label for="cc-osc-pw-ssaw" class="ctrl-label">PW/SSAW</label>
+          <section class="hw-section osc-section">
+            <div class="section-label synth-label">OSC</div>
+            <div class="sliders-row">
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-16">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="16" id="cc-osc-pw">
+                <label for="cc-osc-pw" class="ctrl-label">PW</label>
               </div>
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="127" data-cc="17" id="cc-osc-saw">
-                <label for="cc-osc-saw" class="ctrl-label">SAW</label>
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-17">127</div>
+                <input type="range" class="vslider" min="0" max="127" value="127" data-cc="17" id="cc-osc-saw">
+                <label for="cc-osc-saw" class="ctrl-label">SAW</label>
               </div>
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="0" data-cc="18" id="cc-osc-sub">
-                <label for="cc-osc-sub" class="ctrl-label">SUB</label>
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-18">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="18" id="cc-osc-sub">
+                <label for="cc-osc-sub" class="ctrl-label">SUB</label>
               </div>
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="0" data-cc="19" id="cc-osc-noise">
-                <label for="cc-osc-noise" class="ctrl-label">NOISE</label>
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-19">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="19" id="cc-osc-noise">
+                <label for="cc-osc-noise" class="ctrl-label">NOIS</label>
               </div>
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="64" data-cc="26" id="cc-osc-lfo-mod">
-                <label for="cc-osc-lfo-mod" class="ctrl-label">LFO MOD</label>
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-26">64</div>
+                <input type="range" class="vslider" min="0" max="127" value="64" data-cc="26" id="cc-osc-lfo-mod">
+                <label for="cc-osc-lfo-mod" class="ctrl-label">LFO</label>
               </div>
-              <div class="select-group">
-                <label for="cc-osc-supersaw" class="ctrl-label">SUPER SAW</label>
-                <select data-cc="46" id="cc-osc-supersaw" class="ctrl-select">
-                  <option value="0">OFF</option>
-                  <option value="127">ON</option>
-                </select>
-              </div>
+            </div>
+            <div class="toggle-row">
+              <button class="tog-btn" data-cc="46" id="cc-osc-supersaw" data-val-off="0" data-val-on="127">SSAW</button>
             </div>
           </section>
 
+          <div class="section-divider"></div>
+
           <!-- HPF -->
-          <section class="panel-section hpf-section">
-            <h3 class="section-title">HPF</h3>
-            <div class="controls">
-              <div class="select-group">
-                <label for="cc-hpf-freq" class="ctrl-label">FREQ</label>
-                <select data-cc="79" id="cc-hpf-freq" class="ctrl-select">
+          <section class="hw-section hpf-section">
+            <div class="section-label synth-label">HPF</div>
+            <div class="sliders-row">
+              <div class="slider-col">
+                <div class="ctrl-value" id="val-cc-79">0</div>
+                <!-- HPF only has 4 steps (0-3), use a select styled as slider column -->
+                <select class="ctrl-select-vert" data-cc="79" id="cc-hpf-freq">
                   <option value="0">0</option>
                   <option value="42">1</option>
                   <option value="85">2</option>
                   <option value="127">3</option>
                 </select>
+                <label for="cc-hpf-freq" class="ctrl-label">FREQ</label>
               </div>
             </div>
+            <div class="toggle-row"></div>
           </section>
+
+          <div class="section-divider"></div>
 
           <!-- FILTER -->
-          <section class="panel-section filter-section">
-            <h3 class="section-title">FILTER</h3>
-            <div class="controls">
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="127" data-cc="3" id="cc-filter-cutoff">
-                <label for="cc-filter-cutoff" class="ctrl-label">CUTOFF</label>
+          <section class="hw-section filter-section">
+            <div class="section-label synth-label">FILTER</div>
+            <div class="sliders-row">
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-3">127</div>
+                <input type="range" class="vslider" min="0" max="127" value="127" data-cc="3" id="cc-filter-cutoff">
+                <label for="cc-filter-cutoff" class="ctrl-label">CUT</label>
               </div>
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="0" data-cc="9" id="cc-filter-resonance">
-                <label for="cc-filter-resonance" class="ctrl-label">RESONANCE</label>
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-9">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="9" id="cc-filter-res">
+                <label for="cc-filter-res" class="ctrl-label">RES</label>
               </div>
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="64" data-cc="81" id="cc-filter-env-depth">
-                <label for="cc-filter-env-depth" class="ctrl-label">ENV DEPTH</label>
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-81">64</div>
+                <input type="range" class="vslider" min="0" max="127" value="64" data-cc="81" id="cc-filter-env">
+                <label for="cc-filter-env" class="ctrl-label">ENV</label>
               </div>
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="0" data-cc="122" id="cc-filter-key-follow">
-                <label for="cc-filter-key-follow" class="ctrl-label">KEY FOLLOW</label>
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-122">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="122" id="cc-filter-key">
+                <label for="cc-filter-key" class="ctrl-label">KEY</label>
               </div>
             </div>
+            <div class="toggle-row">
+              <select class="ctrl-select-sm" data-cc="108" id="cc-filter-vtype">
+                <option value="0">VFlt OFF</option>
+                <option value="64">VFlt A</option>
+                <option value="127">VFlt B</option>
+              </select>
+            </div>
           </section>
+
+          <div class="section-divider"></div>
 
           <!-- AMP -->
-          <section class="panel-section amp-section">
-            <h3 class="section-title">AMP</h3>
-            <div class="controls">
-              <div class="knob-group">
-                <input type="range" min="0" max="127" value="100" data-cc="110" id="cc-amp-level">
-                <label for="cc-amp-level" class="ctrl-label">LEVEL</label>
+          <section class="hw-section amp-section">
+            <div class="section-label synth-label">AMP</div>
+            <div class="sliders-row">
+              <div class="slider-col">
                 <div class="ctrl-value" id="val-cc-110">100</div>
+                <input type="range" class="vslider" min="0" max="127" value="100" data-cc="110" id="cc-amp-level">
+                <label for="cc-amp-level" class="ctrl-label">LVL</label>
               </div>
             </div>
+            <div class="toggle-row"></div>
           </section>
 
-        </div><!-- end panel-row -->
+          <div class="section-divider"></div>
 
-        <!-- ENV section (ADSR vertical sliders) -->
-        <section class="panel-section env-section">
-          <h3 class="section-title">ENV</h3>
-          <div class="controls env-controls">
-            <div class="slider-group">
-              <label for="cc-env-attack" class="ctrl-label">A</label>
-              <input type="range" min="0" max="127" value="0" data-cc="89" id="cc-env-attack"
-                     class="env-slider" orient="vertical">
-              <div class="ctrl-value" id="val-cc-89">0</div>
+          <!-- ENV -->
+          <section class="hw-section env-section">
+            <div class="section-label synth-label">ENV</div>
+            <div class="sliders-row">
+              <div class="slider-col">
+                <div class="ctrl-value" id="val-cc-89">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="89" id="cc-env-attack">
+                <label for="cc-env-attack" class="ctrl-label">A</label>
+              </div>
+              <div class="slider-col">
+                <div class="ctrl-value" id="val-cc-90">64</div>
+                <input type="range" class="vslider" min="0" max="127" value="64" data-cc="90" id="cc-env-decay">
+                <label for="cc-env-decay" class="ctrl-label">D</label>
+              </div>
+              <div class="slider-col">
+                <div class="ctrl-value" id="val-cc-102">100</div>
+                <input type="range" class="vslider" min="0" max="127" value="100" data-cc="102" id="cc-env-sustain">
+                <label for="cc-env-sustain" class="ctrl-label">S</label>
+              </div>
+              <div class="slider-col">
+                <div class="ctrl-value" id="val-cc-103">30</div>
+                <input type="range" class="vslider" min="0" max="127" value="30" data-cc="103" id="cc-env-release">
+                <label for="cc-env-release" class="ctrl-label">R</label>
+              </div>
             </div>
-            <div class="slider-group">
-              <label for="cc-env-decay" class="ctrl-label">D</label>
-              <input type="range" min="0" max="127" value="64" data-cc="90" id="cc-env-decay"
-                     class="env-slider" orient="vertical">
-              <div class="ctrl-value" id="val-cc-90">64</div>
-            </div>
-            <div class="slider-group">
-              <label for="cc-env-sustain" class="ctrl-label">S</label>
-              <input type="range" min="0" max="127" value="100" data-cc="102" id="cc-env-sustain"
-                     class="env-slider" orient="vertical">
-              <div class="ctrl-value" id="val-cc-102">100</div>
-            </div>
-            <div class="slider-group">
-              <label for="cc-env-release" class="ctrl-label">R</label>
-              <input type="range" min="0" max="127" value="30" data-cc="103" id="cc-env-release"
-                     class="env-slider" orient="vertical">
-              <div class="ctrl-value" id="val-cc-103">30</div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Bottom row: CHORUS + EFFECTS -->
-        <div class="panel-row bottom-row">
-
-          <!-- CHORUS -->
-          <section class="panel-section chorus-section">
-            <h3 class="section-title">CHORUS</h3>
-            <div class="controls chorus-controls">
-              <button class="fx-btn" data-fx="chorus" data-mode="I">I</button>
-              <button class="fx-btn" data-fx="chorus" data-mode="II">II</button>
-              <button class="fx-btn" data-fx="chorus" data-mode="I+II">I+II</button>
-              <button class="fx-btn off active" data-fx="chorus" data-mode="OFF">OFF</button>
-            </div>
+            <div class="toggle-row adsr-label">ADSR</div>
           </section>
+
+          <div class="section-divider"></div>
 
           <!-- EFFECTS -->
-          <section class="panel-section fx-section">
-            <h3 class="section-title">EFFECTS</h3>
-            <div class="controls fx-controls">
-              <div class="fx-toggle-group">
-                <button class="fx-btn" data-fx="delay">DELAY</button>
-                <span class="fx-toggle-label">ON</span>
+          <section class="hw-section effects-section">
+            <div class="section-label effects-label">EFFECTS</div>
+            <div class="sliders-row effects-inner">
+              <div class="effects-col">
+                <div class="effects-col-label">CHO</div>
+                <div class="chorus-btns">
+                  <button class="tog-btn fx-chorus" data-mode="I">I</button>
+                  <button class="tog-btn fx-chorus" data-mode="II">II</button>
+                  <button class="tog-btn fx-chorus" data-mode="I+II">I+II</button>
+                  <button class="tog-btn fx-chorus active off-btn" data-mode="OFF">OFF</button>
+                </div>
               </div>
-              <div class="fx-toggle-group">
-                <button class="fx-btn" data-fx="reverb">REVERB</button>
-                <span class="fx-toggle-label">ON</span>
-              </div>
-              <div class="fx-toggle-group">
-                <button class="fx-btn" data-fx="drive">DRIVE</button>
-                <span class="fx-toggle-label">ON</span>
+              <div class="effects-col">
+                <div class="effects-col-label">FX</div>
+                <div class="fx-toggles">
+                  <button class="tog-btn" data-fx="delay" id="fx-delay">DLY</button>
+                  <button class="tog-btn" data-fx="reverb" id="fx-reverb">REV</button>
+                  <button class="tog-btn" data-fx="drive" id="fx-drive">DRV</button>
+                </div>
               </div>
             </div>
+            <div class="toggle-row"></div>
           </section>
 
-        </div><!-- end bottom-row -->
+        </div><!-- end hw-row -->
 
       </main><!-- end #panel-analog-synth -->
 
@@ -279,7 +279,8 @@
 
       <!-- Footer -->
       <footer class="footer">
-        <div class="last-change" id="last-change">Waiting for MIDI...</div>
+        <span class="last-change-label">Last MIDI:</span>
+        <div class="last-change" id="last-change">—</div>
       </footer>
 
     </div><!-- end .panel -->
