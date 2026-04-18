@@ -12,36 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+      - name: Run tests via Docker Compose
+        run: docker compose -f docker-compose.test.yml run --rm test
 
-      - name: Install ALSA dev headers (for easymidi)
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-
-      - name: Install dependencies
-        run: npm ci
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-
-      - name: Build
-        run: npm run build
-
-      - name: Type-check tests
-        run: npm run test:check
-
-      - name: Setup virtual MIDI (ALSA sequencer)
-        run: |
-          sudo modprobe snd-seq
-          sudo modprobe snd-virmidi midi_devs=1
-          cat /proc/asound/seq/clients || true
-
-      - name: Unit tests
-        run: npm run test:unit
-
-      - name: Integration tests
-        run: npm run test:integration
-
-      - name: E2E tests
-        run: npm run test:e2e
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.test.yml down

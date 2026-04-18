@@ -15,6 +15,7 @@ const { values } = parseArgs({
     "ws-port": { type: "string", default: "3000" },
     "lower-channel": { type: "string", default: "0" },
     "upper-channel": { type: "string", default: "1" },
+    "no-midi": { type: "boolean", default: false },
   },
   strict: true,
 });
@@ -36,6 +37,7 @@ const engine = new MockEngine(handler, {
   upperChannel: parseInt(values["upper-channel"]!),
   wsPort: parseInt(values["ws-port"]!),
   portName: `${model.info.displayName} Mock`,
+  noMidi: values["no-midi"],
 });
 
 await engine.start();

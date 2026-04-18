@@ -1,6 +1,10 @@
 /**
  * Full test harness: spawns headless mock + MCP server,
  * provides callTool() and mock state probing.
+ *
+ * Two modes:
+ * - Local (default): spawns mock with real MIDI, MidiManager connects normally
+ * - Docker/WS (MOCK_WS_URL set): connects to external mock service via WS
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -21,17 +25,36 @@ export class TestHarness {
   }
 
   static async start(opts: HarnessOptions): Promise<TestHarness> {
-    // 1. Start headless mock
-    const mock = await MockProcess.start(opts);
+    const externalWsUrl = process.env.MOCK_WS_URL;
+
+    // 1. Start or connect to mock
+    let mock: MockProcess;
+    let mcpEnv: Record<string, string>;
+
+    if (externalWsUrl) {
+      // Docker/CI mode: mock is an external service, connect via WS
+      mock = await MockProcess.connectExternal(externalWsUrl);
+      mcpEnv = {
+        ...process.env as Record<string, string>,
+        MOCK_WS_URL: externalWsUrl,
+        MOCK_MODEL_ID: opts.model,
+      };
+    } else {
+      // Local mode: spawn mock with real MIDI
+      mock = await MockProcess.start(opts);
+      mcpEnv = {
+        ...process.env as Record<string, string>,
+        MOCK_WS_PORT: String(mock.wsPort),
+      };
+    }
 
     // 2. Start MCP server as child process via stdio transport
-    // Set MOCK_WS_PORT so MidiManager connects to the right mock WS
     const transport = new StdioClientTransport({
       command: "npx",
       args: ["tsx", "src/index.ts"],
       cwd: process.cwd(),
       stderr: "pipe",
-      env: { ...process.env, MOCK_WS_PORT: String(mock.wsPort) },
+      env: mcpEnv,
     });
 
     const client = new Client({ name: "test-harness", version: "1.0.0" });
@@ -50,21 +73,6 @@ export class TestHarness {
 
   async waitForMockState(timeoutMs?: number): Promise<Record<string, any>> {
     return this.mock.waitForState(timeoutMs);
-  }
-
-  /**
-   * Wait for the next mock state broadcast (ignores cached state).
-   * Useful after calling set_parameters to wait for the CC to arrive.
-   */
-  async waitForNextState(timeoutMs = 3000): Promise<Record<string, any>> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Next state timeout")), timeoutMs);
-      // Access the mock's internal resolver mechanism
-      (this.mock as any).stateResolvers.push((state: Record<string, any>) => {
-        clearTimeout(timer);
-        resolve(state);
-      });
-    });
   }
 
   async stop(): Promise<void> {

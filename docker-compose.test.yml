@@ -1,0 +1,21 @@
+services:
+  mock:
+    build: .
+    command: npx tsx src/mock-runner/cli.ts --model nord-electro-5d --no-midi --ws-port 3000
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  test:
+    build: .
+    command: npm run test:ci
+    environment:
+      - MOCK_WS_URL=ws://mock:3000
+    depends_on:
+      mock:
+        condition: service_healthy

@@ -14,15 +14,29 @@ export interface MockProcessOptions {
 }
 
 export class MockProcess {
-  private proc: ChildProcess;
+  private proc: ChildProcess | null;
   private ws: WebSocket | null = null;
   private lastState: Record<string, any> | null = null;
   private stateResolvers: Array<(state: Record<string, any>) => void> = [];
   readonly wsPort: number;
+  private external: boolean;
 
-  private constructor(proc: ChildProcess, wsPort: number) {
+  private constructor(proc: ChildProcess | null, wsPort: number, external = false) {
     this.proc = proc;
     this.wsPort = wsPort;
+    this.external = external;
+  }
+
+  /**
+   * Connect to an external mock service (docker/CI mode).
+   * No child process is spawned — just connects WS for state probing.
+   */
+  static async connectExternal(wsUrl: string): Promise<MockProcess> {
+    const url = new URL(wsUrl);
+    const port = parseInt(url.port) || 3000;
+    const mp = new MockProcess(null, port, true);
+    await mp.connectWsToUrl(wsUrl);
+    return mp;
   }
 
   static async start(opts: MockProcessOptions): Promise<MockProcess> {
@@ -93,9 +107,13 @@ export class MockProcess {
   }
 
   private async connectWs(): Promise<void> {
+    return this.connectWsToUrl(`ws://localhost:${this.wsPort}`);
+  }
+
+  private async connectWsToUrl(url: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("WS connect timeout")), 5_000);
-      const ws = new WebSocket(`ws://localhost:${this.wsPort}`);
+      const ws = new WebSocket(url);
       ws.on("open", () => {
         clearTimeout(timeout);
         this.ws = ws;
@@ -134,13 +152,14 @@ export class MockProcess {
       this.ws.close();
       this.ws = null;
     }
+    if (this.external || !this.proc) return; // External mock — don't kill
     this.proc.kill("SIGTERM");
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
-        this.proc.kill("SIGKILL");
+        this.proc!.kill("SIGKILL");
         resolve();
       }, 3000);
-      this.proc.on("exit", () => {
+      this.proc!.on("exit", () => {
         clearTimeout(timer);
         resolve();
       });
