@@ -443,7 +443,7 @@ async function main(): Promise<void> {
       llmModel = body.data[0].id;
     }
     console.log(`LLM server reachable, model: ${llmModel}`);
-  } catch (err) {
+  } catch (_err) {
     console.error(`Cannot reach LLM server at ${LLM_BASE_URL}.`);
     console.error("Start mlx_lm.server first: npm run run:mlx");
     process.exit(1);

@@ -142,7 +142,7 @@ const FIELDS: Field[] = [
 
 // ── Gaps (documented single-bit holes between known fields) ─────────────────
 
-const GAPS = [147, 964, 967, 987, 998, 1028];
+const _GAPS = [147, 964, 967, 987, 998, 1028];
 
 // ── Build coverage map (which bits are claimed by known fields or gaps) ─────
 

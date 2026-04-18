@@ -14,6 +14,14 @@ npm run mock:headless  # Headless mock (for testing), --model <id> required
 
 The MCP server communicates over stdio. Claude Code connects to it via `.mcp.json`. After code changes, reload the MCP server with `/mcp` in Claude Code before using MCP tools.
 
+## Linting
+
+```bash
+npm run lint           # ESLint (src/ + tests/)
+```
+
+ESLint config is in `eslint.config.js` (flat config). Key rules: `no-floating-promises` (src only), `no-unused-vars` (with `_` prefix exemption). JS files and `no-explicit-any` are excluded. CI runs lint as a separate job.
+
 ## Testing
 
 ```bash

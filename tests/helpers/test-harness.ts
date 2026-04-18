@@ -13,7 +13,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { MockProcess, type MockProcessOptions } from "./mock-process.js";
 
-export interface HarnessOptions extends MockProcessOptions {}
+export type HarnessOptions = MockProcessOptions;
 
 export class TestHarness {
   private mock: MockProcess;

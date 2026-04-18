@@ -3,7 +3,7 @@
  * Works for any keyboard model.
  */
 
-import type { KeyboardParameter, ParamEncoding } from "./types.js";
+import type { KeyboardParameter } from "./types.js";
 
 /** Scale a discrete label index (0..max) to MIDI 0-127 */
 export function discreteToMidi(index: number, max: number): number {

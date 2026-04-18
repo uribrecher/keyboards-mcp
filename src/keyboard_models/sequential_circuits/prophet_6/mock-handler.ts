@@ -71,7 +71,8 @@ export function createProphet6MockHandler(): MockHandler {
     const msg: Record<string, any> = { global: params };
 
     if (lastChangeKey) {
-      const entry = paramByCC.get(PARAMS[lastChangeKey]?.cc!);
+      const cc = PARAMS[lastChangeKey]?.cc;
+      const entry = cc != null ? paramByCC.get(cc) : undefined;
       if (entry) {
         const midiValue = ccState.get(entry.param.cc!) ?? entry.param.defaultValue;
         msg.lastChange = {
