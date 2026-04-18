@@ -991,7 +991,7 @@ export const PARAMS: Record<string, KeyboardParameter> = {
 
 const ccToParamMap = new Map<number, { key: string; param: KeyboardParameter }>();
 for (const [key, param] of Object.entries(PARAMS)) {
-  ccToParamMap.set(param.cc, { key, param });
+  ccToParamMap.set(param.cc!, { key, param });
 }
 
 /** Create a ParameterMap from the Nord Electro 5D params */

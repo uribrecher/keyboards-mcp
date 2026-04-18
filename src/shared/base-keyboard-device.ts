@@ -112,7 +112,7 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
         info += ` | Range: ${param.min}-${param.max}`;
       }
 
-      info += ` | CC: ${param.cc}`;
+      if (param.cc !== undefined) info += ` | CC: ${param.cc}`;
       lines.push(info);
 
       // Hook for model-specific extras (e.g., piano model list from backup)
@@ -152,7 +152,7 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
         const statePart = this.resolvePartForParam(found.key, part);
         const prevMidi = this.state.get(found.key, statePart);
 
-        this.connection!.sendCC(found.param.cc, midiValue);
+        if (found.param.cc !== undefined) this.connection!.sendCC(found.param.cc, midiValue);
         this.state.set(found.key, midiValue, statePart);
         resolvedKeys.push({ key: found.key, value });
 
