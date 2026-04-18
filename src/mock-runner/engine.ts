@@ -85,6 +85,10 @@ export class MockEngine {
       this.onMIDI({ type: "program", number: msg.number, channel: msg.channel });
     });
 
+    this.midiInput.on("sysex" as any, (msg: { bytes: number[] }) => {
+      this.onMIDI({ type: "sysex", bytes: [...msg.bytes] });
+    });
+
     this.httpServer.listen(this.opts.wsPort, () => {
       console.log(`Mock device ready`);
       console.log(`  MIDI port: "${this.opts.portName}" (virtual)`);
