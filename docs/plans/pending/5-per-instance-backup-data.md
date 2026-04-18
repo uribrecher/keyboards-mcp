@@ -183,3 +183,29 @@ Existing `data/backup_cache.json` and `data/last_backup_path.txt` are migrated t
 8. Mock runner: extract backup on that tab → stored under `nord-el-5d-#1`
 9. Mock runner: close and re-create Nord tab → auto-labeled `nord-el-5d-#1` again → cached backup auto-loaded
 10. Mock runner: rename tab to `studio-nord` → backup directory re-keyed
+
+## Test Coverage
+
+### Unit tests
+
+**`tests/unit/backup-cache.test.ts`** (new) — test the updated `BackupCacheCapability` in isolation:
+- **Default label:** `set(data)` with no label writes to `data/backups/_default/backup_cache.json`. `get()` reads it back identically.
+- **Named label:** `set(data, "studio")` writes to `data/backups/studio/backup_cache.json`. `get("studio")` reads it back.
+- **Label isolation:** Set data under `"studio"` and `"gig"`. Assert `get("studio")` and `get("gig")` return different data. `get("unknown")` returns null.
+- **listLabels:** After writing to `"studio"` and `"gig"`, `listLabels()` returns both (plus `_default` if present).
+- **Last backup path:** `setLastBackupPath("/path", "studio")` → `getLastBackupPath("studio")` returns `"/path"`. `getLastBackupPath("gig")` returns null.
+- **reload:** Modify the JSON file on disk, call `reload("studio")`, verify updated data returned by `get("studio")`.
+
+**`tests/unit/backup-migration.test.ts`** (new) — test the migration from old single-file layout:
+- **Migration runs:** Place a `data/backup_cache.json` and `data/last_backup_path.txt` at old paths. Trigger migration. Assert files moved to `data/backups/_default/`. Assert old paths no longer exist.
+- **Migration is idempotent:** Run migration twice. No error, `_default/` still intact.
+- **No migration needed:** Start with no old files. Migration is a no-op.
+
+### E2E tests
+
+**`tests/e2e/backup-per-instance.test.ts`** (new) — requires two mock processes (from plan 4):
+- **Extract with label:** Connect device 1 (Nord) with `label: "studio"`. Call `extract_backup(file_path, label: "studio")`. Assert response includes program/piano counts. Call `list_programs(device: 1)` and verify inventory is populated.
+- **Extract with different label:** Connect device 2 (Nord) with `label: "gig"`. Extract a different backup under `"gig"`. Assert `list_programs(device: 2)` returns different data than device 1.
+- **Auto-load on connect:** Disconnect device 1. Reconnect with `label: "studio"`. Assert `list_programs(device: 1)` returns the previously cached inventory without re-extracting.
+- **Default label backwards compat:** Connect a single device with no label. Extract backup. Assert stored under `_default`. `list_programs` works.
+- **get_last_backup_location:** After extracting under `"studio"`, call `get_last_backup_location(label: "studio")`. Assert it returns the original file path.

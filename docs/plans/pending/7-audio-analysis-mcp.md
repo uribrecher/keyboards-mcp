@@ -499,3 +499,49 @@ Steps 1-3 replace the research + manual patch design process. Step 4 (vector →
 4. **Training:** Train on 1K samples, verify loss decreases, predictions are reasonable
 5. **Round-trip:** Generate random params → render → predict via model → compare predicted vs original params
 6. **End-to-end:** Separate a song → `inverse_synth` → apply params to keyboard → `audio_render` → `audio_compare` → similarity score
+
+## Test Coverage
+
+> This is a separate Python repo. Tests use `pytest`. Structure mirrors the `src/` layout under `tests/`.
+
+### Unit tests
+
+**`tests/test_spectral.py`** — spectral analysis module:
+- **Pure sine:** Generate a 440Hz sine wave in numpy. Run `spectrum_analyze`. Assert fundamental is ~440Hz, no significant harmonics.
+- **Harmonics:** Generate a square wave. Assert harmonics at 3x, 5x, 7x fundamental.
+- **ADSR detection:** Generate a signal with clear attack/decay/sustain/release envelope. Assert detected ADSR values are within tolerance.
+- **Empty/silence input:** Assert graceful handling (no crash, returns zeros or "silence" indicator).
+
+**`tests/test_comparison.py`** — A/B spectral diff:
+- **Identical inputs:** Compare a file to itself. Assert similarity score ~1.0, no action items.
+- **Known difference:** Compare a sine at 440Hz to a sine at 880Hz. Assert frequency band diff highlights the shift.
+- **Different timbres:** Compare a sine to a square wave at same fundamental. Assert spectral envelope diff flags the harmonic content.
+
+**`tests/test_dataset_generation.py`** — dataset pipeline:
+- **Output shape:** Generate 10 samples for subtractive synth. Assert each has (spectrogram, param_vector) with correct dimensions.
+- **Param ranges:** Assert all param values in generated vectors are within [0, 1].
+- **Augmentation variation:** Generate two augmented variants from same params. Assert spectrograms differ (effects/noise applied).
+- **Reproducibility:** Same seed produces same dataset.
+
+**`tests/test_inference.py`** — model inference:
+- **Output shape:** Mock a trained model checkpoint. Run inference on a test spectrogram. Assert output vector length matches expected param count.
+- **Value range:** Assert all predicted values are in [0, 1] (sigmoid output).
+- **top_k:** Request top_k=3. Assert 3 predictions returned, sorted by confidence descending.
+- **Unknown synth type:** Request inference for unsupported synth type. Assert clear error.
+
+### Integration tests
+
+**`tests/test_pipeline_integration.py`**:
+- **fetch + analyze:** Fetch a local test WAV file, run `spectrum_analyze`. Assert structured output (no crash, expected keys present).
+- **fetch + separate:** Fetch a short test file, run stem separation (with `htdemucs`). Assert 4 stem files produced in workspace. (Slow — mark with `@pytest.mark.slow`.)
+- **dataset + train:** Generate 100 samples, train for 2 epochs. Assert loss decreased between epoch 1 and 2. Assert checkpoint file written. (Slow — mark with `@pytest.mark.slow`.)
+
+### E2E tests
+
+**`tests/test_mcp_tools.py`** — MCP server tool invocations:
+- **Tool listing:** Start the MCP server, list tools. Assert `fetch_audio`, `stem_separate`, `spectrum_analyze`, `audio_compare`, `inverse_synth` are all present.
+- **spectrum_analyze round-trip:** Call the MCP tool with a test WAV path. Assert JSON response contains expected fields (`harmonics`, `spectral_envelope`, `synth_hints`).
+- **audio_compare round-trip:** Call with two identical file paths. Assert high similarity score.
+- **inverse_synth without model:** Call `inverse_synth` for a synth type with no trained model. Assert user-friendly error message (not a stack trace).
+
+> **Note:** Tests that require GPU (full training runs, large dataset generation) are excluded from CI. Mark with `@pytest.mark.gpu`. CI runs `pytest -m "not slow and not gpu"`.

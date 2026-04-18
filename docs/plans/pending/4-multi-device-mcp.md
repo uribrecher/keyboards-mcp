@@ -165,3 +165,37 @@ Single-device usage is fully backwards compatible:
 - Connect one device → all tools work without `device` param (auto-resolved to the only device).
 - The `device` param is optional on every tool.
 - Only when 2+ devices are connected does omitting `device` produce an error.
+
+## Test Coverage
+
+### Unit tests
+
+**`tests/unit/device-pool.test.ts`** (new) — test `DevicePool` in isolation with mock `KeyboardDevice` stubs:
+- **connect:** Add a device, returns index 1. Add a second, returns index 2.
+- **get/require:** `get(1)` returns the entry, `get(99)` returns undefined, `require(99)` throws with user-friendly message.
+- **requireSingle:** With one device returns it; with zero throws; with two throws listing both devices.
+- **disconnect:** Removes the device from the pool, `get(index)` returns undefined after. Verify `device.detach()` was called.
+- **stable indices:** Disconnect device 1, add device 3 → index is 3 (not 1). Device 2 unchanged.
+- **list:** Returns all connected entries in insertion order.
+- **label:** `pool.connect(device)` stores optional label, visible via `list()`.
+
+### Integration tests
+
+**`tests/integration/mock-runner.test.ts`** — add:
+- **Two mocks simultaneously:** Spawn two `MockProcess` instances (different models, different ports). Verify both produce valid state independently. Stop one, verify the other still works.
+
+### E2E tests
+
+**`tests/e2e/multi-device.test.ts`** — extend existing multi-model test:
+- **Connect two devices:** Start two mock processes (Nord + Prophet-6). Connect both via MCP. Assert `is_connected` lists both with correct indices and model names.
+- **Targeted set_parameters:** Set a param on device 1, verify only device 1's mock state changed. Set a param on device 2, verify device 2's state changed.
+- **Targeted get_current_state:** After setting params on both, `get_current_state(device: 1)` returns Nord state, `get_current_state(device: 2)` returns Prophet-6 state.
+- **Targeted list_parameters:** `list_parameters(device: 1)` returns Nord params (with `drawbar_1`), `list_parameters(device: 2)` returns Prophet-6 params (with `osc1_freq`).
+- **Disconnect one:** Disconnect device 1. `is_connected` lists only device 2. Tools targeting device 1 return error. Tools targeting device 2 still work.
+- **Single-device backwards compat:** Connect only one device. All tools work without `device` param (existing E2E tests cover this implicitly — they must still pass unchanged).
+- **Ambiguous target error:** Connect two devices, call `set_parameters` without `device` param. Assert error response lists available devices.
+
+**`tests/e2e/connect.test.ts`** — add:
+- **Connect returns index:** Assert response text includes `"device 1"` or similar index indicator.
+- **Second connect returns index 2:** Connect again (different model), assert response includes `"device 2"`.
+- **Label in response:** Connect with `label: "studio"`, assert response includes `"studio"`.
