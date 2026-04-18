@@ -255,7 +255,8 @@ export function createNordElectro5DMockHandler(): MockHandler {
 
     // Last change notification
     if (lastChangeKey) {
-      const entry = paramByCC.get(PARAMS[lastChangeKey]?.cc!);
+      const cc = PARAMS[lastChangeKey]?.cc;
+      const entry = cc != null ? paramByCC.get(cc) : undefined;
       if (entry) {
         const ch = lastChangePart === "upper" ? upperChannel : lowerChannel;
         const midiValue = getChannelValue(ch, entry.param.cc!, entry.param.defaultValue);

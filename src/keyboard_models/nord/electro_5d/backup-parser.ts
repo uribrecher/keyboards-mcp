@@ -338,7 +338,7 @@ function decodeProgramPayload(payload: Buffer): ProgramParams {
 
 // ── CBIN Header ──
 
-const CBIN_MAGIC = 0x4e494243; // "CBIN" as LE uint32
+const _CBIN_MAGIC = 0x4e494243; // "CBIN" as LE uint32
 const CBIN_HEADER_SIZE = 0x1c; // 28 bytes
 
 function readCbinHeader(buf: Buffer) {
@@ -364,6 +364,7 @@ function parsePianoName(buf: Buffer): { name: string; variant: string; sizeClass
   const nameRaw = buf
     .subarray(nameStart, nameStart + 80)
     .toString("ascii")
+    // eslint-disable-next-line no-control-regex
     .replace(/[\0\x01-\x1f]/g, "")
     .trim();
 
@@ -735,7 +736,7 @@ export function formatBackupAsMarkdown(data: BackupMetadata, backupDate?: string
   lines.push("");
   lines.push("| MIDI # | Name | Category | Source | Size | Used by |");
   lines.push("|--------|------|----------|--------|------|---------|");
-  data.samples.forEach((s, i) => {
+  data.samples.forEach((s, _i) => {
     const size = s.fileSizeKB >= 1024
       ? `${(s.fileSizeKB / 1024).toFixed(1)} MB`
       : `${s.fileSizeKB} KB`;

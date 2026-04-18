@@ -11,7 +11,7 @@ import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
-import type { KeyboardModel, KeyboardModelInfo, MockHandler } from "../shared/keyboard-model.js";
+import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
 import { MockEngine } from "./engine.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -45,7 +45,7 @@ function createWindow(): void {
     },
   });
 
-  mainWindow.loadFile(join(SHELL_DIR, "index.html"));
+  void mainWindow.loadFile(join(SHELL_DIR, "index.html"));
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 
@@ -93,7 +93,7 @@ async function switchModelInner(modelId: string): Promise<void> {
     mainWindow.setTitle(`${model.info.displayName} — Mock Device`);
 
     if (model.mockUiDir) {
-      mainWindow.loadFile(join(model.mockUiDir, "index.html"));
+      void mainWindow.loadFile(join(model.mockUiDir, "index.html"));
     }
   }
 }
@@ -110,7 +110,7 @@ async function goToModelPicker(): Promise<void> {
     }
     if (mainWindow) {
       mainWindow.setTitle("Keyboard Mock Runner");
-      mainWindow.loadFile(join(SHELL_DIR, "index.html"));
+      void mainWindow.loadFile(join(SHELL_DIR, "index.html"));
     }
   } finally {
     switching = false;
@@ -169,7 +169,7 @@ ipcMain.handle("open-backup-dialog", async () => {
 
 // ── App lifecycle ──
 
-app.whenReady().then(() => {
+void app.whenReady().then(() => {
   buildMenu();
   createWindow();
 
