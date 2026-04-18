@@ -1,6 +1,6 @@
 # Multi-Device MCP
 
-> **Execution order: 5 of 7** — Depends on: architecture plan (KeyboardDevice with `attach()`/`detach()`), per-instance backup plan (label-keyed backup storage).
+> **Execution order: 4 of 7** — Depends on: architecture plan (KeyboardDevice with `attach()`/`detach()`). Per-instance backup (plan 5) builds on top of this — labels are introduced here as simple device identifiers, backup keying comes later.
 
 ## Problem
 
