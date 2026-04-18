@@ -45,28 +45,39 @@ interface DT1Message {
 
 ---
 
-## 2. ParamEncoding Extension
+## 2. SysEx Addressing on KeyboardParameter
 
 **File**: `src/shared/types.ts`
 
-Add a new encoding kind for DT1-addressed parameters:
+Add optional SysEx addressing fields to `KeyboardParameter` (parallel to the existing `cc` field):
 
 ```typescript
-{ kind: "dt1", address: [a, b, c, d], size: number }
+interface KeyboardParameter {
+  // ... existing fields ...
+  cc?: number;                    // CC address (for CC-transported params)
+  sysexAddress?: number[];        // DT1 address offset (for SysEx-transported params)
+  sysexSize?: number;             // byte count: 1 for 7-bit, 2+ for nibble-packed
+}
 ```
 
-- `address`: 4-byte offset relative to the engine's base address in the SysEx address map.
-- `size`: Number of data bytes. 1 for standard 7-bit values (0-127). 2+ for nibble-packed values (e.g., 0-1023 uses 4 nibble bytes).
+This keeps `ParamEncoding` purely as a value transform and puts transport routing on the parameter itself — consistent with how `cc` already works.
 
-### Resolution Logic
+### Transport Routing
 
-In `parameter-resolution.ts`, add handling for `dt1` encoding:
-- For `size === 1`: value is used directly (0-127 range).
-- For `size > 1`: value is nibble-packed via `packNibbles()`.
+The device checks:
+- Has `cc`? Send via `connection.sendCC()`.
+- Has `sysexAddress`? Build DT1 message via `buildDT1()` and send via `connection.sendSysEx()`.
+- Has both? Prefer SysEx (full resolution).
 
-The device computes the **full SysEx address** by adding the engine's base address to the parameter's offset address. For example:
+### Multi-byte Values
+
+For `sysexSize > 1`, the device nibble-packs the value via `packNibbles()` before sending.
+
+### Address Computation
+
+The device computes the **full SysEx address** by adding the engine's base address to the parameter's `sysexAddress` offset. For example:
 - Analog Synth Model Part 01 base: `02 10 00 00`
-- Cutoff parameter offset: `00 00 00 15` (from the SysEx address map)
+- Cutoff parameter offset: `[0x00, 0x00, 0x00, 0x15]`
 - Full address: `02 10 00 15`
 
 ---
@@ -335,32 +346,25 @@ Scene switching: MSB=85, LSB=0, PC for scenes 1-128. Increment LSB for higher sc
 
 ### Changes Required
 
-1. **`src/shared/types.ts`**: Add `{ kind: "dt1", address: number[], size: number }` to `ParamEncoding` union type.
+1. **`src/shared/types.ts`**: Make `cc` optional, add `sysexAddress?: number[]` and `sysexSize?: number` to `KeyboardParameter`.
 
-2. **`src/shared/parameter-resolution.ts`**: Add `dt1` encoding handling in `resolveValue()` and `formatValue()`. For dt1, the "MIDI value" is the raw value; address computation happens in the device.
+2. **`src/shared/base-keyboard-device.ts`**: Guard optional `cc` in `setParameters()` and `listParameters()`.
 
 3. **New file `src/shared/roland-dt1.ts`**: Roland DT1/RQ1 protocol builder/parser.
 
 ### No Changes Required
 
+- `ParamEncoding` -- unchanged. Value encoding stays purely a value transform.
+- `parameter-resolution.ts` -- unchanged. SysEx addressing is not an encoding concern.
 - `MidiConnection` interface -- `sendSysEx()` already exists.
 - `KeyboardModel` / `KeyboardDevice` interfaces -- all engine logic lives in the device.
-- `BaseKeyboardDevice` -- JUNO-X device overrides `setParameters()` to use DT1 instead of CC.
+- `BaseKeyboardDevice` -- JUNO-X device overrides `setParameters()` to route CC vs SysEx.
 - `MockHandler` interface -- `onMIDI({ type: "sysex", bytes })` already supported.
 - Tools layer -- tools delegate to device methods, no changes needed.
 
 ---
 
 ## 11. Open Design Decisions
-
-### `cc` field on KeyboardParameter
-
-Currently `KeyboardParameter.cc` is required. DT1 parameters don't have a CC number -- their address is in the encoding. Options:
-- Make `cc` optional in `KeyboardParameter`. Existing models still set it. DT1 params omit it.
-- The `getParamByCC()` lookup on ParameterMap returns nothing for DT1 params (expected -- there's no CC to look up).
-- The device's `setParameters()` checks the encoding kind: if `dt1`, build DT1 message; if `raw`/etc., send CC as before.
-
-**Decision**: Make `cc` optional. This is the simplest change and doesn't break existing models.
 
 ### Dynamic ParameterMap and Engine Context
 
