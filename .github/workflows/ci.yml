@@ -31,6 +31,12 @@ jobs:
       - name: Type-check tests
         run: npm run test:check
 
+      - name: Setup virtual MIDI (ALSA sequencer)
+        run: |
+          sudo modprobe snd-seq
+          sudo modprobe snd-virmidi midi_devs=1
+          cat /proc/asound/seq/clients || true
+
       - name: Unit tests
         run: npm run test:unit
 
