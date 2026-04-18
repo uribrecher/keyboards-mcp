@@ -176,3 +176,23 @@ The Nord model UI (`web/app.js`) loses the backup button entirely — it becomes
 ## Window Size
 
 Increase default window size from 1400x900 to accommodate the persistent chat panel alongside model UIs. Exact dimensions TBD during implementation, but likely ~1600x950 or wider.
+
+## Test Coverage
+
+### Unit tests
+
+No new unit tests — the tab lifecycle is Electron UI logic (IPC + DOM) which unit tests can't meaningfully exercise. The underlying engine and handler code is unchanged and already covered.
+
+### Integration tests
+
+**`tests/integration/mock-runner.test.ts`** — add:
+- **Multiple engines on different ports:** Spawn three `MockProcess` instances with different models and ports (simulating three tabs). Verify each produces independent state via its own WebSocket. Stop one, verify the other two continue broadcasting.
+- **Port reuse after stop:** Spawn on port 3000, stop it, spawn a new mock on port 3000. Verify the new instance works correctly (simulates tab close + reopen).
+
+### E2E tests
+
+**`tests/e2e/multi-model.test.ts`** — extend:
+- **Three concurrent models:** Start Nord, JUNO-X, and Prophet-6 mocks simultaneously. Connect to all three via MCP (using plan 4's multi-device). Run `set_parameters` + `get_current_state` on each. Verify complete isolation — setting a param on device 1 doesn't affect devices 2 or 3.
+- **Connect/disconnect cycle:** Connect all three, disconnect one, reconnect a new model on a different port. Verify the pool state is correct throughout.
+
+> **Note:** The Electron shell UI (tab bar, iframe management, chat panel) is not covered by automated tests. Tab lifecycle IPC handlers (`create-tab`, `close-tab`, `select-model-for-tab`) should be manually verified. If Electron testing becomes a priority, consider Playwright with Electron support in a future plan.
