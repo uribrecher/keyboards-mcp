@@ -7,7 +7,6 @@
 
 import { createServer, type Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import easymidi from "easymidi";
 import type { MockHandler, MidiMessage } from "../shared/keyboard-model.js";
 
 export interface EngineOptions {
@@ -15,13 +14,15 @@ export interface EngineOptions {
   upperChannel: number;
   wsPort: number;
   portName: string;
+  /** Skip creating a virtual MIDI port — WS-only mode for CI/Docker */
+  noMidi?: boolean;
 }
 
 export class MockEngine {
   private handler: MockHandler;
   private opts: EngineOptions;
 
-  private midiInput: easymidi.Input | null = null;
+  private midiInput: any | null = null;
   private httpServer: Server | null = null;
   private wss: WebSocketServer | null = null;
   private clients = new Set<WebSocket>();
@@ -32,12 +33,15 @@ export class MockEngine {
     this.opts = opts;
   }
 
-  start(): void {
+  async start(): Promise<void> {
     // Init handler with channel config
     this.handler.init(this.opts.lowerChannel, this.opts.upperChannel);
 
-    // Create virtual MIDI port
-    this.midiInput = new easymidi.Input(this.opts.portName, true);
+    // Create virtual MIDI port (skip in WS-only mode for CI/Docker)
+    if (!this.opts.noMidi) {
+      const easymidi = await import("easymidi");
+      this.midiInput = new easymidi.default.Input(this.opts.portName, true);
+    }
 
     // Bare HTTP server for WebSocket
     this.httpServer = createServer();
@@ -74,6 +78,8 @@ export class MockEngine {
               this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel ?? 0 });
             } else if (msg.type === "program") {
               this.onMIDI({ type: "program", number: msg.number, channel: msg.channel ?? 0 });
+            } else if (msg.type === "sysex") {
+              this.onMIDI({ type: "sysex", bytes: msg.bytes });
             } else if (msg.type === "param") {
               // UI named parameter (for SysEx-addressed params without CCs)
               console.log(`UI: ${msg.name} = ${msg.value}`);
@@ -85,23 +91,32 @@ export class MockEngine {
     });
 
     // MIDI listeners — all input goes through the handler
-    this.midiInput.on("cc", (msg: { controller: number; value: number; channel: number }) => {
-      this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel });
-    });
+    if (this.midiInput) {
+      this.midiInput.on("cc", (msg: { controller: number; value: number; channel: number }) => {
+        this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel });
+      });
 
-    this.midiInput.on("program", (msg: { number: number; channel: number }) => {
-      this.onMIDI({ type: "program", number: msg.number, channel: msg.channel });
-    });
+      this.midiInput.on("program", (msg: { number: number; channel: number }) => {
+        this.onMIDI({ type: "program", number: msg.number, channel: msg.channel });
+      });
 
-    this.midiInput.on("sysex" as any, (msg: { bytes: number[] }) => {
-      this.onMIDI({ type: "sysex", bytes: [...msg.bytes] });
-    });
+      this.midiInput.on("sysex" as any, (msg: { bytes: number[] }) => {
+        this.onMIDI({ type: "sysex", bytes: [...msg.bytes] });
+      });
+    }
 
-    this.httpServer.listen(this.opts.wsPort, () => {
-      console.log(`Mock device ready`);
-      console.log(`  MIDI port: "${this.opts.portName}" (virtual)`);
-      console.log(`  Lower channel: ${this.opts.lowerChannel}, Upper channel: ${this.opts.upperChannel}`);
-      console.log(`  WebSocket: ws://localhost:${this.opts.wsPort}`);
+    return new Promise<void>((resolve) => {
+      this.httpServer!.listen(this.opts.wsPort, () => {
+        console.log(`Mock device ready`);
+        if (this.opts.noMidi) {
+          console.log(`  MIDI: disabled (WS-only mode)`);
+        } else {
+          console.log(`  MIDI port: "${this.opts.portName}" (virtual)`);
+        }
+        console.log(`  Lower channel: ${this.opts.lowerChannel}, Upper channel: ${this.opts.upperChannel}`);
+        console.log(`  WebSocket: ws://localhost:${this.opts.wsPort}`);
+        resolve();
+      });
     });
   }
 
