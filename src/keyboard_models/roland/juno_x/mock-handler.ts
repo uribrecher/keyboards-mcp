@@ -51,7 +51,7 @@ function buildSysexLookup(): Map<string, string> {
   const lookup = new Map<string, string>();
   const sceneParams = createSceneParams();
 
-  for (const [key, param] of Object.entries(sceneParams)) {
+  for (const [_key, param] of Object.entries(sceneParams)) {
     if (!param.sysexAddress) continue;
 
     if (param.perPart) {
@@ -70,7 +70,7 @@ function buildSysexLookup(): Map<string, string> {
 
   // Also register RD Piano SysEx params (symreso)
   const rdParams = createRDPianoParams();
-  for (const [key, param] of Object.entries(rdParams)) {
+  for (const [_key, param] of Object.entries(rdParams)) {
     if (!param.sysexAddress) continue;
     // RD Piano is Part 1 only, tone base = 02:20:00:00
     const fullAddr = addAddresses([0x02, 0x20, 0x00, 0x00], param.sysexAddress);

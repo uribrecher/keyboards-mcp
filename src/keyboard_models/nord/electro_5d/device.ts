@@ -6,7 +6,6 @@
 
 import type {
   KeyboardModel,
-  ParameterMap,
   ProgramLoaderCapability,
   SongLoaderCapability,
 } from "../../../shared/keyboard-model.js";

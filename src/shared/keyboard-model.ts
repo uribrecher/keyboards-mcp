@@ -76,7 +76,6 @@ export interface BackupCapability {
  * Base type for backup data. Keyboard models extend this with their own fields.
  * Using Record<string, any> to allow model-specific interfaces to be assignable.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
 export type BackupData = Record<string, any>;
 
 export interface BackupCacheCapability {
