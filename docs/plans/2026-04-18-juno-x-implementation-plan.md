@@ -4,7 +4,7 @@
 
 **Goal:** Implement a full Roland JUNO-X keyboard model with 4 synth engines, Roland DT1/RQ1 SysEx transport, 5-part multi-timbral support, mock handler, and hardware-faithful panel UI.
 
-**Architecture:** Engine-per-module design with a shared Roland DT1/RQ1 protocol layer in `src/shared/`. Tone parameters use CC encoding (from the Parameter Guide CC# column). Scene-level parameters use DT1 SysEx encoding (from the MIDI Implementation address map). The device routes to CC or DT1 based on encoding kind. The mock handler processes both CC and SysEx messages.
+**Architecture:** Engine-per-module design with a shared Roland DT1/RQ1 protocol layer in `src/shared/`. Tone parameters use `cc` field (from the Parameter Guide CC# column). Scene-level parameters use `sysexAddress` field (from the MIDI Implementation address map). The device routes to CC or DT1 based on which addressing field is present. The mock handler processes both CC and SysEx messages.
 
 **Tech Stack:** TypeScript, Node.js MIDI (easymidi), WebSocket, Electron (mock runner), vanilla HTML/CSS/JS (mock UI)
 
@@ -39,37 +39,22 @@ src/keyboard_models/roland/juno_x/web/app.js                 # UI logic + WebSoc
 ### Modified Files
 
 ```
-src/shared/types.ts                          # Add dt1 encoding, make cc optional
-src/shared/parameter-resolution.ts           # Add dt1 encoding handler
+src/shared/types.ts                          # Make cc optional, add sysexAddress/sysexSize fields
 src/shared/base-keyboard-device.ts           # Guard optional cc in setParameters/listParameters
 src/mock-runner/engine.ts                    # Add SysEx event forwarding to handler
 ```
 
 ---
 
-### Task 1: Extend ParamEncoding and make `cc` optional
+### Task 1: Make `cc` optional, add SysEx addressing fields
 
 **Files:**
-- Modify: `src/shared/types.ts:16-35`
+- Modify: `src/shared/types.ts:23-35`
 - Modify: `src/shared/base-keyboard-device.ts:79-186`
 
-- [ ] **Step 1: Add `dt1` encoding kind to ParamEncoding**
+- [ ] **Step 1: Update KeyboardParameter interface**
 
-In `src/shared/types.ts`, add the new encoding variant to the union type at line 21 (before the closing semicolon):
-
-```typescript
-export type ParamEncoding =
-  | { kind: "raw" }
-  | { kind: "drawbar"; positions: number }
-  | { kind: "model-index"; table: number[] }
-  | { kind: "one-based" }
-  | { kind: "custom"; toMidi: (v: number) => number; fromMidi: (v: number) => number }
-  | { kind: "dt1"; address: number[]; size: number };
-```
-
-- [ ] **Step 2: Make `cc` optional on KeyboardParameter**
-
-In `src/shared/types.ts`, change line 26 from `cc: number;` to `cc?: number;`:
+In `src/shared/types.ts`, make `cc` optional and add SysEx addressing fields:
 
 ```typescript
 export interface KeyboardParameter {
@@ -84,8 +69,12 @@ export interface KeyboardParameter {
   description: string;
   encoding: ParamEncoding;
   perPart?: boolean;
+  sysexAddress?: number[];   // DT1 address offset (4 bytes) for SysEx-transported params
+  sysexSize?: number;        // byte count: 1 for 7-bit, 2+ for nibble-packed values
 }
 ```
+
+`ParamEncoding` is unchanged — it stays purely a value transform.
 
 - [ ] **Step 3: Guard `cc` usage in BaseKeyboardDevice.setParameters()**
 
@@ -340,72 +329,7 @@ git commit -m "feat: add Roland DT1/RQ1 protocol builder and parser"
 
 ---
 
-### Task 3: Add dt1 handling to parameter resolution
-
-**Files:**
-- Modify: `src/shared/parameter-resolution.ts`
-
-- [ ] **Step 1: Add dt1 case to resolveNumeric()**
-
-In `src/shared/parameter-resolution.ts`, add a case for `dt1` in the `resolveNumeric` function's switch statement (around line 48). The dt1 encoding stores values directly — resolution just clamps to range:
-
-Add before the `case "raw":` line:
-
-```typescript
-    case "dt1":
-      return Math.max(0, Math.min(param.max, Math.round(value)));
-```
-
-- [ ] **Step 2: Add dt1 case to formatValue()**
-
-In `src/shared/parameter-resolution.ts`, add a case for `dt1` in the `formatValue` function's switch statement (around line 100):
-
-Add before the `case "raw":` line:
-
-```typescript
-    case "dt1":
-      if (param.labels && (param.type === "discrete" || param.type === "toggle")) {
-        const index = midiValue;
-        const label = param.labels[index];
-        return label ? `${label} (${midiValue})` : `${midiValue}`;
-      }
-      return `${midiValue}`;
-```
-
-- [ ] **Step 3: Update resolveValue string handling for dt1 label lookup**
-
-In the `resolveValue` function, the label-to-MIDI conversion at line 77 calls `discreteToMidi(index, param.max)` which scales to 0-127. For dt1 params, labels map to direct values (not MIDI-scaled). Update the label resolution block:
-
-Replace the existing label match logic (around lines 73-80):
-```typescript
-  if (param.labels) {
-    for (const [numStr, label] of Object.entries(param.labels)) {
-      if (label.toLowerCase() === lower) {
-        const index = Number(numStr);
-        if (param.encoding.kind === "dt1") {
-          return index;
-        }
-        return discreteToMidi(index, param.max);
-      }
-    }
-  }
-```
-
-- [ ] **Step 4: Build and verify**
-
-Run: `npm run build`
-Expected: Clean compilation.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/shared/parameter-resolution.ts
-git commit -m "feat: add dt1 encoding support to parameter resolution"
-```
-
----
-
-### Task 4: JUNO-X model scaffold
+### Task 3: JUNO-X model scaffold
 
 **Files:**
 - Create: `src/keyboard_models/roland/juno_x/engines/engine-types.ts`
@@ -1372,21 +1296,21 @@ export function createRDPianoParams(): Record<string, KeyboardParameter> {
       min: 0, max: 1, defaultValue: 1, type: "toggle",
       labels: { 0: "OFF", 1: "ON" },
       description: "Enables sympathetic resonance effect.",
-      encoding: { kind: "dt1", address: [0x01, 0x00, 0x00, 0x00], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     rd_symreso_depth: {
       name: "SymReso Depth", section: "rd-symreso",
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Effect depth of sympathetic resonance.",
-      encoding: { kind: "dt1", address: [0x01, 0x00, 0x00, 0x01], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     rd_cabinet_reso: {
       name: "Cabinet Reso", section: "rd-symreso",
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Depth of resonance when the damper pedal is not pressed.",
-      encoding: { kind: "dt1", address: [0x01, 0x00, 0x00, 0x02], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
   };
@@ -1429,7 +1353,7 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       name: "Scene Level", section: "scene-common",
       min: 0, max: 127, defaultValue: 127, type: "continuous",
       description: "Adjusts the overall volume of the scene.",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x10], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
     },
 
     // -- Scene Part (base offset: 00 1p 00 xx where p=part 0-4) -------------
@@ -1439,7 +1363,7 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       min: 0, max: 1, defaultValue: 1, type: "toggle",
       labels: { 0: "OFF", 1: "ON" },
       description: "Specifies whether the part is enabled (ON) or disabled (OFF).",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x00], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     part_mute: {
@@ -1447,7 +1371,7 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       min: 0, max: 2, defaultValue: 0, type: "discrete",
       labels: { 0: "OFF", 1: "MUTE" },
       description: "Specifies the part mute setting.",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x01], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     part_level: {
@@ -1455,7 +1379,7 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       cc: 7, // Also available as CC7 (Volume)
       min: 0, max: 127, defaultValue: 100, type: "continuous",
       description: "Specifies the volume of each part.",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x05], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     part_pan: {
@@ -1463,14 +1387,14 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       cc: 10, // Also available as CC10
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Specifies the pan of each part (L64-63R).",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x06], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     part_coarse_tune: {
       name: "Part Coarse Tune", section: "scene-part",
       min: 16, max: 112, defaultValue: 64, type: "continuous",
       description: "Shifts the pitch in units of a semitone (-48 to +48).",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x07], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     part_mono_poly: {
@@ -1478,7 +1402,7 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       min: 0, max: 2, defaultValue: 0, type: "discrete",
       labels: { 0: "MONO", 1: "POLY", 2: "TONE" },
       description: "Choose mono, poly, or use tone setting.",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x09], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
 
@@ -1487,35 +1411,35 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       name: "Part Cutoff Offset", section: "scene-modify",
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Adjusts how far the filter is open (-64 to +63 offset).",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x0f], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     part_resonance_offset: {
       name: "Part Resonance Offset", section: "scene-modify",
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Resonance offset (-64 to +63).",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x10], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     part_attack_offset: {
       name: "Part Attack Offset", section: "scene-modify",
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Attack time offset (-64 to +63).",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x11], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     part_decay_offset: {
       name: "Part Decay Offset", section: "scene-modify",
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Decay time offset (-64 to +63).",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x12], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
     part_release_offset: {
       name: "Part Release Offset", section: "scene-modify",
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Release time offset (-64 to +63).",
-      encoding: { kind: "dt1", address: [0x00, 0x00, 0x00, 0x13], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
       perPart: true,
     },
 
@@ -1525,13 +1449,13 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       min: 0, max: 1, defaultValue: 0, type: "toggle",
       labels: { 0: "OFF", 1: "ON" },
       description: "Switches chorus on/off.",
-      encoding: { kind: "dt1", address: [0x00, 0x50, 0x00, 0x00], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
     },
     chorus_level: {
       name: "Chorus Level", section: "scene-chorus",
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Output level of chorus effect.",
-      encoding: { kind: "dt1", address: [0x00, 0x50, 0x00, 0x02], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
     },
 
     // -- Scene Delay (base offset: 00 51 00 xx) -----------------------------
@@ -1540,13 +1464,13 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       min: 0, max: 1, defaultValue: 0, type: "toggle",
       labels: { 0: "OFF", 1: "ON" },
       description: "Switches delay on/off.",
-      encoding: { kind: "dt1", address: [0x00, 0x51, 0x00, 0x00], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
     },
     delay_level: {
       name: "Delay Level", section: "scene-delay",
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Output level of delay effect.",
-      encoding: { kind: "dt1", address: [0x00, 0x51, 0x00, 0x02], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
     },
 
     // -- Scene Reverb (base offset: 00 52 00 xx) ----------------------------
@@ -1555,13 +1479,13 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       min: 0, max: 1, defaultValue: 0, type: "toggle",
       labels: { 0: "OFF", 1: "ON" },
       description: "Switches reverb on/off.",
-      encoding: { kind: "dt1", address: [0x00, 0x52, 0x00, 0x00], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
     },
     reverb_level: {
       name: "Reverb Level", section: "scene-reverb",
       min: 0, max: 127, defaultValue: 64, type: "continuous",
       description: "Output level of reverb effect.",
-      encoding: { kind: "dt1", address: [0x00, 0x52, 0x00, 0x02], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
     },
 
     // -- Scene Drive (base offset: 00 53 00 xx) -----------------------------
@@ -1570,7 +1494,7 @@ export function createSceneParams(): Record<string, KeyboardParameter> {
       min: 0, max: 1, defaultValue: 0, type: "toggle",
       labels: { 0: "OFF", 1: "ON" },
       description: "Switches overdrive on/off.",
-      encoding: { kind: "dt1", address: [0x00, 0x53, 0x00, 0x04], size: 1 },
+      encoding: { kind: "raw" },\n      sysexAddress: \1, sysexSize: \2,
     },
   };
 }
@@ -1799,9 +1723,7 @@ export class JunoXDevice extends BaseKeyboardDevice {
         const midiValue = this.parameterMap.resolveValue(found.param, value);
         const statePart = this.resolvePartForParam(found.key, part);
         const prevMidi = this.state.get(found.key, statePart);
-        const enc = found.param.encoding;
-
-        if (enc.kind === "dt1") {
+        if (found.param.sysexAddress) {
           // Build DT1 SysEx message
           let fullAddress: number[];
           if (found.param.perPart) {
@@ -1809,15 +1731,16 @@ export class JunoXDevice extends BaseKeyboardDevice {
             const partOffset = SCENE_PART_OFFSETS[partIndex] ?? SCENE_PART_OFFSETS[0];
             fullAddress = addAddresses(
               addAddresses(SCENE_BASE, partOffset),
-              enc.address,
+              found.param.sysexAddress,
             );
           } else {
             // Global scene param: add scene base + param offset
-            fullAddress = addAddresses(SCENE_BASE, enc.address);
+            fullAddress = addAddresses(SCENE_BASE, found.param.sysexAddress);
           }
 
-          const data = enc.size > 1
-            ? packNibbles(midiValue, enc.size * 2)
+          const size = found.param.sysexSize ?? 1;
+          const data = size > 1
+            ? packNibbles(midiValue, size * 2)
             : [midiValue];
 
           const sysex = buildDT1(JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, fullAddress, data);
@@ -2547,7 +2470,7 @@ git commit -m "fix: integration fixes for JUNO-X model"
 
 1. **Spec coverage**: All 12 sections of the design spec are covered:
    - [x] Shared DT1/RQ1 transport (Task 2)
-   - [x] ParamEncoding extension (Task 1)
+   - [x] SysEx addressing on KeyboardParameter (Task 1)
    - [x] File structure (Task 4)
    - [x] Engine architecture (Tasks 5, 6)
    - [x] Scene parameters (Task 7)
@@ -2565,5 +2488,5 @@ git commit -m "fix: integration fixes for JUNO-X model"
    - `JunoXParameterMap` extends `ParameterMap` (Task 8) and is used in device (Task 8)
    - `JunoXState` extends `GenericParameterState` (Task 8)
    - `JunoXMockHandler` implements `MockHandler` (Task 10)
-   - `ParamEncoding` dt1 kind matches usage in scene-params and rd-piano (Tasks 5-7)
+   - `sysexAddress`/`sysexSize` fields used consistently in scene-params and rd-piano
    - `RolandModelId` interface matches usage in engine-types and mock-handler
