@@ -72,20 +72,20 @@ export function createNordElectro5DMockHandler(): MockHandler {
   const PART_LABELS = ["A", "B", "C", "D"] as const;
 
   // ── CC numbers for special handling ──
-  const PRESET_SELECT_CC = PARAMS.organ_preset_select.cc;
-  const CC_SETLIST_MODE = PARAMS.program_setlist_mode.cc;
-  const CC_SETLIST_PART = PARAMS.setlist_part_select.cc;
-  const VIBRATO_ENABLE_CC = PARAMS.vibrato_enable.cc;
-  const PERCUSSION_CC = PARAMS.percussion.cc;
-  const CC_LOWER_ENGINE = PARAMS.part_lower_engine_select.cc;
-  const CC_UPPER_ENGINE = PARAMS.part_upper_engine_select.cc;
-  const CC_AMP_TYPE = PARAMS.spkr_comp_type.cc;
+  const PRESET_SELECT_CC = PARAMS.organ_preset_select.cc!;
+  const CC_SETLIST_MODE = PARAMS.program_setlist_mode.cc!;
+  const CC_SETLIST_PART = PARAMS.setlist_part_select.cc!;
+  const VIBRATO_ENABLE_CC = PARAMS.vibrato_enable.cc!;
+  const PERCUSSION_CC = PARAMS.percussion.cc!;
+  const CC_LOWER_ENGINE = PARAMS.part_lower_engine_select.cc!;
+  const CC_UPPER_ENGINE = PARAMS.part_upper_engine_select.cc!;
+  const CC_AMP_TYPE = PARAMS.spkr_comp_type.cc!;
   const AMP_ROTARY_MIDI = resolveValue(PARAMS.spkr_comp_type, 4);
 
   // ── Drawbar CC set ──
   const DRAWBAR_CCS = new Set<number>();
   for (const param of Object.values(PARAMS)) {
-    if (param.encoding.kind === "drawbar") DRAWBAR_CCS.add(param.cc);
+    if (param.encoding.kind === "drawbar") DRAWBAR_CCS.add(param.cc!);
   }
 
   // ── Inventory data ──
@@ -97,7 +97,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
   // ── Param lookup by CC ──
   const paramByCC = new Map<number, { key: string; param: KeyboardParameter }>();
   for (const [key, param] of Object.entries(PARAMS)) {
-    paramByCC.set(param.cc, { key, param });
+    paramByCC.set(param.cc!, { key, param });
   }
 
   // ── Param per-part lookup ──
@@ -113,7 +113,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
   function initChannel(ch: number): void {
     const chState = new Map<number, number>();
     for (const param of Object.values(PARAMS)) {
-      chState.set(param.cc, param.defaultValue);
+      chState.set(param.cc!, param.defaultValue);
     }
     channelState.set(ch, chState);
   }
@@ -169,7 +169,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
     const result: Record<string, any> = {};
     for (const [key, param] of Object.entries(PARAMS)) {
       if (param.encoding.kind !== "drawbar") continue;
-      const midiValue = presetDrawbarState.get(presetKey)!.get(param.cc) ?? param.defaultValue;
+      const midiValue = presetDrawbarState.get(presetKey)!.get(param.cc!) ?? param.defaultValue;
       result[key] = {
         value: midiValue,
         label: String(midiToDrawbar(midiValue, param.encoding.positions)),
@@ -192,10 +192,10 @@ export function createNordElectro5DMockHandler(): MockHandler {
 
     for (const [key, param] of Object.entries(PARAMS)) {
       if (perPartKeys.has(key)) {
-        lower[key] = buildParamEntry(param, getChannelValue(lowerChannel, param.cc, param.defaultValue));
-        upper[key] = buildParamEntry(param, getChannelValue(upperChannel, param.cc, param.defaultValue));
+        lower[key] = buildParamEntry(param, getChannelValue(lowerChannel, param.cc!, param.defaultValue));
+        upper[key] = buildParamEntry(param, getChannelValue(upperChannel, param.cc!, param.defaultValue));
       } else {
-        global[key] = buildParamEntry(param, getChannelValue(lowerChannel, param.cc, param.defaultValue));
+        global[key] = buildParamEntry(param, getChannelValue(lowerChannel, param.cc!, param.defaultValue));
       }
     }
 
@@ -255,10 +255,10 @@ export function createNordElectro5DMockHandler(): MockHandler {
 
     // Last change notification
     if (lastChangeKey) {
-      const entry = paramByCC.get(PARAMS[lastChangeKey]?.cc);
+      const entry = paramByCC.get(PARAMS[lastChangeKey]?.cc!);
       if (entry) {
         const ch = lastChangePart === "upper" ? upperChannel : lowerChannel;
-        const midiValue = getChannelValue(ch, entry.param.cc, entry.param.defaultValue);
+        const midiValue = getChannelValue(ch, entry.param.cc!, entry.param.defaultValue);
         msg.lastChange = {
           key: lastChangeKey,
           name: entry.param.name,
@@ -326,15 +326,15 @@ export function createNordElectro5DMockHandler(): MockHandler {
       } else {
         midiVal = resolveValue(param, raw);
       }
-      channelState.get(lowerChannel)!.set(param.cc, midiVal);
-      channelState.get(upperChannel)!.set(param.cc, midiVal);
+      channelState.get(lowerChannel)!.set(param.cc!, midiVal);
+      channelState.get(upperChannel)!.set(param.cc!, midiVal);
     }
 
     // sample_synth_sample: write raw slot (bypass oneBased encoding)
     const sampleParam = PARAMS.sample_synth_sample;
     if (sampleParam) {
-      channelState.get(lowerChannel)!.set(sampleParam.cc, params.sampleSlot);
-      channelState.get(upperChannel)!.set(sampleParam.cc, params.sampleSlot);
+      channelState.get(lowerChannel)!.set(sampleParam.cc!, params.sampleSlot);
+      channelState.get(upperChannel)!.set(sampleParam.cc!, params.sampleSlot);
     }
 
     applyDrawbars("preset1", params.pst1Drawbars);
@@ -351,9 +351,9 @@ export function createNordElectro5DMockHandler(): MockHandler {
       const param = PARAMS[`drawbar_${i + 1}`];
       if (!param) continue;
       const midiVal = drawbarToMidi(pos, 9);
-      presetMap.set(param.cc, midiVal);
-      channelState.get(lowerChannel)!.set(param.cc, midiVal);
-      channelState.get(upperChannel)!.set(param.cc, midiVal);
+      presetMap.set(param.cc!, midiVal);
+      channelState.get(lowerChannel)!.set(param.cc!, midiVal);
+      channelState.get(upperChannel)!.set(param.cc!, midiVal);
     }
   }
 

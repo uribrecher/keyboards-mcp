@@ -23,7 +23,9 @@ export type ParamEncoding =
 export interface KeyboardParameter {
   name: string;
   section: string;
-  cc: number;
+  cc?: number;
+  sysexAddress?: number[];
+  sysexSize?: number;
   min: number;
   max: number;
   defaultValue: number;
