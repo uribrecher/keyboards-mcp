@@ -5,6 +5,8 @@
  * Two modes:
  * - Local (default): spawns mock with real MIDI, MidiManager connects normally
  * - Docker/WS (MOCK_WS_URL set): connects to external mock service via WS
+ *
+ * Use startShared()/stopShared() to reuse one MCP server across tests.
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -27,20 +29,18 @@ export class TestHarness {
   static async start(opts: HarnessOptions): Promise<TestHarness> {
     const externalWsUrl = process.env.MOCK_WS_URL;
 
-    // 1. Start or connect to mock
     let mock: MockProcess;
     let mcpEnv: Record<string, string>;
 
     if (externalWsUrl) {
-      // Docker/CI mode: mock is an external service, connect via WS
       mock = await MockProcess.connectExternal(externalWsUrl);
       mcpEnv = {
         ...process.env as Record<string, string>,
         MOCK_WS_URL: externalWsUrl,
         MOCK_MODEL_ID: opts.model,
+        MIDI_TRANSPORT: "ws",
       };
     } else {
-      // Local mode: spawn mock with real MIDI
       mock = await MockProcess.start(opts);
       mcpEnv = {
         ...process.env as Record<string, string>,
@@ -48,10 +48,11 @@ export class TestHarness {
       };
     }
 
-    // 2. Start MCP server as child process via stdio transport
+    // Use compiled JS in Docker (npx tsx is slow in containers)
+    const useCompiled = !!externalWsUrl;
     const transport = new StdioClientTransport({
-      command: "npx",
-      args: ["tsx", "src/index.ts"],
+      command: useCompiled ? "node" : "npx",
+      args: useCompiled ? ["dist/index.js"] : ["tsx", "src/index.ts"],
       cwd: process.cwd(),
       stderr: "pipe",
       env: mcpEnv,
@@ -75,8 +76,17 @@ export class TestHarness {
     return this.mock.waitForState(timeoutMs);
   }
 
+  /** Reset device state between tests (without killing the MCP process) */
+  async reset(): Promise<void> {
+    try { await this.callTool("disconnect_from_keyboard"); } catch { /* ignore */ }
+  }
+
   async stop(): Promise<void> {
-    try { await this.transport.close(); } catch { /* ignore */ }
+    // Kill MCP child immediately — transport.close() hangs waiting for graceful exit
+    const pid = this.transport.pid;
+    if (pid) {
+      try { process.kill(pid, "SIGKILL"); } catch { /* already dead */ }
+    }
     await this.mock.stop();
   }
 }

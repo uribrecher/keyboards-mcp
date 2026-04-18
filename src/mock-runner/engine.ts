@@ -7,7 +7,6 @@
 
 import { createServer, type Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import easymidi from "easymidi";
 import type { MockHandler, MidiMessage } from "../shared/keyboard-model.js";
 
 export interface EngineOptions {
@@ -23,7 +22,7 @@ export class MockEngine {
   private handler: MockHandler;
   private opts: EngineOptions;
 
-  private midiInput: easymidi.Input | null = null;
+  private midiInput: any | null = null;
   private httpServer: Server | null = null;
   private wss: WebSocketServer | null = null;
   private clients = new Set<WebSocket>();
@@ -40,7 +39,8 @@ export class MockEngine {
 
     // Create virtual MIDI port (skip in WS-only mode for CI/Docker)
     if (!this.opts.noMidi) {
-      this.midiInput = new easymidi.Input(this.opts.portName, true);
+      const easymidi = await import("easymidi");
+      this.midiInput = new easymidi.default.Input(this.opts.portName, true);
     }
 
     // Bare HTTP server for WebSocket

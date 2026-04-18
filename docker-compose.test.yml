@@ -1,11 +1,17 @@
+networks:
+  test-net:
+    driver: bridge
+
 services:
   mock:
     build: .
     command: npx tsx src/mock-runner/cli.ts --model nord-electro-5d --no-midi --ws-port 3000
-    expose:
+    ports:
       - "3000"
+    networks:
+      - test-net
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "const s=require('net').connect(3000,()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))"]
       interval: 2s
       timeout: 5s
       retries: 10
@@ -16,6 +22,9 @@ services:
     command: npm run test:ci
     environment:
       - MOCK_WS_URL=ws://mock:3000
+      - MIDI_TRANSPORT=ws
+    networks:
+      - test-net
     depends_on:
       mock:
         condition: service_healthy
