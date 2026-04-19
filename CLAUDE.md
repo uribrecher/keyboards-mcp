@@ -118,10 +118,6 @@ The model is auto-discovered by `model-registry.ts` scanning the filesystem.
 
 Electron app: model picker shell -> loads model's web UI. The `MockEngine` is a thin shell (MIDI virtual port + WebSocket server + broadcast). All state and logic lives in the model's `MockHandler`, which receives raw MIDI messages via `onMIDI()` and returns state to broadcast.
 
-### Agent mode (`src/agent.ts`)
-
-HTTP server (port 3001) bridging a chat UI to Claude API. Spawns keyboards-mcp as a child MCP process. System prompt includes backup inventory and sound design guidelines.
-
 ## Key conventions
 
 - All user-facing numbering must match the hardware display (1-based program/bank numbers, drawbar 0-8 positions)
@@ -130,3 +126,4 @@ HTTP server (port 3001) bridging a chat UI to Claude API. Spawns keyboards-mcp a
 - Sample inventory is 0-based but MIDI CC is 1-based (add 1 to index)
 - When changing MIDI parameters, update mock handler alongside MCP code
 - Save implementation plans to `docs/plans/` before starting work
+- Sibling repos in the same parent directory: `sound-recreation-agent`, `audio-analysis-mcp`, `macos-packager`

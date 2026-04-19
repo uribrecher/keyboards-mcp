@@ -10,8 +10,6 @@
     "dev": "tsx src/index.ts",
     "mock:runner": "electron dist/mock-runner/main.js",
     "mock:headless": "tsx src/mock-runner/cli.ts",
-    "agent": "tsx src/agent.ts",
-    "run:mlx": "mlx_lm.server --model ${MLX_MODEL:-mlx-community/Qwen2.5-7B-Instruct-4bit} --port ${MLX_PORT:-8080}",
     "lint": "eslint src/ tests/",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "test:unit": "find tests/unit -name '*.test.ts' | xargs npx tsx --test",
@@ -24,7 +22,6 @@
     "@modelcontextprotocol/sdk": "^1.12.0",
     "adm-zip": "^0.5.16",
     "easymidi": "^3.0.0",
-    "openai": "^4.80.0",
     "ws": "^8.20.0",
     "zod": "^3.23.0"
   },

@@ -148,7 +148,7 @@ Refactored to implement the `MidiConnection` interface from the architecture pla
 - **Keyboard models** — no changes to model implementations (they already implement `KeyboardModel` with `createDevice()` factory, and `KeyboardDevice` with `attach()`/`detach()`).
 - **`model-registry.ts`** — unchanged, still discovers and loads `KeyboardModel` types.
 - **Mock runner / engine** — unchanged (this is about the MCP server side).
-- **`agent.ts`** — unchanged, agent uses MCP tools which now support multi-device.
+- **Agent** — the sound-recreation-agent repo uses MCP tools which now support multi-device.
 - **MIDI protocol** — unchanged, each MidiConnection talks to one MIDI port.
 
 ### Prerequisite
@@ -157,7 +157,7 @@ This plan assumes the **architecture plan** has been implemented first. `Keyboar
 
 ### System Prompt Updates
 
-The `get_system_prompt` tool should include device index information so the agent knows how to address devices. When multiple devices are connected, the prompt should list all devices with their indices and capabilities.
+The `get_system_prompt` tool should include device index information so the caller knows how to address devices. When multiple devices are connected, the prompt should list all devices with their indices and capabilities.
 
 ### Backwards Compatibility
 
