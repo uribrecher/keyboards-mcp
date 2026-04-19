@@ -6,7 +6,7 @@
 
 ### 8a. ~~Agent redesign~~ → Moved to sound-recreation-agent repo
 
-Agent code (`agent.ts`, `openai` dep, `recreate-sound.md`) has been removed from keyboards-mcp. The agent is now a separate repo at `~/test/sounds-and-recreation/sound-recreation-agent/` — see plan 8b.
+Agent code (`agent.ts`, `openai` dep, `recreate-sound.md`) has been removed from keyboards-mcp. The agent is now in a sibling repo (`../sound-recreation-agent`) — see plan 8b.
 
 ### 8b. Bidirectional mock/MCP state reconciliation via RQ1 [BRAINSTORM]
 

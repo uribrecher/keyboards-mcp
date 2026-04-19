@@ -126,4 +126,4 @@ Electron app: model picker shell -> loads model's web UI. The `MockEngine` is a 
 - Sample inventory is 0-based but MIDI CC is 1-based (add 1 to index)
 - When changing MIDI parameters, update mock handler alongside MCP code
 - Save implementation plans to `docs/plans/` before starting work
-- Parent workspace: `~/test/sounds-and-recreation/` (sibling repos: sound-recreation-agent, audio-analysis-mcp, macos-packager)
+- Sibling repos in the same parent directory: `sound-recreation-agent`, `audio-analysis-mcp`, `macos-packager`

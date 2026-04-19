@@ -116,7 +116,7 @@ const ws = new WebSocket(`ws://localhost:${wsPort}`);
 
 ### Agent (sound-recreation-agent repo)
 
-The agent is now in a separate repo. The mock runner chat panel connects to the agent's HTTP server (default port 2999). No changes needed in the agent — it is fully independent and MCP tools address devices by MIDI port name, not by tab.
+The agent is now in a separate repo. The mock runner chat panel connects to the agent's HTTP server via the `AGENT_URL` environment variable (default: `http://localhost:2999`). No changes needed in the agent — it is fully independent and MCP tools address devices by MIDI port name, not by tab.
 
 ### `src/mock-runner/preload.cjs`
 
