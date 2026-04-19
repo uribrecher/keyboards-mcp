@@ -2,7 +2,7 @@
   "mcpServers": {
     "keyboards-mcp": {
       "command": "node",
-      "args": ["/Users/uribrecher/test/keyboards-mcp/dist/index.js"]
+      "args": ["dist/index.js"]
     }
   }
 }
