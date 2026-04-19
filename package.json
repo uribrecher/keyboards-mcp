@@ -10,7 +10,7 @@
     "dev": "tsx src/index.ts",
     "mock:runner": "electron dist/mock-runner/main.js",
     "mock:headless": "tsx src/mock-runner/cli.ts",
-"lint": "eslint src/ tests/",
+    "lint": "eslint src/ tests/",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "test:unit": "find tests/unit -name '*.test.ts' | xargs npx tsx --test",
     "test:integration": "find tests/integration -name '*.test.ts' | xargs npx tsx --test",

@@ -114,9 +114,9 @@ const wsPort = new URLSearchParams(location.search).get('wsPort') || '3000';
 const ws = new WebSocket(`ws://localhost:${wsPort}`);
 ```
 
-### `src/agent.ts`
+### Agent (sound-recreation-agent repo)
 
-Default port changed from 3001 to 2999. No other changes — the agent is fully independent and MCP tools address devices by MIDI port name, not by tab.
+The agent is now in a separate repo. The mock runner chat panel connects to the agent's HTTP server (default port 2999). No changes needed in the agent — it is fully independent and MCP tools address devices by MIDI port name, not by tab.
 
 ### `src/mock-runner/preload.cjs`
 
@@ -132,7 +132,7 @@ Updated IPC bridge to expose the new tab-oriented methods:
 - **MCP tools** — unchanged, they work via MIDI port names
 - **KeyboardModel / KeyboardDevice implementations** — unchanged (except Nord losing chat code). Models already provide `createMockHandler()` per the architecture plan.
 - **`model-registry.ts`** — unchanged
-- **`agent.ts` behavior** — unchanged (just default port)
+- **Agent behavior** — unchanged (lives in sound-recreation-agent repo)
 
 ### Prerequisite
 

@@ -4,19 +4,9 @@
 
 ## Tasks
 
-### 8a. Agent redesign — Vercel AI + gateway + dual MCP [PLAN NEEDED]
+### 8a. ~~Agent redesign~~ → Moved to sound-recreation-agent repo
 
-**Status:** Needs a plan — design exists in a Gemini conversation, needs to be written up as a plan in `docs/plans/`.
-
-**Priority:** High — blocks future agent-dependent work.
-
-Major redesign of `src/agent.ts`. The new architecture is based on:
-- **Vercel AI SDK** as the agent framework (replacing the current OpenAI-direct implementation)
-- **Vercel AI Gateway** for LLM routing with built-in **Perplexity web search tool** (replaces manual research workflows)
-- **Two MCP server connections:** keyboards-mcp (this repo) and audio-analysis-mcp (plan 7, not yet implemented)
-- **Preloaded recreate-sound skill** as part of the agent's system prompt (the sound recreation workflow from `docs/recreate-sound.md`)
-
-The Gemini conversation contains the current design thinking. Next step: extract that into a formal plan under `docs/plans/pending/`.
+Agent code (`agent.ts`, `openai` dep, `recreate-sound.md`) has been removed from keyboards-mcp. The agent is now a separate repo at `~/test/sounds-and-recreation/sound-recreation-agent/` — see plan 8b.
 
 ### 8b. Bidirectional mock/MCP state reconciliation via RQ1 [BRAINSTORM]
 
