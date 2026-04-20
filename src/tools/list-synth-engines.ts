@@ -12,13 +12,9 @@ export function registerListSynthEngines(server: McpServer, holder: ModelHolder)
         "which sounds a device can produce and how to reproduce them.",
     },
     async () => {
-      const model = holder.model;
-      if (!model) {
-        return {
-          content: [{ type: "text", text: "No keyboard connected. Connect first with connect_to_keyboard." }],
-          isError: true,
-        };
-      }
+      let model;
+      try { model = holder.requireModel(); }
+      catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
 
       const engines = model.synthEngines ?? [];
       if (engines.length === 0) {

@@ -27,7 +27,7 @@ const server = new McpServer({
 const midiManager = new MidiManager();
 const holder = new ModelHolder();
 
-// Register all tools — they self-guard via holder.requireDevice()
+// Register all tools — they self-guard via holder.requireDevice() or holder.requireModel()
 registerListDevices(server, midiManager);
 registerConnect(server, midiManager, holder);
 registerSetParameters(server, midiManager, holder);
