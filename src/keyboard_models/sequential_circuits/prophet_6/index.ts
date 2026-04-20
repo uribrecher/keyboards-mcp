@@ -21,6 +21,18 @@ const model: KeyboardModel = {
     midiPortPatterns: ["prophet", "sequential", "dsi"],
   },
 
+  synthEngines: [
+    {
+      id: "analog-subtractive",
+      displayName: "Analog Subtractive Synth",
+      category: "subtractive",
+      description: "Classic 6-voice polyphonic analog synthesizer. Two VCOs (saw/pulse with PWM), " +
+        "lowpass filter with resonance, VCA with ADSR envelopes, poly mod (filter env/osc2 → osc1), " +
+        "and LFO. Pure analog signal path.",
+      inverseSynthEligible: true,
+    },
+  ],
+
   agentSystemPrompt: `KEYBOARD: Sequential Circuits Prophet-6
 
 The Prophet-6 is a 6-voice polyphonic analog synthesizer with a classic subtractive synthesis signal path.

@@ -15,6 +15,7 @@ import { registerIsConnected } from "./tools/is-connected.js";
 import { registerLoadProgram } from "./tools/load-program.js";
 import { registerLoadSong } from "./tools/load-song.js";
 import { registerSystemPrompt } from "./tools/system-prompt.js";
+import { registerListSynthEngines } from "./tools/list-synth-engines.js";
 
 await initMidiBackend();
 
@@ -40,6 +41,7 @@ registerLoadSong(server, midiManager, holder);
 registerExtractBackup(server, holder);
 registerGetLastBackupLocation(server, holder);
 registerSystemPrompt(server, holder);
+registerListSynthEngines(server, holder);
 
 // Start the server
 const transport = new StdioServerTransport();

@@ -96,4 +96,99 @@ describe("model registry", () => {
     const model = await autoDetectModel(["Unknown MIDI Device"]);
     assert.strictEqual(model, null);
   });
+
+  // ── synthEngines ──
+
+  for (const modelId of EXPECTED_MODELS) {
+    it(`${modelId} has synthEngines defined`, async () => {
+      const model = await loadModelById(modelId);
+      assert.ok(Array.isArray(model.synthEngines), `${modelId}: synthEngines is not an array`);
+      assert.ok(model.synthEngines!.length > 0, `${modelId}: synthEngines is empty`);
+    });
+
+    it(`${modelId} synthEngines have valid fields`, async () => {
+      const model = await loadModelById(modelId);
+      for (const engine of model.synthEngines!) {
+        assert.ok(engine.id, `${modelId}: engine missing id`);
+        assert.ok(engine.displayName, `${modelId}/${engine.id}: missing displayName`);
+        assert.ok(engine.category, `${modelId}/${engine.id}: missing category`);
+        assert.ok(engine.description, `${modelId}/${engine.id}: missing description`);
+        assert.strictEqual(
+          typeof engine.inverseSynthEligible, "boolean",
+          `${modelId}/${engine.id}: inverseSynthEligible must be boolean`,
+        );
+      }
+    });
+
+    it(`${modelId} synthEngines have no duplicate IDs`, async () => {
+      const model = await loadModelById(modelId);
+      const ids = model.synthEngines!.map((e) => e.id);
+      const unique = new Set(ids);
+      assert.strictEqual(ids.length, unique.size, `${modelId}: duplicate engine IDs: ${ids}`);
+    });
+
+    it(`${modelId} synthEngines use valid categories`, async () => {
+      const validCategories = [
+        "subtractive", "fm", "wavetable", "organ",
+        "piano", "electric-piano", "sample", "modeling",
+      ];
+      const model = await loadModelById(modelId);
+      for (const engine of model.synthEngines!) {
+        assert.ok(
+          validCategories.includes(engine.category),
+          `${modelId}/${engine.id}: invalid category "${engine.category}"`,
+        );
+      }
+    });
+  }
+
+  it("nord-electro-5d has organ, piano, electric-piano, and sample engines", async () => {
+    const model = await loadModelById("nord-electro-5d");
+    const categories = model.synthEngines!.map((e) => e.category).sort();
+    assert.ok(categories.includes("organ"), "missing organ engine");
+    assert.ok(categories.includes("piano"), "missing piano engine");
+    assert.ok(categories.includes("electric-piano"), "missing electric-piano engine");
+    assert.ok(categories.includes("sample"), "missing sample engine");
+  });
+
+  it("nord-electro-5d organ engine is inverse synth eligible", async () => {
+    const model = await loadModelById("nord-electro-5d");
+    const organ = model.synthEngines!.find((e) => e.category === "organ");
+    assert.ok(organ, "organ engine not found");
+    assert.strictEqual(organ!.inverseSynthEligible, true);
+  });
+
+  it("nord-electro-5d piano/ep engines are NOT inverse synth eligible", async () => {
+    const model = await loadModelById("nord-electro-5d");
+    const pianoEngines = model.synthEngines!.filter(
+      (e) => e.category === "piano" || e.category === "electric-piano" || e.category === "sample",
+    );
+    for (const engine of pianoEngines) {
+      assert.strictEqual(
+        engine.inverseSynthEligible, false,
+        `${engine.id} should not be inverse synth eligible`,
+      );
+    }
+  });
+
+  it("roland-juno-x has subtractive and electric-piano engines", async () => {
+    const model = await loadModelById("roland-juno-x");
+    const categories = new Set(model.synthEngines!.map((e) => e.category));
+    assert.ok(categories.has("subtractive"), "missing subtractive engine");
+    assert.ok(categories.has("electric-piano"), "missing electric-piano engine");
+  });
+
+  it("roland-juno-x RD Piano is NOT inverse synth eligible", async () => {
+    const model = await loadModelById("roland-juno-x");
+    const rdPiano = model.synthEngines!.find((e) => e.id === "rd-piano");
+    assert.ok(rdPiano, "rd-piano engine not found");
+    assert.strictEqual(rdPiano!.inverseSynthEligible, false);
+  });
+
+  it("sequential-prophet-6 has exactly one subtractive engine", async () => {
+    const model = await loadModelById("sequential-prophet-6");
+    assert.strictEqual(model.synthEngines!.length, 1);
+    assert.strictEqual(model.synthEngines![0].category, "subtractive");
+    assert.strictEqual(model.synthEngines![0].inverseSynthEligible, true);
+  });
 });

@@ -21,6 +21,44 @@ const model: KeyboardModel = {
     midiPortPatterns: ["JUNO-X"],
   },
 
+  synthEngines: [
+    {
+      id: "zen-core",
+      displayName: "ZEN-Core",
+      category: "subtractive",
+      description: "Roland's modern digital synthesis platform. Versatile subtractive synthesis " +
+        "with 4 partials, each with its own oscillator, filter, amplifier, and LFO. " +
+        "Capable of a wide range of sounds from pads to leads to basses.",
+      inverseSynthEligible: true,
+    },
+    {
+      id: "analog-synth",
+      displayName: "Analog Synth (106/60)",
+      category: "subtractive",
+      description: "Models of the classic JUNO-106 and JUNO-60 analog synth circuits. " +
+        "Single oscillator (saw/pulse) with sub-oscillator, classic resonant lowpass filter, " +
+        "and JUNO-style chorus.",
+      inverseSynthEligible: true,
+    },
+    {
+      id: "rd-piano",
+      displayName: "RD Piano",
+      category: "electric-piano",
+      description: "Electric piano engine from Roland's RD-series stage pianos. " +
+        "Sample-based reproduction of Rhodes, Wurlitzer, and acoustic piano sounds " +
+        "with dedicated amp/effects modeling.",
+      inverseSynthEligible: false,
+    },
+    {
+      id: "juno-x-model",
+      displayName: "JUNO-X Model",
+      category: "subtractive",
+      description: "Extended JUNO-style modeling with additional waveforms and modulation " +
+        "beyond the original 106/60 circuits.",
+      inverseSynthEligible: true,
+    },
+  ],
+
   agentSystemPrompt: `KEYBOARD: Roland JUNO-X
 
 The JUNO-X is a 5-part multi-timbral synthesizer with four distinct sound engines, a classic JUNO panel interface, and a scene-based patch system.

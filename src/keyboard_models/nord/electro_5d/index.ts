@@ -78,6 +78,44 @@ const model: KeyboardModel = {
 
   backupCache: createBackupCache(),
 
+  synthEngines: [
+    {
+      id: "organ",
+      displayName: "Organ Engine",
+      category: "organ",
+      description: "Drawbar organ engine with B3, Vox, Farfisa, and Pipe models. " +
+        "Reproduces tone wheel organs (Hammond B3), transistor organs (Vox Continental, Farfisa), and pipe organs. " +
+        "Drawbar-based additive synthesis with vibrato/chorus and percussion.",
+      inverseSynthEligible: true,
+    },
+    {
+      id: "piano",
+      displayName: "Piano Engine",
+      category: "piano",
+      description: "Sample-based piano engine with grand piano, upright piano, harpsichord, and electric grand models. " +
+        "Acoustic instruments: felt hammers striking metal strings, amplified by resonance box and soundboard. " +
+        "Harpsichord: strings plucked (no velocity control).",
+      inverseSynthEligible: false,
+    },
+    {
+      id: "electric-piano",
+      displayName: "Electric Piano (within Piano Engine)",
+      category: "electric-piano",
+      description: "Rhodes (metal tines + tonebars, piezo pickups), Wurlitzer (metal reeds, piezo pickups), " +
+        "and Clavinet (strings + piezo pickups per group, 4 pickup variations A/B/C/D). " +
+        "Electro-mechanical instruments reproduced via sample playback with pickup/amp modeling.",
+      inverseSynthEligible: false,
+    },
+    {
+      id: "sample-synth",
+      displayName: "Sample Synth Engine",
+      category: "sample",
+      description: "General-purpose sample playback engine for string ensembles, pads, " +
+        "brass, and other sample-based sounds. User-loadable samples via Nord Sound Manager.",
+      inverseSynthEligible: false,
+    },
+  ],
+
   agentSystemPrompt: `KEYBOARD: Nord Electro 5D
 
 BI-TIMBRAL MODE:

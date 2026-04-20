@@ -62,6 +62,31 @@ export interface StateManager {
   format(section?: string): string;
 }
 
+// ── Synth engine metadata ──
+
+export type SynthEngineCategory =
+  | "subtractive"
+  | "fm"
+  | "wavetable"
+  | "organ"
+  | "piano"        // acoustic piano sample playback
+  | "electric-piano" // Rhodes, Wurlitzer, Clavinet sample playback
+  | "sample"       // generic sample playback
+  | "modeling";    // physical modeling / other
+
+export interface SynthEngine {
+  /** Short ID: "organ", "piano", "analog-synth", "zen-core" */
+  id: string;
+  /** Display name: "Organ Engine", "RD Piano" */
+  displayName: string;
+  /** Sound engine category — determines inverse synthesis eligibility */
+  category: SynthEngineCategory;
+  /** Human-readable description of what this engine does */
+  description: string;
+  /** Whether inverse synthesis models can target this engine */
+  inverseSynthEligible: boolean;
+}
+
 // ── Optional capabilities ──
 
 export interface BackupCapability {
@@ -204,4 +229,7 @@ export interface KeyboardModel {
 
   /** System prompt template — used by device's getSystemPrompt() */
   agentSystemPrompt?: string;
+
+  /** Synthesis engines available on this keyboard model */
+  synthEngines?: SynthEngine[];
 }
