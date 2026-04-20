@@ -101,8 +101,8 @@ const model: KeyboardModel = {
       id: "electric-piano",
       displayName: "Electric Piano (within Piano Engine)",
       category: "electric-piano",
-      description: "Rhodes (metal tines + tonebars, piezo pickups), Wurlitzer (metal reeds, piezo pickups), " +
-        "and Clavinet (strings + piezo pickups per group, 4 pickup variations A/B/C/D). " +
+      description: "Rhodes (metal tines + tonebars, electromagnetic pickups), Wurlitzer (metal reeds, electrostatic pickups), " +
+        "and Clavinet (strings + magnetic pickups per group, 4 pickup variations A/B/C/D). " +
         "Electro-mechanical instruments reproduced via sample playback with pickup/amp modeling.",
       inverseSynthEligible: false,
     },
