@@ -1,6 +1,6 @@
 # keyboards-mcp
 
-An MCP (Model Context Protocol) server for controlling MIDI keyboards. Supports pluggable keyboard models with auto-detection. Designed to be used with Claude Code or any MCP-compatible AI assistant.
+An MCP (Model Context Protocol) server for controlling MIDI keyboards. Supports pluggable keyboard models with auto-detection. Designed to be used with any MCP-compatible AI agent or assistant.
 
 Currently supported: **Nord Electro 5D**, **Roland JUNO-X**, **Prophet-6**
 
@@ -13,14 +13,12 @@ Currently supported: **Nord Electro 5D**, **Roland JUNO-X**, **Prophet-6**
 - **Browse inventory** — list programs and songs from extracted backups with name and bank filtering
 - **Extract backup files** into a structured inventory of all sounds, programs, and set lists
 - **Mock device** with a model-specific web UI for development and testing without hardware
-- **Agentic mode** — an AI agent that can research songs and configure the keyboard to match
-
 ## Architecture
 
 **Model-delegated design.** MCP tools are thin wrappers — keyboard models own all business logic.
 
 ```
-Claude Code  <──MCP──>  MCP Server  <──MIDI──>  Keyboard (or Mock)
+AI Agent  <──MCP──>  MCP Server  <──MIDI──>  Keyboard (or Mock)
                             │
                      tools/ (thin delegates)
                             │
@@ -43,7 +41,6 @@ A **KeyboardDevice** is a specific physical unit or mock instance. Each device h
 | `src/keyboard_models/` | Pluggable keyboard models (`<manufacturer>/<model>/`) |
 | `src/midi/` | MIDI I/O manager (implements MidiConnection) |
 | `src/mock-runner/` | Thin Electron mock engine — delegates all logic to model's MockHandler |
-| `src/agent.ts` | Agentic mode — AI-driven keyboard configuration |
 | `docs/plans/` | Implementation plans (numbered by execution order) |
 
 ### Adding a new keyboard model
@@ -72,9 +69,9 @@ npm install
 npm run build
 ```
 
-### Configure in Claude Code
+### Configure in your MCP client
 
-Add to your MCP settings (`.claude/settings.json` or project-level):
+Add to your MCP settings (e.g. `.claude/settings.json` for Claude Code):
 
 ```json
 {
@@ -91,7 +88,7 @@ Add to your MCP settings (`.claude/settings.json` or project-level):
 
 ### MCP tools
 
-Once connected via Claude Code, the following tools are available:
+Once connected, the following tools are available:
 
 | Tool | Description |
 |------|-------------|
@@ -119,16 +116,6 @@ npm run mock:runner   # Electron app — model picker, then model-specific UI
 ```
 
 On launch, the app shows a model picker. After selecting a keyboard model, the model's web UI loads with real-time parameter visualization — drawbars, knobs, LEDs, and all engine parameters update as MIDI messages arrive. The engine is a thin shell; all state and logic lives in the model's `MockHandler`.
-
-### Agent mode
-
-An AI agent that can research a song and configure the keyboard to match:
-
-```bash
-npm run agent
-```
-
-Requires `ANTHROPIC_API_KEY` environment variable.
 
 ## License
 
