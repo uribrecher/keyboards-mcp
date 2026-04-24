@@ -1,6 +1,6 @@
 # keyboards-mcp
 
-An MCP (Model Context Protocol) server for controlling MIDI keyboards. Supports pluggable keyboard models with auto-detection. Designed to be used with Claude Code or any MCP-compatible AI assistant.
+An MCP (Model Context Protocol) server for controlling MIDI keyboards. Supports pluggable keyboard models with auto-detection. Designed to be used with any MCP-compatible AI agent or assistant.
 
 Currently supported: **Nord Electro 5D**, **Roland JUNO-X**, **Prophet-6**
 
@@ -69,9 +69,9 @@ npm install
 npm run build
 ```
 
-### Configure in Claude Code
+### Configure in your MCP client
 
-Add to your MCP settings (`.claude/settings.json` or project-level):
+Add to your MCP settings (e.g. `.claude/settings.json` for Claude Code):
 
 ```json
 {
@@ -88,7 +88,7 @@ Add to your MCP settings (`.claude/settings.json` or project-level):
 
 ### MCP tools
 
-Once connected via Claude Code, the following tools are available:
+Once connected, the following tools are available:
 
 | Tool | Description |
 |------|-------------|
