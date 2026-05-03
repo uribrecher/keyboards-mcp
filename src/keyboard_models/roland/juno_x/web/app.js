@@ -102,9 +102,11 @@ function updateEngineSelect(partData) {
 // ── Slider / value display update ──
 
 function updateControlLabels(partData) {
-  // Drive ctrl-label text and button text from the active part's midi-map metadata.
-  // Re-run on every part/engine change since the same CC can mean different things
-  // across engines.
+  // Override hardcoded HTML labels with displayName from the midi-map. Only
+  // overrides when displayName is set — the curated HTML labels (e.g. "PW",
+  // "SAW") are kept as the fallback so we don't paste long param names like
+  // "OSC PW Level" into slim columns. Re-runs on every state update because
+  // the same CC can mean different things across engines.
   const params = partData.params;
   if (!params) return;
   for (const target of document.querySelectorAll("[data-cc]")) {
@@ -112,13 +114,12 @@ function updateControlLabels(partData) {
     if (isNaN(cc)) continue;
     const entry = params["cc" + cc];
     if (typeof entry !== "object" || entry === null) continue;
-    const text = entry.displayName ?? entry.name;
-    if (!text) continue;
+    if (!entry.displayName) continue;
     if (target.tagName === "BUTTON") {
-      target.textContent = text;
+      target.textContent = entry.displayName;
     } else if (target.id) {
       const label = document.querySelector(`label[for="${target.id}"]`);
-      if (label) label.textContent = text;
+      if (label) label.textContent = entry.displayName;
     }
   }
 }

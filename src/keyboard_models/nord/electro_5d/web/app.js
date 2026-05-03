@@ -155,18 +155,18 @@ function initSelectorsFromState(paramLookup) {
 }
 
 function initControlLabelsFromState(paramLookup) {
-  // For each [data-param] element, find the sibling .knob-label and replace
-  // its text with displayName ?? name from the midi-map (via state).
+  // Override hardcoded HTML knob/control labels with displayName from the
+  // midi-map. Only overrides when displayName is set — the curated HTML
+  // labels are kept as the fallback so long param names don't blow out
+  // narrow slots.
   for (const target of document.querySelectorAll("[data-param]")) {
     const key = target.dataset.param;
     const entry = paramLookup[key];
-    if (!entry) continue;
-    const text = entry.displayName ?? entry.name;
-    if (!text) continue;
+    if (!entry?.displayName) continue;
     const parent = target.parentElement;
     if (!parent) continue;
     const label = parent.querySelector(":scope > .knob-label");
-    if (label) label.textContent = text;
+    if (label) label.textContent = entry.displayName;
   }
 }
 
