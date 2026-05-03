@@ -3,16 +3,96 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mock Runner — Select Keyboard</title>
+  <title>MOCK RUNNER</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Fraunces:opsz,wght,SOFT@9..144,400;9..144,500;9..144,700;9..144,900&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <h1>Keyboard Mock Runner</h1>
-    <p class="subtitle">Select a keyboard model to start</p>
-    <div id="model-list"></div>
-    <div id="loading" class="hidden">Loading model…</div>
+  <!-- ┌─ Top chassis: brand strip + tab rail ─────────────────────────────┐ -->
+  <header class="chassis">
+    <div class="chassis__rule chassis__rule--top"></div>
+
+    <div class="brand">
+      <span class="brand__lamp" aria-hidden="true"></span>
+      <span class="brand__name">MOCK&nbsp;RUNNER</span>
+      <span class="brand__sep">·</span>
+      <span class="brand__sub">MULTI-DEVICE TEST RACK</span>
+      <span class="brand__screws" aria-hidden="true">
+        <span class="screw"></span><span class="screw"></span>
+      </span>
+    </div>
+
+    <nav class="tabbar" id="tabbar" role="tablist" aria-label="Open mocks">
+      <!-- tabs injected here -->
+      <button class="tabbar__plus" id="tab-new" aria-label="New tab">+</button>
+    </nav>
+
+    <div class="chassis__rule chassis__rule--bottom"></div>
+  </header>
+
+  <!-- ┌─ Main split: iframe stack + chat console ─────────────────────────┐ -->
+  <main class="bay">
+    <section class="slot" id="slot">
+      <!-- iframes get injected here, one per tab -->
+      <div class="slot__empty" id="slot-empty">
+        <div class="slot__empty-rail"></div>
+        <div class="slot__empty-msg">— EMPTY RACK SLOT —</div>
+        <div class="slot__empty-rail"></div>
+      </div>
+    </section>
+
+    <aside class="console" id="console">
+      <div class="console__header">
+        <span class="console__lamp"></span>
+        <span class="console__title">CLAUDE&nbsp;<i>line</i></span>
+        <span class="console__meter" id="agent-status" data-state="off">
+          <span></span><span></span><span></span><span></span><span></span>
+        </span>
+        <button class="console__btn" id="chat-extract" title="Extract backup (⌘E)">backup</button>
+        <button class="console__btn" id="chat-reset" title="Reset conversation">reset</button>
+      </div>
+
+      <div class="console__log" id="chat-log" role="log" aria-live="polite">
+        <div class="chat-row chat-row--system">
+          <span class="chat-stamp">— —:—:—</span>
+          <p class="chat-line">Bring up a model on the rack. Then ask Claude to drive it.</p>
+        </div>
+      </div>
+
+      <form class="composer" id="chat-form" autocomplete="off">
+        <div class="composer__prompt">›</div>
+        <textarea
+          class="composer__input"
+          id="chat-input"
+          rows="1"
+          placeholder="Ask Claude to load a patch, sweep a filter, recreate a sound…"
+        ></textarea>
+        <button type="submit" class="composer__send" id="chat-send" aria-label="Send">
+          <span class="composer__send-glyph">↵</span>
+          <span class="composer__send-label">SEND</span>
+        </button>
+      </form>
+    </aside>
+  </main>
+
+  <!-- ┌─ Backup picker modal ─────────────────────────────────────────────┐ -->
+  <div class="modal" id="backup-modal" hidden>
+    <div class="modal__sheet" role="dialog" aria-modal="true" aria-labelledby="backup-modal-title">
+      <header class="modal__header">
+        <h2 id="backup-modal-title">EXTRACT BACKUP</h2>
+        <button class="modal__close" id="backup-cancel" aria-label="Cancel">✕</button>
+      </header>
+      <p class="modal__hint">Pick the device this backup belongs to. Its inventory will be stored under that label.</p>
+      <ul class="modal__devices" id="backup-device-list"></ul>
+      <footer class="modal__footer">
+        <button class="ghost" id="backup-cancel-2">Cancel</button>
+        <button class="primary" id="backup-confirm">Choose file…</button>
+      </footer>
+    </div>
   </div>
+
   <script src="app.js"></script>
 </body>
 </html>
