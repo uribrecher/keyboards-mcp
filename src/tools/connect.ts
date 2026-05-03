@@ -5,6 +5,7 @@ import type { DevicePool } from "../shared/device-pool.js";
 import { autoDetectModel, loadModelById } from "../shared/model-registry.js";
 import { WsMidiConnection } from "../midi/ws-midi-connection.js";
 import type { KeyboardModel, KeyboardDevice } from "../shared/keyboard-model.js";
+import { findByMidiPort } from "../shared/mock-registry.js";
 
 /** Same sanitizer as the model-level backup-cache. */
 function sanitizeLabelForCache(label: string | undefined | null): string {
@@ -160,10 +161,24 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           };
         }
 
+        // Resolve the primary port name we'll bind to so we can look it up
+        // in the runtime mock registry (label discovery, plan #7).
+        const candidatePortName: string | undefined = port !== undefined
+          ? (typeof port === "number" ? outputPorts[port]?.name : port)
+          : outputPorts.find((p) =>
+              model!.info.midiPortPatterns.some((pat) =>
+                p.name.toLowerCase().includes(pat.toLowerCase())))?.name;
+        const registryEntry = candidatePortName ? findByMidiPort(candidatePortName) : undefined;
+
+        // Effective label: explicit `label` arg > running mock's advertised label > undefined.
+        const effectiveLabel = label ?? registryEntry?.label;
+        // Effective mock WS port: explicit > registry > env/default (handled inside MidiManager).
+        const effectiveMockWsPort = mock_ws_port ?? registryEntry?.wsPort;
+
         // Per-device MidiManager owns this device's output, input, forward, and mock WS
         const midi = new MidiManager();
-        if (mock_ws_port !== undefined) midi.setMockWsPort(mock_ws_port);
-        const device = createDeviceForModel(model, label);
+        if (effectiveMockWsPort !== undefined) midi.setMockWsPort(effectiveMockWsPort);
+        const device = createDeviceForModel(model, effectiveLabel);
 
         // Set MIDI channels
         if (channel !== undefined) {
@@ -248,6 +263,16 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           },
         );
 
+        // Live-track label changes from the mock (plan #7). When the user
+        // renames a tab in the mock-runner, the engine relabels and starts
+        // broadcasting the new label; the MidiManager picks it up and we
+        // update the pool entry's device.label so subsequent
+        // `is_connected` and `extract_backup` calls see the new label.
+        midi.setOnMockLabel((newLabel) => {
+          const entry = pool.get(index);
+          if (entry) entry.device.label = newLabel;
+        });
+
         // If the mock disappears, drop only this device — leave others alone
         midi.setOnMockDisconnect(() => {
           const entry = pool.get(index);
@@ -256,13 +281,21 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           }
         });
 
+        const adoptedLabel = effectiveLabel ?? device.label;
+        const labelTag = adoptedLabel ? ` "${adoptedLabel}"` : "";
+        const labelSrc = label
+          ? "user-provided"
+          : registryEntry
+            ? "auto-adopted from running mock"
+            : "_default";
+
         return {
           content: [
             {
               type: "text",
               text: `Detected model: ${model.info.displayName}\n` +
                 `Connected to: ${result.portName} (global ch ${midi.getChannel() + 1}, lower ch ${midi.getLowerChannel() + 1}, upper ch ${midi.getUpperChannel() + 1}${inputResult}${forwardResult})\n` +
-                `Assigned device ${index}${label ? ` "${label}"` : ""}.`,
+                `Assigned device ${index}${labelTag}. Label: ${labelSrc}.`,
             },
           ],
         };

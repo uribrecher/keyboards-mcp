@@ -8,16 +8,25 @@
 import { createServer, type Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { MockHandler, MidiMessage } from "../shared/keyboard-model.js";
+import * as registry from "../shared/mock-registry.js";
+
+const HEARTBEAT_MS = 30_000;
 
 export interface EngineOptions {
   lowerChannel: number;
   upperChannel: number;
   wsPort: number;
   portName: string;
+  /** Model id for the runtime registry (e.g. "nord-electro-5d"). */
+  modelId?: string;
+  /** Display name for the runtime registry. */
+  displayName?: string;
   /** Per-instance backup label this mock should load. Defaults to `_default`. */
   label?: string;
   /** Skip creating a virtual MIDI port — WS-only mode for CI/Docker */
   noMidi?: boolean;
+  /** Skip writing to the runtime registry — used by tests. */
+  noRegistry?: boolean;
 }
 
 export class MockEngine {
@@ -29,6 +38,7 @@ export class MockEngine {
   private wss: WebSocketServer | null = null;
   private clients = new Set<WebSocket>();
   private mcpClients = new Set<WebSocket>();
+  private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(handler: MockHandler, opts: EngineOptions) {
     this.handler = handler;
@@ -64,10 +74,11 @@ export class MockEngine {
         });
       } else {
         this.clients.add(ws);
-        // Send full state to newly connected UI client
+        // Send full state to newly connected UI client (and MCP status WS).
         ws.send(JSON.stringify({
           ...this.handler.getFullState(true),
           mcpConnected: this.isMcpConnected(),
+          label: this.opts.label ?? "_default",
         }));
         ws.on("message", (raw) => {
           try {
@@ -117,9 +128,35 @@ export class MockEngine {
         }
         console.log(`  Lower channel: ${this.opts.lowerChannel}, Upper channel: ${this.opts.upperChannel}`);
         console.log(`  WebSocket: ws://localhost:${this.opts.wsPort}`);
+        this.publishToRegistry();
         resolve();
       });
     });
+  }
+
+  /**
+   * Publish (or refresh) this engine's entry in the runtime mock registry.
+   * Heartbeat timer keeps `lastTouched` fresh so consumers (`list_midi_devices`)
+   * can drop stale entries left by killed processes.
+   */
+  private publishToRegistry(): void {
+    if (this.opts.noRegistry || !this.opts.modelId) return;
+    const now = new Date().toISOString();
+    registry.register({
+      midiPort:    this.opts.portName,
+      wsPort:      this.opts.wsPort,
+      modelId:     this.opts.modelId,
+      displayName: this.opts.displayName ?? this.opts.modelId,
+      label:       this.opts.label ?? "_default",
+      pid:         process.pid,
+      startedAt:   now,
+      lastTouched: now,
+    });
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      registry.touch(this.opts.portName);
+    }, HEARTBEAT_MS);
+    if (this.heartbeatTimer.unref) this.heartbeatTimer.unref();
   }
 
   /**
@@ -139,10 +176,16 @@ export class MockEngine {
   relabel(label: string, lowerChannel: number, upperChannel: number): void {
     this.opts.label = label;
     this.handler.init(lowerChannel, upperChannel, label);
+    if (!this.opts.noRegistry) registry.relabel(this.opts.portName, label);
     this.broadcast(this.handler.getFullState(true));
   }
 
   async stop(): Promise<void> {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    if (!this.opts.noRegistry) registry.unregister(this.opts.portName);
     if (this.midiInput) {
       this.midiInput.close();
       this.midiInput = null;
@@ -170,7 +213,13 @@ export class MockEngine {
   }
 
   private broadcast(msg: Record<string, any>): void {
-    const json = JSON.stringify({ ...msg, mcpConnected: this.isMcpConnected() });
+    // Stamp every broadcast with mcpConnected (UI status indicator) and
+    // the engine's current label (consumed by MCP-side label discovery).
+    const json = JSON.stringify({
+      ...msg,
+      mcpConnected: this.isMcpConnected(),
+      label: this.opts.label ?? "_default",
+    });
     for (const ws of this.clients) {
       if (ws.readyState === ws.OPEN) ws.send(json);
     }

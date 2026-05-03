@@ -38,6 +38,8 @@ const engine = new MockEngine(handler, {
   upperChannel: parseInt(values["upper-channel"]!),
   wsPort: parseInt(values["ws-port"]!),
   portName: `${model.info.displayName} Mock`,
+  modelId: model.info.id,
+  displayName: model.info.displayName,
   label: values.label,
   noMidi: values["no-midi"],
 });

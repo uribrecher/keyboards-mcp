@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { MockProcess } from "../helpers/mock-process.js";
+import { readActive } from "../../src/shared/mock-registry.js";
 
 const externalWsUrl = process.env.MOCK_WS_URL;
 let nextPort = 4000;
@@ -86,6 +90,35 @@ describe("headless mock runner", { concurrency: 1 }, () => {
         await Promise.all(mocks.map(async (m) => {
           try { await m.stop(); } catch { /* ignore */ }
         }));
+      }
+    });
+
+    it("each running mock publishes itself in the runtime registry", async () => {
+      const tmpData = mkdtempSync(join(tmpdir(), "mock-registry-int-"));
+      const prevEnv = process.env.KEYBOARDS_MCP_DATA_DIR;
+      process.env.KEYBOARDS_MCP_DATA_DIR = tmpData;
+      let mock: MockProcess | null = null;
+      try {
+        mock = await MockProcess.start({ model: "nord-electro-5d", wsPort: nextPort++ });
+        await mock.waitForState();
+        // Brief settle to let the engine flush its registry write
+        await new Promise((r) => setTimeout(r, 100));
+
+        const entries = readActive();
+        const ours = entries.find((e) => e.modelId === "nord-electro-5d");
+        assert.ok(ours, `expected a registry entry for nord-electro-5d, got: ${JSON.stringify(entries)}`);
+        assert.equal(ours.midiPort, "Nord Electro 5D Mock");
+        assert.equal(typeof ours.wsPort, "number");
+      } finally {
+        if (mock) await mock.stop();
+        // The engine.stop() unregisters; verify
+        await new Promise((r) => setTimeout(r, 100));
+        const after = readActive();
+        const stillThere = after.find((e) => e.modelId === "nord-electro-5d");
+        assert.equal(stillThere, undefined, "expected the entry to be removed on stop");
+        if (prevEnv === undefined) delete process.env.KEYBOARDS_MCP_DATA_DIR;
+        else process.env.KEYBOARDS_MCP_DATA_DIR = prevEnv;
+        rmSync(tmpData, { recursive: true, force: true });
       }
     });
 

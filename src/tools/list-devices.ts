@@ -1,19 +1,25 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { listOutputPorts, listInputPorts } from "../midi/midi-manager.js";
 import type { DevicePool } from "../shared/device-pool.js";
+import { readActive, type MockRegistryEntry } from "../shared/mock-registry.js";
 
 export function registerListDevices(server: McpServer, pool: DevicePool): void {
   server.registerTool(
     "list_midi_devices",
     {
-      description: "List all available MIDI output and input ports. Use this to find your keyboard before connecting. " +
-        "Ports already bound to a connected device show that device's pool index and label.",
+      description: "List all available MIDI output and input ports. " +
+        "Each output port that belongs to a running mock-runner mock is annotated with " +
+        "the mock's label and WebSocket port. Pool-bound ports also carry the pool device index.",
     },
     async () => {
       const outputs = listOutputPorts();
       const inputs = listInputPorts();
 
-      // Build reverse lookup: port name -> "(device N: model [label])"
+      // Index the runtime mock registry by midiPort
+      const registry = new Map<string, MockRegistryEntry>();
+      for (const entry of readActive()) registry.set(entry.midiPort, entry);
+
+      // Pool markers (per output / forward / input)
       const outputMarkers = new Map<string, string[]>();
       const inputMarkers = new Map<string, string[]>();
       for (const entry of pool.list()) {
@@ -39,9 +45,11 @@ export function registerListDevices(server: McpServer, pool: DevicePool): void {
       }
 
       const formatLine = (port: { index: number; name: string }, markers: Map<string, string[]>) => {
+        const reg = registry.get(port.name);
         const tags = markers.get(port.name);
-        const suffix = tags && tags.length > 0 ? `  ← ${tags.join(", ")}` : "";
-        return `  ${port.index}: ${port.name}${suffix}`;
+        const labelTag = reg ? `[${reg.label}] ws:${reg.wsPort} ` : "";
+        const poolTag = tags && tags.length > 0 ? ` ← ${tags.join(", ")}` : "";
+        return `  ${port.index}: ${port.name}  ${labelTag}${poolTag}`.trimEnd();
       };
 
       let text = "## MIDI Output Ports\n";
