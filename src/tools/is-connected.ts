@@ -1,44 +1,16 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { MidiManager } from "../midi/midi-manager.js";
-import type { ModelHolder } from "../shared/model-holder.js";
+import type { DevicePool } from "../shared/device-pool.js";
 
-export function registerIsConnected(server: McpServer, midi: MidiManager, holder: ModelHolder): void {
+export function registerIsConnected(server: McpServer, pool: DevicePool): void {
   server.registerTool(
     "is_connected",
     {
-      description: "Check whether the MCP server currently has an active MIDI connection to a keyboard (or mock device). " +
-        "Call this before using tools that require a connection (set_parameters, load_program).",
+      description: "List all connected MIDI keyboards with their indices, model names, and labels. " +
+        "Use the returned indices in other tools' optional `device` parameter.",
     },
     async () => {
-      const connected = midi.isConnected();
-      const port = midi.getConnectedPort();
-      const inputPort = midi.getConnectedInputPort();
-      const forwardPort = midi.getConnectedForwardPort();
-      const modelName = holder.model?.info.displayName;
-
-      if (!connected) {
-        if (port && midi.hasMockPort()) {
-          if (forwardPort && !midi.isMockWsOpen()) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `Partially connected: MIDI output to ${port} and forward to ${forwardPort}, but the WebSocket to the mock device is down (mock may have restarted). Call connect_to_keyboard to re-establish a full connection.`,
-                },
-              ],
-            };
-          }
-          if (!forwardPort) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `Partially connected: output to ${port}, but mock device is available and not forwarding. Call connect_to_keyboard to establish a full connection.`,
-                },
-              ],
-            };
-          }
-        }
+      const entries = pool.list();
+      if (entries.length === 0) {
         return {
           content: [
             { type: "text", text: "Not connected. Call connect_to_keyboard to establish a MIDI connection." },
@@ -46,13 +18,17 @@ export function registerIsConnected(server: McpServer, midi: MidiManager, holder
         };
       }
 
-      const parts = [`Connected to: ${port}`];
-      if (modelName) parts.push(`Model: ${modelName}`);
-      if (inputPort) parts.push(`Input port: ${inputPort}`);
-      if (forwardPort) parts.push(`Forward port: ${forwardPort}`);
+      const lines = entries.map((entry) => {
+        const labelStr = entry.device.label ? ` "${entry.device.label}"` : "";
+        return `  device ${entry.index}: ${entry.device.model.info.displayName}${labelStr}`;
+      });
+
+      const summary = entries.length === 1
+        ? "1 device connected"
+        : `${entries.length} devices connected`;
 
       return {
-        content: [{ type: "text", text: parts.join("\n") }],
+        content: [{ type: "text", text: `${summary}:\n${lines.join("\n")}` }],
       };
     },
   );
