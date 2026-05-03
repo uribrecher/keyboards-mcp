@@ -1,9 +1,19 @@
 import { z } from "zod";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { DevicePool } from "../shared/device-pool.js";
 import { findLastBackupPath } from "../shared/model-registry.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 const DEFAULT_LABEL = "_default";
+
+function getDataDir(): string {
+  return process.env.KEYBOARDS_MCP_DATA_DIR
+    ?? join(__dirname, "..", "..", "data");
+}
 
 function sanitizeLabel(label: string | undefined | null): string {
   if (!label) return DEFAULT_LABEL;
@@ -14,6 +24,22 @@ function sanitizeLabel(label: string | undefined | null): string {
     return DEFAULT_LABEL;
   }
   return slug;
+}
+
+/**
+ * Read `data/backups/<label>/last_backup_path.txt` directly off disk.
+ * Used as a fallback when no device of the matching model is connected
+ * (the connected-device path goes through model.backupCache).
+ */
+function diskLookup(label: string): string | null {
+  try {
+    const file = join(getDataDir(), "backups", label, "last_backup_path.txt");
+    if (existsSync(file)) {
+      const path = readFileSync(file, "utf-8").trim();
+      if (path.length > 0) return path;
+    }
+  } catch { /* non-fatal */ }
+  return null;
 }
 
 export function registerGetLastBackupLocation(server: McpServer, pool: DevicePool): void {
@@ -29,7 +55,7 @@ export function registerGetLastBackupLocation(server: McpServer, pool: DevicePoo
           .int()
           .min(1)
           .optional()
-          .describe("Optional 1-based device index. Uses that device's label."),
+          .describe("Optional 1-based device index. Uses that device's model + label."),
         label: z
           .string()
           .optional()
@@ -37,11 +63,10 @@ export function registerGetLastBackupLocation(server: McpServer, pool: DevicePoo
       },
     },
     async ({ device, label }) => {
-      // Resolve the target label
+      // Resolve target label and (when device is given) the model to scope to
       let targetLabel: string | undefined;
-      if (label !== undefined) {
-        targetLabel = sanitizeLabel(label);
-      } else if (device !== undefined) {
+      let scopedModelId: string | undefined;
+      if (device !== undefined) {
         const entry = pool.get(device);
         if (!entry) {
           return {
@@ -49,29 +74,40 @@ export function registerGetLastBackupLocation(server: McpServer, pool: DevicePoo
             isError: true,
           };
         }
-        targetLabel = sanitizeLabel(entry.device.label);
+        scopedModelId = entry.device.model.info.id;
+        targetLabel = label !== undefined ? sanitizeLabel(label) : sanitizeLabel(entry.device.label);
+      } else if (label !== undefined) {
+        targetLabel = sanitizeLabel(label);
       }
 
       // Explicit label/device wins
       if (targetLabel !== undefined) {
-        // Look up the path on any model whose backupCache supports it.
-        const seenModels = new Set<string>();
-        for (const entry of pool.list()) {
-          const id = entry.device.model.info.id;
-          if (seenModels.has(id)) continue;
-          seenModels.add(id);
-          const path = entry.device.model.backupCache?.getLastBackupPath(targetLabel);
-          if (path) return { content: [{ type: "text", text: path }] };
+        // 1. Prefer the scoped device's model (when device was given) so a
+        //    same-named label on a different model doesn't masquerade.
+        if (scopedModelId !== undefined) {
+          const scopedEntry = pool.list().find((e) => e.device.model.info.id === scopedModelId);
+          const scopedPath = scopedEntry?.device.model.backupCache?.getLastBackupPath(targetLabel);
+          if (scopedPath) return { content: [{ type: "text", text: scopedPath }] };
+        } else {
+          // 2. Otherwise check every connected unique model
+          const seenModels = new Set<string>();
+          for (const entry of pool.list()) {
+            const id = entry.device.model.info.id;
+            if (seenModels.has(id)) continue;
+            seenModels.add(id);
+            const path = entry.device.model.backupCache?.getLastBackupPath(targetLabel);
+            if (path) return { content: [{ type: "text", text: path }] };
+          }
         }
-        // Fall back to disk scan
-        const path = await findLastBackupPath();
-        if (path) return { content: [{ type: "text", text: path }] };
+        // 3. Disk fallback so an unconnected label still resolves
+        const onDisk = diskLookup(targetLabel);
+        if (onDisk) return { content: [{ type: "text", text: onDisk }] };
         return {
           content: [{ type: "text", text: `No previous backup path stored under label "${targetLabel}".` }],
         };
       }
 
-      // No `label`, no `device`. Use single-device or list available.
+      // No `label`, no `device`. Single-device or list available.
       const entries = pool.list();
       if (entries.length === 1) {
         const entryLabel = sanitizeLabel(entries[0].device.label);
@@ -102,9 +138,23 @@ export function registerGetLastBackupLocation(server: McpServer, pool: DevicePoo
         }
       }
 
-      // Fall back: scan all models for a stored backup path
-      const path = await findLastBackupPath();
-      if (path) return { content: [{ type: "text", text: path }] };
+      // No connected device path was useful — try the registry-based scan,
+      // then enumerate any labels persisted on disk.
+      const registryPath = await findLastBackupPath();
+      if (registryPath) return { content: [{ type: "text", text: registryPath }] };
+
+      const allLabels = scanDiskLabels();
+      if (allLabels.length > 0) {
+        const lines = allLabels.map((l) => `  label "${l}": ${diskLookup(l)}`).filter((s) => !s.endsWith(": null"));
+        if (lines.length > 0) {
+          return {
+            content: [{
+              type: "text",
+              text: `No connected device, but cached paths exist on disk:\n${lines.join("\n")}`,
+            }],
+          };
+        }
+      }
 
       return {
         content: [
@@ -113,4 +163,17 @@ export function registerGetLastBackupLocation(server: McpServer, pool: DevicePoo
       };
     },
   );
+}
+
+function scanDiskLabels(): string[] {
+  try {
+    const root = join(getDataDir(), "backups");
+    if (!existsSync(root)) return [];
+    return readdirSync(root)
+      .filter((entry) => {
+        try { return statSync(join(root, entry)).isDirectory(); } catch { return false; }
+      });
+  } catch {
+    return [];
+  }
 }

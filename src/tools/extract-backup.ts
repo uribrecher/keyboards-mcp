@@ -10,8 +10,14 @@ import { detectModelFromBackup } from "../shared/model-registry.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-/** data/ folder in the repo root (from src/tools/ or dist/tools/, two levels up). */
-export const dataDir = join(__dirname, "..", "..", "data");
+/**
+ * data/ root. Resolved at every call so tests can redirect via
+ * KEYBOARDS_MCP_DATA_DIR (matching the cache layer).
+ */
+function getDataDir(): string {
+  return process.env.KEYBOARDS_MCP_DATA_DIR
+    ?? join(__dirname, "..", "..", "data");
+}
 
 const DEFAULT_LABEL = "_default";
 
@@ -29,7 +35,7 @@ function sanitizeLabel(label: string | undefined | null): string {
 
 function defaultOutputPath(model: KeyboardModel, label: string): string {
   const slug = model.info.id.replace(/[^a-z0-9]+/gi, "_");
-  return join(dataDir, "backups", label, `${slug}_backup_inventory.md`);
+  return join(getDataDir(), "backups", label, `${slug}_backup_inventory.md`);
 }
 
 export function registerExtractBackup(server: McpServer, pool: DevicePool): void {
