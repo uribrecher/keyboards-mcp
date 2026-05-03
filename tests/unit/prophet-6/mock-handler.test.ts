@@ -88,6 +88,41 @@ describe("Prophet-6 mock handler", () => {
     });
   });
 
+  // ── Dynamic UI labels ──
+
+  describe("dynamic UI labels in state", () => {
+    it("discrete param entry includes labels object from MIDI map", () => {
+      // arp_mode CC 59 is discrete with labels { 0: "Up", 1: "Down", ... }
+      handler.onMIDI({ type: "cc", controller: 59, value: 0, channel: 0 });
+      const state = handler.getFullState(false);
+      const entry = state.global.arp_mode;
+      assert.ok(entry.labels, "expected labels on discrete entry");
+      assert.strictEqual(entry.labels[0], "Up");
+      assert.strictEqual(entry.labels[2], "Up/Down");
+    });
+
+    it("continuous param entry has no labels field", () => {
+      // osc1_freq CC 67 is continuous
+      handler.onMIDI({ type: "cc", controller: 67, value: 100, channel: 0 });
+      const state = handler.getFullState(false);
+      assert.strictEqual(state.global.osc1_freq.labels, undefined);
+    });
+
+    it("toggle param entry has no labels field", () => {
+      // arp_on_off CC 58 is type 'toggle' with labels in MIDI map; should NOT surface in state
+      handler.onMIDI({ type: "cc", controller: 58, value: 127, channel: 0 });
+      const state = handler.getFullState(false);
+      assert.strictEqual(state.global.arp_on_off.labels, undefined);
+    });
+
+    it("labels survive across getFullState calls", () => {
+      const a = handler.getFullState(false);
+      const b = handler.getFullState(false);
+      assert.ok(a.global.arp_mode.labels);
+      assert.ok(b.global.arp_mode.labels);
+    });
+  });
+
   // ── Bank select ignored ──
 
   describe("bank select", () => {

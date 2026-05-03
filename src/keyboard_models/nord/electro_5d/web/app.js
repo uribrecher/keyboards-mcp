@@ -1,25 +1,5 @@
 // Nord Electro 5D — Web UI Client (bi-timbral)
 
-// Parameter metadata (labels for selectors)
-const PARAM_LABELS = {
-  organ_model: { 0: "B3", 1: "B3+BASS", 2: "PIPE", 3: "VOX", 4: "FARFISA" },
-  vibrato_type: { 0: "V1", 1: "C1", 2: "V2", 3: "C2", 4: "V3", 5: "C3" },
-  percussion_harmonic: { 0: "2nd", 1: "3rd" },
-  percussion_speed_level: { 0: "S/N", 1: "F/N", 2: "S/S", 3: "F/S" },
-  piano_type: { 0: "GRAND", 1: "UPRGHT", 2: "EP1", 3: "EP2", 4: "CLAV", 5: "HPSCD" },
-  sample_synth_dynamics: { 0: "OFF", 1: "LOW", 2: "MID", 3: "HIGH" },
-  organ_preset_select: { 0: "Pst 1", 1: "Pst 2" },
-  piano_kbd_touch: { 0: "0", 1: "1", 2: "2", 3: "3" },
-  effect1_type: { 0: "TREM1", 1: "TREM2", 2: "TREM3", 3: "PAN1", 4: "PAN2", 5: "PAN3", 6: "WAH", 7: "RING" },
-  effect2_type: { 0: "PHAS1", 1: "PHAS2", 2: "FLANG", 3: "CHOR1", 4: "CHOR2", 5: "VIBE" },
-  spkr_comp_type: { 0: "DIST", 1: "SMALL", 2: "JC", 3: "TWIN", 4: "ROTAR", 5: "COMP" },
-  reverb_type: { 0: "ROOM", 1: "STG SOFT", 2: "STAGE", 3: "HALL SOFT", 4: "HALL" },
-  delay_feedback: { 0: "0", 1: "1", 2: "2", 3: "3" },
-  part_lower_engine_select: { 0: "Organ", 1: "Piano", 2: "Samp" },
-  part_upper_engine_select: { 0: "Organ", 1: "Piano", 2: "Samp" },
-  kb_split_point: { 0: "C3", 1: "F3", 2: "C4", 3: "F4", 4: "C5", 5: "F5" },
-};
-
 // Engine value to section name mapping
 const ENGINE_MAP = { 0: "organ", 1: "piano", 2: "sample_synth" };
 
@@ -135,29 +115,41 @@ function connect() {
       }
     }
     updateInventoryData(data);
+    initSelectorsFromState(data);
     updateProgram(data.program);
     updateSetList(data.setList);
     updateUI(data);
   };
 }
 
-// ── Initialize selectors (build button groups from metadata) ──
+// ── Initialize selectors (build button groups from incoming state labels) ──
 
-function initSelectors() {
-  for (const [param, labels] of Object.entries(PARAM_LABELS)) {
-    // Build for unprefixed (global) selector
-    const el = document.getElementById(`sel-${param}`);
-    if (el) {
+let selectorsBuilt = false;
+
+function initSelectorsFromState(data) {
+  if (selectorsBuilt) return;
+  // Walk all parts of the state that may carry per-param entries with labels.
+  const sources = [data.global, data.upper, data.lower];
+  const seen = new Set();
+  for (const source of sources) {
+    if (!source) continue;
+    for (const [param, entry] of Object.entries(source)) {
+      if (seen.has(param)) continue;
+      if (entry?.type !== "discrete" || !entry.labels) continue;
+      const el = document.getElementById(`sel-${param}`);
+      if (!el) continue;
       el.innerHTML = "";
-      for (const [val, label] of Object.entries(labels)) {
+      for (const [val, label] of Object.entries(entry.labels)) {
         const btn = document.createElement("div");
         btn.className = "sel-btn";
         btn.dataset.value = val;
         btn.textContent = label;
         el.appendChild(btn);
       }
+      seen.add(param);
     }
   }
+  selectorsBuilt = true;
 }
 
 // ── Update UI from state message ──
@@ -898,6 +890,5 @@ reExtractBtn.addEventListener("click", () => {
 });
 
 // ── Init ──
-initSelectors();
 loadChatHistory();
 connect();

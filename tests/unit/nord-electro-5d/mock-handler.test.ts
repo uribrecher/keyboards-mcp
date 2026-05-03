@@ -145,6 +145,39 @@ describe("Nord Electro 5D mock handler", () => {
     });
   });
 
+  // ── Dynamic UI labels ──
+
+  describe("dynamic UI labels in state", () => {
+    it("discrete param entry includes labels object from MIDI map", () => {
+      // organ_model is discrete (perPart) with labels { 0: "B3", 1: "B3+Bass", ... }
+      handler.onMIDI({ type: "cc", controller: CC_ORGAN_MODEL, value: 0, channel: UPPER_CH });
+      const state = handler.getFullState(false);
+      const entry = state.upper.organ_model;
+      assert.ok(entry.labels, "expected labels on discrete entry");
+      assert.strictEqual(entry.labels[0], "B3");
+    });
+
+    it("continuous param entry has no labels field", () => {
+      handler.onMIDI({ type: "cc", controller: CC_DRAWBAR_1, value: 64, channel: LOWER_CH });
+      const state = handler.getFullState(false);
+      assert.strictEqual(state.upper.drawbar_1.labels, undefined);
+    });
+
+    it("toggle param entry has no labels field", () => {
+      // vibrato_enable is type 'toggle' with labels in MIDI map; should NOT surface in state
+      handler.onMIDI({ type: "cc", controller: CC_VIBRATO_ENABLE, value: 127, channel: LOWER_CH });
+      const state = handler.getFullState(false);
+      assert.strictEqual(state.upper.vibrato_enable.labels, undefined);
+    });
+
+    it("labels survive across getFullState calls", () => {
+      const a = handler.getFullState(false);
+      const b = handler.getFullState(false);
+      assert.ok(a.upper.organ_model.labels);
+      assert.ok(b.upper.organ_model.labels);
+    });
+  });
+
   // ── No-crash messages ──
 
   describe("no-crash messages", () => {

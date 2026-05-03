@@ -55,6 +55,8 @@ export function createProphet6MockHandler(): MockHandler {
     if ((param.type === "discrete" || param.type === "toggle") && param.labels) {
       const range = param.max - param.min;
       entry.index = range === 0 ? 0 : Math.round((midiValue / 127) * range);
+    }
+    if (param.type === "discrete" && param.labels) {
       entry.labels = param.labels;
     }
     return entry;
