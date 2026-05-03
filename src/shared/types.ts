@@ -22,6 +22,8 @@ export type ParamEncoding =
 
 export interface KeyboardParameter {
   name: string;
+  /** Optional abbreviated label for compact UI surfaces (e.g. "RATE" vs name "Effect 1 Rate"). */
+  displayName?: string;
   section: string;
   cc?: number;
   sysexAddress?: number[];

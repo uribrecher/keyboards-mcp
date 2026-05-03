@@ -29,6 +29,7 @@ interface ParamState {
   value: number;
   label: string;
   name: string;
+  displayName?: string;
   section: string;
   type: string;
   position?: number;
@@ -155,11 +156,14 @@ export function createNordElectro5DMockHandler(): MockHandler {
       section: param.section,
       type: param.type,
     };
+    if (param.displayName) entry.displayName = param.displayName;
     if (param.encoding.kind === "drawbar") {
       entry.position = midiToDrawbar(midiValue, param.encoding.positions);
     }
     if ((param.type === "discrete" || param.type === "toggle") && param.labels) {
       entry.index = midiToDiscrete(midiValue, param.max);
+    }
+    if (param.type === "discrete" && param.labels) {
       entry.labels = param.labels;
     }
     return entry;

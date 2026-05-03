@@ -55,13 +55,14 @@ describe("JUNO-X mock handler", () => {
     it("CC on lower channel routes to part1", () => {
       handler.onMIDI({ type: "cc", controller: 16, value: 100, channel: LOWER_CH });
       const state = handler.getFullState(false);
-      assert.strictEqual(state.part1.params.cc16, 100);
+      // Param entries are objects with metadata; CC 16 (PW) is in AnalogSynth.
+      assert.strictEqual(state.part1.params.cc16.value, 100);
     });
 
     it("CC on upper channel routes to part2", () => {
       handler.onMIDI({ type: "cc", controller: 17, value: 80, channel: UPPER_CH });
       const state = handler.getFullState(false);
-      assert.strictEqual(state.part2.params.cc17, 80);
+      assert.strictEqual(state.part2.params.cc17.value, 80);
     });
 
     it("CC on unmapped channel does not crash", () => {
@@ -85,6 +86,33 @@ describe("JUNO-X mock handler", () => {
       const result = handler.onMIDI({ type: "cc", controller: 16, value: 64, channel: LOWER_CH });
       assert.ok(result.state, "expected state");
       assert.ok(result.log, "expected log");
+    });
+  });
+
+  // ── Per-CC entry metadata ──
+
+  describe("per-CC entry metadata", () => {
+    it("CC entry includes name and section from midi-map", () => {
+      const state = handler.getFullState(false);
+      // CC 29 = LFO Rate in AnalogSynth (seeded with default in initParts)
+      const entry = state.part1.params.cc29;
+      assert.ok(entry, "expected cc29 entry to exist (seeded from defaults)");
+      assert.strictEqual(entry.name, "LFO Rate");
+      assert.strictEqual(entry.section, "lfo");
+    });
+
+    it("CC entry includes displayName when set in midi-map", () => {
+      const state = handler.getFullState(false);
+      // as_lfo_rate has displayName "RATE"
+      assert.strictEqual(state.part1.params.cc29.displayName, "RATE");
+    });
+
+    it("CC entry has no displayName when not set", () => {
+      const state = handler.getFullState(false);
+      // CC 20 = OSC Pitch — no displayName in midi-map
+      const entry = state.part1.params.cc20;
+      assert.ok(entry, "expected cc20 entry");
+      assert.strictEqual(entry.displayName, undefined);
     });
   });
 

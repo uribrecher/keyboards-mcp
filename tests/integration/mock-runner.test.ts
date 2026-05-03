@@ -21,9 +21,25 @@ describe("headless mock runner", { concurrency: 1 }, () => {
   } else {
     // Local: spawn per-model mocks with real MIDI
     for (const { model, check } of [
-      { model: "nord-electro-5d", check: (s: any) => { assert.ok(s.lower); assert.ok(s.upper); assert.ok(s.global); assert.ok(s.preset1Drawbars); } },
+      {
+        model: "nord-electro-5d",
+        check: (s: any) => {
+          assert.ok(s.lower); assert.ok(s.upper); assert.ok(s.global); assert.ok(s.preset1Drawbars);
+          // organ_model is discrete (perPart) — labels should be broadcast
+          assert.ok(s.upper.organ_model?.labels, "expected labels on upper.organ_model");
+          assert.strictEqual(s.upper.organ_model.labels[0], "B3");
+        },
+      },
       { model: "roland-juno-x", check: (s: any) => { assert.ok(s.model); assert.ok(s.part1); assert.ok(s.part5); } },
-      { model: "sequential-prophet-6", check: (s: any) => { assert.ok(s.global); assert.ok(!s.lower); } },
+      {
+        model: "sequential-prophet-6",
+        check: (s: any) => {
+          assert.ok(s.global); assert.ok(!s.lower);
+          // arp_mode is discrete — labels should be broadcast
+          assert.ok(s.global.arp_mode?.labels, "expected labels on global.arp_mode");
+          assert.strictEqual(s.global.arp_mode.labels[0], "Up");
+        },
+      },
     ]) {
       it(`starts ${model} and receives correct state`, async () => {
         const mock = await MockProcess.start({ model, wsPort: nextPort++ });

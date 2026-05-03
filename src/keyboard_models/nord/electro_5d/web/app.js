@@ -1,25 +1,5 @@
 // Nord Electro 5D — Web UI Client (bi-timbral)
 
-// Parameter metadata (labels for selectors)
-const PARAM_LABELS = {
-  organ_model: { 0: "B3", 1: "B3+BASS", 2: "PIPE", 3: "VOX", 4: "FARFISA" },
-  vibrato_type: { 0: "V1", 1: "C1", 2: "V2", 3: "C2", 4: "V3", 5: "C3" },
-  percussion_harmonic: { 0: "2nd", 1: "3rd" },
-  percussion_speed_level: { 0: "S/N", 1: "F/N", 2: "S/S", 3: "F/S" },
-  piano_type: { 0: "GRAND", 1: "UPRGHT", 2: "EP1", 3: "EP2", 4: "CLAV", 5: "HPSCD" },
-  sample_synth_dynamics: { 0: "OFF", 1: "LOW", 2: "MID", 3: "HIGH" },
-  organ_preset_select: { 0: "Pst 1", 1: "Pst 2" },
-  piano_kbd_touch: { 0: "0", 1: "1", 2: "2", 3: "3" },
-  effect1_type: { 0: "TREM1", 1: "TREM2", 2: "TREM3", 3: "PAN1", 4: "PAN2", 5: "PAN3", 6: "WAH", 7: "RING" },
-  effect2_type: { 0: "PHAS1", 1: "PHAS2", 2: "FLANG", 3: "CHOR1", 4: "CHOR2", 5: "VIBE" },
-  spkr_comp_type: { 0: "DIST", 1: "SMALL", 2: "JC", 3: "TWIN", 4: "ROTAR", 5: "COMP" },
-  reverb_type: { 0: "ROOM", 1: "STG SOFT", 2: "STAGE", 3: "HALL SOFT", 4: "HALL" },
-  delay_feedback: { 0: "0", 1: "1", 2: "2", 3: "3" },
-  part_lower_engine_select: { 0: "Organ", 1: "Piano", 2: "Samp" },
-  part_upper_engine_select: { 0: "Organ", 1: "Piano", 2: "Samp" },
-  kb_split_point: { 0: "C3", 1: "F3", 2: "C4", 3: "F4", 4: "C5", 5: "F5" },
-};
-
 // Engine value to section name mapping
 const ENGINE_MAP = { 0: "organ", 1: "piano", 2: "sample_synth" };
 
@@ -135,29 +115,67 @@ function connect() {
       }
     }
     updateInventoryData(data);
+    initStaticUIFromState(data);
     updateProgram(data.program);
     updateSetList(data.setList);
     updateUI(data);
   };
 }
 
-// ── Initialize selectors (build button groups from metadata) ──
+// ── Initialize selectors and static labels from incoming state ──
 
-function initSelectors() {
-  for (const [param, labels] of Object.entries(PARAM_LABELS)) {
-    // Build for unprefixed (global) selector
-    const el = document.getElementById(`sel-${param}`);
-    if (el) {
-      el.innerHTML = "";
-      for (const [val, label] of Object.entries(labels)) {
-        const btn = document.createElement("div");
-        btn.className = "sel-btn";
-        btn.dataset.value = val;
-        btn.textContent = label;
-        el.appendChild(btn);
-      }
+let staticLabelsBuilt = false;
+
+function buildParamLookupFromState(data) {
+  // Walk all parts of the state and return a flat key→entry map (first wins).
+  const lookup = {};
+  for (const source of [data.global, data.upper, data.lower]) {
+    if (!source) continue;
+    for (const [key, entry] of Object.entries(source)) {
+      if (!lookup[key]) lookup[key] = entry;
     }
   }
+  return lookup;
+}
+
+function initSelectorsFromState(paramLookup) {
+  for (const [key, entry] of Object.entries(paramLookup)) {
+    if (entry?.type !== "discrete" || !entry.labels) continue;
+    const el = document.getElementById(`sel-${key}`);
+    if (!el) continue;
+    el.innerHTML = "";
+    for (const [val, label] of Object.entries(entry.labels)) {
+      const btn = document.createElement("div");
+      btn.className = "sel-btn";
+      btn.dataset.value = val;
+      btn.textContent = label;
+      el.appendChild(btn);
+    }
+  }
+}
+
+function initControlLabelsFromState(paramLookup) {
+  // Override hardcoded HTML knob/control labels with displayName from the
+  // midi-map. Only overrides when displayName is set — the curated HTML
+  // labels are kept as the fallback so long param names don't blow out
+  // narrow slots.
+  for (const target of document.querySelectorAll("[data-param]")) {
+    const key = target.dataset.param;
+    const entry = paramLookup[key];
+    if (!entry?.displayName) continue;
+    const parent = target.parentElement;
+    if (!parent) continue;
+    const label = parent.querySelector(":scope > .knob-label");
+    if (label) label.textContent = entry.displayName;
+  }
+}
+
+function initStaticUIFromState(data) {
+  if (staticLabelsBuilt) return;
+  const lookup = buildParamLookupFromState(data);
+  initSelectorsFromState(lookup);
+  initControlLabelsFromState(lookup);
+  staticLabelsBuilt = true;
 }
 
 // ── Update UI from state message ──
@@ -216,15 +234,17 @@ function updateUI(data) {
     "delay_part_select",
     "eq_part_select",
   ];
+  const partClassMap = { 0: "lower", 1: "upper", 2: "both" };
   for (const ps of partSelectParams) {
     const indicator = document.getElementById(`pi-${ps}`);
     if (!indicator || !data.global || !data.global[ps]) continue;
-    const idx = data.global[ps].index ?? data.global[ps].value;
-    const labelMap = { 0: "Lower", 1: "Upper", 2: "Both" };
-    const classMap = { 0: "lower", 1: "upper", 2: "both" };
-    indicator.textContent = labelMap[idx] || "Both";
+    const entry = data.global[ps];
+    const idx = entry.index ?? entry.value;
+    // Handler stamps entry.label "Both" for the rotary-forced case (idx 2);
+    // labels[idx] handles 0/1 from the midi-map.
+    indicator.textContent = entry.labels?.[idx] ?? entry.label ?? "Both";
     const baseClass = indicator.classList.contains("part-indicator-vertical") ? "part-indicator-vertical" : "part-indicator";
-    indicator.className = baseClass + " " + (classMap[idx] || "both");
+    indicator.className = baseClass + " " + (partClassMap[idx] || "both");
   }
 
   // Last change
@@ -253,10 +273,9 @@ function updateEngineParams(data) {
 
   // Organ model display (green panel like piano model)
   if (params.organ_model) {
-    const organLabels = { 0: "B3", 1: "B3+Bass", 2: "Pipe", 3: "Vox", 4: "Farfisa" };
     const idx = params.organ_model.index ?? params.organ_model.value;
     const el = document.getElementById("val-organ_model");
-    if (el) el.textContent = organLabels[idx] || "B3";
+    if (el) el.textContent = params.organ_model.labels?.[idx] ?? params.organ_model.label;
   }
 
   // Selectors (engine params, now global IDs)
@@ -284,10 +303,9 @@ function updateEngineParams(data) {
 
   // Percussion speed/level display
   if (params.percussion_speed_level) {
-    const percLabels = { 0: "SLOW/NORM", 1: "FAST/NORM", 2: "SLOW/SOFT", 3: "FAST/SOFT" };
     const idx = params.percussion_speed_level.index ?? params.percussion_speed_level.value;
     const valEl = document.getElementById("val-percussion_speed_level");
-    if (valEl) valEl.textContent = percLabels[idx] || "S/N";
+    if (valEl) valEl.textContent = params.percussion_speed_level.labels?.[idx] ?? params.percussion_speed_level.label;
   }
 
   // LEDs (engine params, now global IDs)
@@ -467,24 +485,22 @@ function updateGlobalParams(params) {
   // Split point display
   const splitEnabled = params.kb_split_mode ? params.kb_split_mode.value > 0 : false;
   if (params.kb_split_point) {
-    const splitLabels = { 0: "C3", 1: "F3", 2: "C4", 3: "F4", 4: "C5", 5: "F5" };
     const idx = params.kb_split_point.index ?? params.kb_split_point.value;
     const valEl = document.getElementById("val-kb_split_point");
     if (valEl) {
-      valEl.textContent = splitLabels[idx] || "C4";
+      valEl.textContent = params.kb_split_point.labels?.[idx] ?? params.kb_split_point.label;
       const splitDisplay = valEl.closest(".display");
       if (splitDisplay) splitDisplay.classList.toggle("dimmed", !splitEnabled);
     }
   }
 
   // Engine select displays
-  const engineLabels = { 0: "Organ", 1: "Piano", 2: "Synth" };
   for (const part of ["lower", "upper"]) {
     const key = `part_${part}_engine_select`;
     if (!params[key]) continue;
     const idx = params[key].index ?? params[key].value;
     const valEl = document.getElementById(`val-${key}`);
-    if (valEl) valEl.textContent = engineLabels[idx] || "Organ";
+    if (valEl) valEl.textContent = params[key].labels?.[idx] ?? params[key].label;
   }
 
   // Global LEDs
@@ -898,6 +914,5 @@ reExtractBtn.addEventListener("click", () => {
 });
 
 // ── Init ──
-initSelectors();
 loadChatHistory();
 connect();

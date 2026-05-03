@@ -99,6 +99,10 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       }
 
       let info = `  **${key}** — ${param.description}`;
+      const nameLine = param.displayName && param.displayName !== param.name
+        ? `${param.name} (UI: ${param.displayName})`
+        : param.name;
+      info += `\n    Name: ${nameLine}`;
       info += `\n    Type: ${param.type}`;
 
       if (param.encoding.kind === "drawbar") {
