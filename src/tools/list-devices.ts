@@ -1,19 +1,28 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { listOutputPorts, listInputPorts } from "../midi/midi-manager.js";
 import type { DevicePool } from "../shared/device-pool.js";
+import { readAllWithStaleFlag, type MockRegistryEntry } from "../shared/mock-registry.js";
 
 export function registerListDevices(server: McpServer, pool: DevicePool): void {
   server.registerTool(
     "list_midi_devices",
     {
-      description: "List all available MIDI output and input ports. Use this to find your keyboard before connecting. " +
-        "Ports already bound to a connected device show that device's pool index and label.",
+      description: "List all available MIDI output and input ports. " +
+        "Each output port that belongs to a running mock-runner mock is annotated with " +
+        "the mock's label and WebSocket port. Pool-bound ports also carry the pool device index. " +
+        "Stale registry entries (process gone or no recent heartbeat) are tagged with `(stale)`.",
     },
     async () => {
       const outputs = listOutputPorts();
       const inputs = listInputPorts();
 
-      // Build reverse lookup: port name -> "(device N: model [label])"
+      // Index runtime registry entries by midiPort. The engine captures the
+      // OS-assigned name (Core MIDI suffixes duplicates), so two same-model
+      // mocks land in distinct buckets.
+      const registryByPort = new Map<string, MockRegistryEntry & { stale: boolean }>();
+      for (const entry of readAllWithStaleFlag()) registryByPort.set(entry.midiPort, entry);
+
+      // Pool markers (per output / forward / input)
       const outputMarkers = new Map<string, string[]>();
       const inputMarkers = new Map<string, string[]>();
       for (const entry of pool.list()) {
@@ -39,9 +48,16 @@ export function registerListDevices(server: McpServer, pool: DevicePool): void {
       }
 
       const formatLine = (port: { index: number; name: string }, markers: Map<string, string[]>) => {
+        const reg = registryByPort.get(port.name);
         const tags = markers.get(port.name);
-        const suffix = tags && tags.length > 0 ? `  ← ${tags.join(", ")}` : "";
-        return `  ${port.index}: ${port.name}${suffix}`;
+        let regTag = "";
+        if (reg) {
+          regTag = `[${reg.label}] ws:${reg.wsPort}`;
+          if (reg.stale) regTag += " (stale)";
+          regTag += " ";
+        }
+        const poolTag = tags && tags.length > 0 ? ` ← ${tags.join(", ")}` : "";
+        return `  ${port.index}: ${port.name}  ${regTag}${poolTag}`.trimEnd();
       };
 
       let text = "## MIDI Output Ports\n";

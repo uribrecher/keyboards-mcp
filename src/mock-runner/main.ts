@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
 import { MockEngine } from "./engine.js";
+import * as mockRegistry from "../shared/mock-registry.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -202,6 +203,8 @@ ipcMain.handle(
       wsPort,
       portName,
       label: resolvedLabel,
+      modelId: model.info.id,
+      displayName: model.info.displayName,
     });
     await engine.start();
 
@@ -374,6 +377,9 @@ ipcMain.handle(
 // ── App lifecycle ──
 
 void app.whenReady().then(() => {
+  // Drop registry entries left behind by a previous crashed mock-runner.
+  // (Heart-beat-based stale detection handles the rest at read time.)
+  mockRegistry.purgeStale();
   buildMenu();
   createWindow();
   app.on("activate", () => {
