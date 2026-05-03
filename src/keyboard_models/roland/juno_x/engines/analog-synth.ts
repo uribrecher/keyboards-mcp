@@ -21,6 +21,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
     as_lfo_rate: {
       name: "LFO Rate",
+      displayName: "RATE",
       section: "lfo",
       cc: 29,
       min: 0,
@@ -33,6 +34,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
     as_lfo_delay_time: {
       name: "LFO Delay Time",
+      displayName: "DLY",
       section: "lfo",
       cc: 27,
       min: 0,
@@ -45,6 +47,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
     as_lfo_sync: {
       name: "LFO Sync",
+      displayName: "SYNC",
       section: "lfo",
       cc: 117,
       min: 0,
@@ -187,6 +190,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
     as_cutoff: {
       name: "Cutoff",
+      displayName: "CUT",
       section: "filter",
       cc: 3,
       min: 0,
@@ -199,6 +203,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
     as_resonance: {
       name: "Resonance",
+      displayName: "RES",
       section: "filter",
       cc: 9,
       min: 0,

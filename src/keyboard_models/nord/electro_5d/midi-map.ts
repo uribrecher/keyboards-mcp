@@ -416,6 +416,7 @@ export const PARAMS: Record<string, KeyboardParameter> = {
   },
   effect1_ctrl_pedal: {
     name: "Effect 1 Ctrl Pedal",
+    displayName: "CTRL PED",
     section: "effect1",
     cc: 73,
     min: 0,
@@ -428,6 +429,7 @@ export const PARAMS: Record<string, KeyboardParameter> = {
   },
   effect1_rate: {
     name: "Effect 1 Rate",
+    displayName: "RATE",
     section: "effect1",
     cc: 63,
     min: 0,
@@ -465,6 +467,7 @@ export const PARAMS: Record<string, KeyboardParameter> = {
   },
   effect2_deep: {
     name: "Effect 2 Deep Mode",
+    displayName: "DEEP",
     section: "effect2",
     cc: 74,
     min: 0,
@@ -477,6 +480,7 @@ export const PARAMS: Record<string, KeyboardParameter> = {
   },
   effect2_rate: {
     name: "Effect 2 Rate",
+    displayName: "RATE",
     section: "effect2",
     cc: 62,
     min: 0,
@@ -514,6 +518,7 @@ export const PARAMS: Record<string, KeyboardParameter> = {
   },
   spkr_comp_drive: {
     name: "Speaker/Compressor Drive",
+    displayName: "DRIVE",
     section: "amp",
     cc: 111,
     min: 0,
@@ -578,6 +583,7 @@ export const PARAMS: Record<string, KeyboardParameter> = {
   },
   reverb_dry_wet: {
     name: "Reverb Dry/Wet",
+    displayName: "DRY/WET",
     section: "reverb",
     cc: 102,
     min: 0,
@@ -614,6 +620,7 @@ export const PARAMS: Record<string, KeyboardParameter> = {
   },
   delay_dry_wet: {
     name: "Delay Dry/Wet",
+    displayName: "DRY/WET",
     section: "delay",
     cc: 103,
     min: 0,
@@ -625,6 +632,7 @@ export const PARAMS: Record<string, KeyboardParameter> = {
   },
   delay_feedback: {
     name: "Delay Feedback",
+    displayName: "FEEDBACK",
     section: "delay",
     cc: 104,
     min: 0,
@@ -637,6 +645,7 @@ export const PARAMS: Record<string, KeyboardParameter> = {
   },
   delay_ping_pong: {
     name: "Delay Ping Pong",
+    displayName: "P.PONG",
     section: "delay",
     cc: 93,
     min: 0,

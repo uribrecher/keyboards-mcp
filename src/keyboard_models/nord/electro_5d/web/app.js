@@ -115,41 +115,67 @@ function connect() {
       }
     }
     updateInventoryData(data);
-    initSelectorsFromState(data);
+    initStaticUIFromState(data);
     updateProgram(data.program);
     updateSetList(data.setList);
     updateUI(data);
   };
 }
 
-// ── Initialize selectors (build button groups from incoming state labels) ──
+// ── Initialize selectors and static labels from incoming state ──
 
-let selectorsBuilt = false;
+let staticLabelsBuilt = false;
 
-function initSelectorsFromState(data) {
-  if (selectorsBuilt) return;
-  // Walk all parts of the state that may carry per-param entries with labels.
-  const sources = [data.global, data.upper, data.lower];
-  const seen = new Set();
-  for (const source of sources) {
+function buildParamLookupFromState(data) {
+  // Walk all parts of the state and return a flat key→entry map (first wins).
+  const lookup = {};
+  for (const source of [data.global, data.upper, data.lower]) {
     if (!source) continue;
-    for (const [param, entry] of Object.entries(source)) {
-      if (seen.has(param)) continue;
-      if (entry?.type !== "discrete" || !entry.labels) continue;
-      const el = document.getElementById(`sel-${param}`);
-      if (!el) continue;
-      el.innerHTML = "";
-      for (const [val, label] of Object.entries(entry.labels)) {
-        const btn = document.createElement("div");
-        btn.className = "sel-btn";
-        btn.dataset.value = val;
-        btn.textContent = label;
-        el.appendChild(btn);
-      }
-      seen.add(param);
+    for (const [key, entry] of Object.entries(source)) {
+      if (!lookup[key]) lookup[key] = entry;
     }
   }
-  selectorsBuilt = true;
+  return lookup;
+}
+
+function initSelectorsFromState(paramLookup) {
+  for (const [key, entry] of Object.entries(paramLookup)) {
+    if (entry?.type !== "discrete" || !entry.labels) continue;
+    const el = document.getElementById(`sel-${key}`);
+    if (!el) continue;
+    el.innerHTML = "";
+    for (const [val, label] of Object.entries(entry.labels)) {
+      const btn = document.createElement("div");
+      btn.className = "sel-btn";
+      btn.dataset.value = val;
+      btn.textContent = label;
+      el.appendChild(btn);
+    }
+  }
+}
+
+function initControlLabelsFromState(paramLookup) {
+  // For each [data-param] element, find the sibling .knob-label and replace
+  // its text with displayName ?? name from the midi-map (via state).
+  for (const target of document.querySelectorAll("[data-param]")) {
+    const key = target.dataset.param;
+    const entry = paramLookup[key];
+    if (!entry) continue;
+    const text = entry.displayName ?? entry.name;
+    if (!text) continue;
+    const parent = target.parentElement;
+    if (!parent) continue;
+    const label = parent.querySelector(":scope > .knob-label");
+    if (label) label.textContent = text;
+  }
+}
+
+function initStaticUIFromState(data) {
+  if (staticLabelsBuilt) return;
+  const lookup = buildParamLookupFromState(data);
+  initSelectorsFromState(lookup);
+  initControlLabelsFromState(lookup);
+  staticLabelsBuilt = true;
 }
 
 // ── Update UI from state message ──

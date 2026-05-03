@@ -101,15 +101,41 @@ function updateEngineSelect(partData) {
 
 // ── Slider / value display update ──
 
+function updateControlLabels(partData) {
+  // Drive ctrl-label text and button text from the active part's midi-map metadata.
+  // Re-run on every part/engine change since the same CC can mean different things
+  // across engines.
+  const params = partData.params;
+  if (!params) return;
+  for (const target of document.querySelectorAll("[data-cc]")) {
+    const cc = parseInt(target.dataset.cc, 10);
+    if (isNaN(cc)) continue;
+    const entry = params["cc" + cc];
+    if (typeof entry !== "object" || entry === null) continue;
+    const text = entry.displayName ?? entry.name;
+    if (!text) continue;
+    if (target.tagName === "BUTTON") {
+      target.textContent = text;
+    } else if (target.id) {
+      const label = document.querySelector(`label[for="${target.id}"]`);
+      if (label) label.textContent = text;
+    }
+  }
+}
+
 function updatePartParams(partData) {
+  updateControlLabels(partData);
   const params = partData.params;
   if (!params) return;
 
-  for (const [key, value] of Object.entries(params)) {
+  for (const [key, entry] of Object.entries(params)) {
     // key is like "cc3", "cc9", etc.
     if (!key.startsWith("cc")) continue;
     const cc = parseInt(key.slice(2), 10);
     if (isNaN(cc)) continue;
+
+    // Entry can be a plain number (legacy/unknown CC) or an object with metadata
+    const value = typeof entry === "object" && entry !== null ? entry.value : entry;
 
     // Update range slider
     const slider = document.querySelector(`[data-cc="${cc}"].vslider`);

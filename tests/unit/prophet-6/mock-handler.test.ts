@@ -121,6 +121,12 @@ describe("Prophet-6 mock handler", () => {
       assert.ok(a.global.arp_mode.labels);
       assert.ok(b.global.arp_mode.labels);
     });
+
+    it("displayName is absent from state entry when not set in midi-map", () => {
+      // None of the Prophet-6 params currently set displayName.
+      const state = handler.getFullState(false);
+      assert.strictEqual(state.global.osc1_freq.displayName, undefined);
+    });
   });
 
   // ── Bank select ignored ──

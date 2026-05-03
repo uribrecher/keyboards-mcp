@@ -176,6 +176,18 @@ describe("Nord Electro 5D mock handler", () => {
       assert.ok(a.upper.organ_model.labels);
       assert.ok(b.upper.organ_model.labels);
     });
+
+    it("displayName flows from midi-map to state entry when set", () => {
+      const state = handler.getFullState(false);
+      // effect1_rate has displayName "RATE" in the midi-map.
+      assert.strictEqual(state.global.effect1_rate.displayName, "RATE");
+    });
+
+    it("displayName is absent from state entry when not set", () => {
+      const state = handler.getFullState(false);
+      // master_volume has no displayName.
+      assert.strictEqual(state.global.master_volume.displayName, undefined);
+    });
   });
 
   // ── No-crash messages ──

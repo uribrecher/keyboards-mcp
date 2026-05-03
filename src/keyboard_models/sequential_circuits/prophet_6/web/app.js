@@ -48,7 +48,7 @@ function buildUI(params) {
 
       const name = document.createElement("span");
       name.className = "param-name";
-      name.textContent = item.name;
+      name.textContent = item.displayName ?? item.name;
       row.appendChild(name);
 
       if (item.type === "toggle") {
