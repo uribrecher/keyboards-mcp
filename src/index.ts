@@ -1,9 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { MidiManager, initMidiBackend } from "./midi/midi-manager.js";
-import { ModelHolder } from "./shared/model-holder.js";
+import { initMidiBackend } from "./midi/midi-manager.js";
+import { DevicePool } from "./shared/device-pool.js";
 import { registerListDevices } from "./tools/list-devices.js";
 import { registerConnect } from "./tools/connect.js";
+import { registerDisconnect } from "./tools/disconnect.js";
 import { registerSetParameters } from "./tools/set-parameters.js";
 import { registerGetState } from "./tools/get-state.js";
 import { registerListParameters } from "./tools/list-parameters.js";
@@ -23,24 +24,22 @@ const server = new McpServer({
   version: "2.0.0",
 });
 
-const midiManager = new MidiManager();
-const holder = new ModelHolder();
+const pool = new DevicePool();
 
-// Register all tools — they self-guard via holder.requireDevice()
-registerListDevices(server, midiManager);
-registerConnect(server, midiManager, holder);
-registerSetParameters(server, midiManager, holder);
-registerGetState(server, holder);
-registerListParameters(server, holder);
-registerListPrograms(server, holder);
-registerListSongs(server, holder);
-registerIsConnected(server, midiManager, holder);
-registerLoadProgram(server, midiManager, holder);
-registerLoadSong(server, midiManager, holder);
-registerExtractBackup(server, holder);
-registerGetLastBackupLocation(server, holder);
-registerSystemPrompt(server, holder);
+registerListDevices(server, pool);
+registerConnect(server, pool);
+registerDisconnect(server, pool);
+registerSetParameters(server, pool);
+registerGetState(server, pool);
+registerListParameters(server, pool);
+registerListPrograms(server, pool);
+registerListSongs(server, pool);
+registerIsConnected(server, pool);
+registerLoadProgram(server, pool);
+registerLoadSong(server, pool);
+registerExtractBackup(server, pool);
+registerGetLastBackupLocation(server, pool);
+registerSystemPrompt(server, pool);
 
-// Start the server
 const transport = new StdioServerTransport();
 await server.connect(transport);

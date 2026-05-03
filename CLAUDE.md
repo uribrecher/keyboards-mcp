@@ -73,7 +73,7 @@ Claude Code <-MCP/stdio-> MCP Server <-MIDI-> Keyboard (or Mock)
                               |
                      tools/ (thin delegates)
                               |
-                     shared/model-holder -> KeyboardDevice
+                     shared/device-pool -> KeyboardDevice (1..N)
                               |
                keyboard_models/<mfr>/<model>/
 ```
@@ -92,14 +92,14 @@ Claude Code <-MCP/stdio-> MCP Server <-MIDI-> Keyboard (or Mock)
 - **`tool-result.ts`** — `ToolResult` type returned by device methods.
 - **`types.ts`** — `KeyboardParameter` with `ParamEncoding` (raw, drawbar, model-index, one-based, custom). Parameters are CC-addressed, 7-bit (0-127).
 - **`model-registry.ts`** — Discovers models from `keyboard_models/` filesystem, auto-detects from MIDI port names or backup files.
-- **`model-holder.ts`** — Holds the active device. Tools call `holder.requireDevice()` which throws a user-friendly error if no device is loaded.
+- **`device-pool.ts`** — Indexed pool of connected `KeyboardDevice` instances. Tools call `pool.resolve(device?)` — explicit 1-based index or auto-resolve when only one device is connected; throws a user-friendly ambiguity error otherwise.
 - **`parameter-resolution.ts`** — Encodes/decodes between user values (labels, drawbar positions, indices) and MIDI 0-127.
 
 ### Tool pattern (`src/tools/`)
 
 Every tool follows the same structure:
-1. Export a `register*(server, midi, holder)` function
-2. Guard with `holder.requireDevice()` / `midi.isConnected()` as needed
+1. Export a `register*(server, pool)` function
+2. Resolve target via `pool.resolve(device?)` — accepts optional 1-based `device` arg, auto-picks when one device is connected
 3. Delegate to `device.method()` — one line of business logic
 4. Return the device's `ToolResult` directly
 

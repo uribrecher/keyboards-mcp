@@ -1,54 +1,106 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { MidiManager } from "../midi/midi-manager.js";
-import type { ModelHolder } from "../shared/model-holder.js";
+import { MidiManager, listOutputPorts } from "../midi/midi-manager.js";
+import type { DevicePool } from "../shared/device-pool.js";
 import { autoDetectModel, loadModelById } from "../shared/model-registry.js";
 import { WsMidiConnection } from "../midi/ws-midi-connection.js";
+import type { KeyboardModel, KeyboardDevice } from "../shared/keyboard-model.js";
 
-export function registerConnect(server: McpServer, midi: MidiManager, holder: ModelHolder): void {
+function createDeviceForModel(model: KeyboardModel): KeyboardDevice {
+  if (!model.createDevice) {
+    throw new Error(`Model ${model.info.displayName} does not provide a device factory.`);
+  }
+  model.backupCache?.load();
+  const device = model.createDevice();
+  const backupData = model.backupCache?.get();
+  if (backupData) {
+    device.backupData = backupData;
+  }
+  return device;
+}
+
+export function registerConnect(server: McpServer, pool: DevicePool): void {
   server.registerTool(
     "connect_to_keyboard",
     {
       description: "Connect to a MIDI keyboard. Auto-detects the keyboard model from MIDI port names. " +
-        "You can also specify a port name or index from list_midi_devices.",
+        "You can also specify a port name or index from list_midi_devices. " +
+        "Multiple devices can be connected simultaneously — each gets a 1-based index returned in the response. " +
+        "Use that index in other tools' optional `device` parameter to target a specific keyboard. " +
+        "\n\nTwo connection patterns:\n" +
+        "  1) Synced pair (one pool entry, real hw + its mock): pass `port` (real hw) and let " +
+        "`forward_port` auto-detect (or set explicitly). Leave `auto_input` and `auto_forward` " +
+        "at default true — the input listener is what mirrors physical knob/button changes from " +
+        "the real keyboard to the mock UI.\n" +
+        "  2) Standalone pool member (each device owns its own ports): set `auto_input: false` " +
+        "and `auto_forward: false` so devices don't share an input port name or accidentally " +
+        "forward into another pool entry's primary output.",
       inputSchema: {
         port: z
-          .union([z.string(), z.number()])
+          .union([z.string(), z.coerce.number()])
           .optional()
           .describe("Port name (substring match) or index number. Omit to auto-detect."),
         input_port: z
-          .union([z.string(), z.number()])
+          .union([z.string(), z.coerce.number()])
           .optional()
           .describe("Input port name or index to listen on (keyboard's MIDI Output). Omit to auto-detect."),
         forward_port: z
-          .union([z.string(), z.number()])
+          .union([z.string(), z.coerce.number()])
           .optional()
           .describe("Forward port name or index to send passthrough MIDI to (mock device). Omit to auto-detect."),
-        channel: z
-          .number()
+        channel: z.coerce.number()
           .min(1)
           .max(16)
           .optional()
           .describe("Global MIDI channel (1-16, default 1)"),
-        lower_channel: z
-          .number()
+        lower_channel: z.coerce.number()
           .min(1)
           .max(16)
           .optional()
           .describe("MIDI channel for Lower part (1-16, default 2)"),
-        upper_channel: z
-          .number()
+        upper_channel: z.coerce.number()
           .min(1)
           .max(16)
           .optional()
           .describe("MIDI channel for Upper part (1-16, default 3)"),
+        label: z
+          .string()
+          .optional()
+          .describe("Optional user-assigned label for this device instance (e.g. 'studio Nord')."),
+        mock_ws_port: z.coerce.number()
+          .optional()
+          .describe("WebSocket port for this device's mock (overrides MOCK_WS_PORT env). Useful when running multiple mocks simultaneously."),
+        auto_input: z
+          .union([z.boolean(), z.enum(["true", "false"])])
+          .optional()
+          .describe("Auto-detect a matching MIDI input port (default: true). Set to false ONLY for standalone pool members — synced pairs need this true so physical changes mirror to the mock."),
+        auto_forward: z
+          .union([z.boolean(), z.enum(["true", "false"])])
+          .optional()
+          .describe("Auto-detect a mock port to forward outgoing MIDI to (default: true). Set to false ONLY for standalone pool members or when connecting directly to a mock — synced pairs need this true."),
       },
     },
-    async ({ port, input_port, forward_port, channel, lower_channel, upper_channel }) => {
+    async ({ port, input_port, forward_port, channel, lower_channel, upper_channel, label, mock_ws_port, auto_input, auto_forward }) => {
+      const coerceBool = (v: boolean | "true" | "false" | undefined): boolean | undefined => {
+        if (v === undefined) return undefined;
+        return typeof v === "boolean" ? v : v === "true";
+      };
+      const autoInput = coerceBool(auto_input);
+      const autoForward = coerceBool(auto_forward);
       try {
         // WS transport mode (for CI/Docker — no real MIDI)
         const wsUrl = process.env.MOCK_WS_URL;
         if (wsUrl) {
+          // WS mode is single-device: env vars MOCK_WS_URL and MOCK_MODEL_ID
+          // are set once at MCP server startup, so a second connect would
+          // bind another pool entry to the same model/url. Block it explicitly
+          // so the caller gets a useful error instead of a confusing duplicate.
+          if (pool.size() > 0) {
+            return {
+              content: [{ type: "text", text: "WebSocket transport mode (MOCK_WS_URL) only supports one connected device per MCP server process. Use a separate MCP server (with its own MOCK_WS_URL/MOCK_MODEL_ID env) for each additional device." }],
+              isError: true,
+            };
+          }
           const modelId = process.env.MOCK_MODEL_ID;
           if (!modelId) {
             return {
@@ -57,23 +109,24 @@ export function registerConnect(server: McpServer, midi: MidiManager, holder: Mo
             };
           }
           const model = await loadModelById(modelId);
-          holder.unload();
-          holder.load(model);
+          const device = createDeviceForModel(model);
+          if (label) device.label = label;
           const wsConn = await WsMidiConnection.connect(wsUrl);
-          if (holder.device) {
-            holder.device.attach(wsConn);
-          }
+          device.attach(wsConn);
+          const index = pool.connect(device, () => { wsConn.close?.(); });
           return {
             content: [{
               type: "text",
-              text: `Detected model: ${model.info.displayName}\nConnected via WebSocket: ${wsUrl}`,
+              text: `Detected model: ${model.info.displayName}\n` +
+                `Connected via WebSocket: ${wsUrl}\n` +
+                `Assigned device ${index}${label ? ` "${label}"` : ""}.`,
             }],
           };
         }
 
         // Auto-detect keyboard model from MIDI port names
         // If a specific port was given, prioritize it for model detection
-        const outputPorts = midi.listOutputPorts();
+        const outputPorts = listOutputPorts();
         const portNames = port !== undefined
           ? [typeof port === "number" ? outputPorts[port]?.name : port].filter(Boolean) as string[]
           : outputPorts.map((p) => p.name);
@@ -94,16 +147,11 @@ export function registerConnect(server: McpServer, midi: MidiManager, holder: Mo
           };
         }
 
-        // Unload any previously loaded model
-        holder.unload();
-
-        // Load the detected model
-        holder.load(model);
-
-        // Unload model if mock device disconnects
-        midi.setOnMockDisconnect(() => {
-          holder.unload();
-        });
+        // Per-device MidiManager owns this device's output, input, forward, and mock WS
+        const midi = new MidiManager();
+        if (mock_ws_port !== undefined) midi.setMockWsPort(mock_ws_port);
+        const device = createDeviceForModel(model);
+        if (label) device.label = label;
 
         // Set MIDI channels
         if (channel !== undefined) {
@@ -124,49 +172,85 @@ export function registerConnect(server: McpServer, midi: MidiManager, holder: Mo
           result = midi.autoConnect(model.info.midiPortPatterns);
         }
 
-        // Auto-connect input
+        // Connect input — explicit port wins; auto-detect only if autoInput !== false
         let inputResult = "";
-        try {
-          if (input_port !== undefined) {
+        if (input_port !== undefined) {
+          try {
             const res = midi.connectInput(input_port);
             inputResult = `, input: ${res.portName}`;
-          } else {
+          } catch { /* explicit port: best-effort */ }
+        } else if (autoInput !== false) {
+          try {
             const res = midi.autoConnectInput(model.info.midiPortPatterns);
             inputResult = `, input: ${res.portName}`;
-          }
-        } catch {
-          // Input connection is optional
+          } catch { /* auto-input optional */ }
         }
 
-        // Connect forward (passthrough to mock)
+        // Connect forward — explicit port wins; auto-detect only if autoForward !== false
+        // AND the primary output is not itself a mock port. Skipping auto-forward
+        // when primary is a mock prevents cross-mock leakage: e.g., connecting
+        // to "Prophet-6 Mock" must not forward every CC into "Nord ... Mock"
+        // just because that's the first port matching "mock".
         let forwardResult = "";
-        try {
-          if (forward_port !== undefined) {
+        const primaryOutputName = midi.getConnectedPort() ?? "";
+        const primaryOutputIsMock = primaryOutputName.toLowerCase().includes("mock");
+        if (forward_port !== undefined) {
+          try {
             const res = midi.connectForward(forward_port);
             forwardResult = `, forward: ${res.portName}`;
-          } else {
+          } catch (err) {
+            throw new Error(
+              `Failed to connect to forward port ${forward_port}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        } else if (autoForward !== false && !primaryOutputIsMock) {
+          try {
             const res = midi.autoConnectForward();
             forwardResult = `, forward: ${res.portName}`;
-          }
-        } catch (err) {
-          if (midi.hasMockPort()) {
-            throw new Error(
-              `Connected to real hardware but failed to connect forward to mock device: ${err instanceof Error ? err.message : String(err)}`,
-            );
+          } catch (err) {
+            if (midi.hasMockPort()) {
+              throw new Error(
+                `Connected to real hardware but failed to connect forward to mock device: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
           }
         }
 
-        // Attach MIDI connection to device instance
-        if (holder.device) {
-          holder.device.attach(midi);
+        // If the primary output is itself a mock port and we didn't open a
+        // forward (which would have opened the status WS), attach a status-only
+        // WebSocket so the mock UI shows "MCP connected".
+        const primaryName = midi.getConnectedPort() ?? "";
+        const primaryIsMock = primaryName.toLowerCase().includes("mock");
+        if (primaryIsMock && !midi.getConnectedForwardPort()) {
+          midi.attachMockStatusWs();
         }
+
+        device.attach(midi);
+        const index = pool.connect(
+          device,
+          () => { midi.disconnect(); },
+          {
+            output: midi.getConnectedPort() ?? undefined,
+            input: midi.getConnectedInputPort() ?? undefined,
+            forward: midi.getConnectedForwardPort() ?? undefined,
+          },
+        );
+
+        // If the mock disappears, drop only this device — leave others alone
+        midi.setOnMockDisconnect(() => {
+          const entry = pool.get(index);
+          if (entry) {
+            try { pool.disconnect(index); } catch { /* already gone */ }
+          }
+        });
 
         return {
           content: [
             {
               type: "text",
               text: `Detected model: ${model.info.displayName}\n` +
-                `Connected to: ${result.portName} (global ch ${midi.getChannel() + 1}, lower ch ${midi.getLowerChannel() + 1}, upper ch ${midi.getUpperChannel() + 1}${inputResult}${forwardResult})`,
+                `Connected to: ${result.portName} (global ch ${midi.getChannel() + 1}, lower ch ${midi.getLowerChannel() + 1}, upper ch ${midi.getUpperChannel() + 1}${inputResult}${forwardResult})\n` +
+                `Assigned device ${index}${label ? ` "${label}"` : ""}.`,
             },
           ],
         };
@@ -181,36 +265,6 @@ export function registerConnect(server: McpServer, midi: MidiManager, holder: Mo
           isError: true,
         };
       }
-    },
-  );
-
-  server.registerTool(
-    "disconnect_from_keyboard",
-    {
-      description: "Disconnect from the currently connected MIDI device.",
-    },
-    async () => {
-      const modelName = holder.model?.info.displayName;
-      const was = midi.getConnectedPort();
-      const wasInput = midi.getConnectedInputPort();
-      const wasForward = midi.getConnectedForwardPort();
-      midi.disconnect();
-      holder.unload();
-      const parts = [
-        was ? `output: ${was}` : null,
-        wasInput ? `input: ${wasInput}` : null,
-        wasForward ? `forward: ${wasForward}` : null,
-      ].filter(Boolean);
-      return {
-        content: [
-          {
-            type: "text",
-            text: parts.length > 0
-              ? `Disconnected from ${parts.join(", ")}${modelName ? ` (${modelName} model unloaded)` : ""}`
-              : "No device was connected",
-          },
-        ],
-      };
     },
   );
 }

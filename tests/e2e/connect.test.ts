@@ -13,13 +13,24 @@ describe("E2E: connect", { concurrency: 1 }, () => {
     await h.stop();
   });
 
-  it("connects to Nord mock via MCP", async () => {
+  it("connects to Nord mock via MCP and reports its assigned index", async () => {
     const result = await h.callTool("connect_to_keyboard", {
       port: "Nord Electro 5D Mock",
     });
     const text = result.content[0].text;
     assert.ok(text.includes("Detected model: Nord Electro 5D"), `unexpected: ${text}`);
     assert.ok(text.includes("Connected"), `unexpected: ${text}`);
+    assert.match(text, /device 1/, `expected 'device 1' in: ${text}`);
+    await h.reset();
+  });
+
+  it("connect with label echoes the label back", async () => {
+    const result = await h.callTool("connect_to_keyboard", {
+      port: "Nord Electro 5D Mock",
+      label: "studio",
+    });
+    const text = result.content[0].text;
+    assert.match(text, /studio/, `expected label in: ${text}`);
     await h.reset();
   });
 

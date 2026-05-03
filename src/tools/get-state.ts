@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { ModelHolder } from "../shared/model-holder.js";
+import type { DevicePool } from "../shared/device-pool.js";
 
-export function registerGetState(server: McpServer, holder: ModelHolder): void {
+export function registerGetState(server: McpServer, pool: DevicePool): void {
   server.registerTool(
     "get_current_state",
     {
@@ -13,14 +13,19 @@ export function registerGetState(server: McpServer, holder: ModelHolder): void {
           .string()
           .optional()
           .describe("Optional section filter (e.g. organ, piano, effect1, reverb, etc.)"),
+        device: z.coerce.number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("1-based device index from is_connected. Required when more than one device is connected."),
       },
     },
-    async ({ section }) => {
-      let device;
-      try { device = holder.requireDevice(); }
+    async ({ section, device }) => {
+      let kdev;
+      try { kdev = pool.resolve(device).device; }
       catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
 
-      return device.getState(section);
+      return kdev.getState(section);
     },
   );
 }

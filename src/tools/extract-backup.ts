@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { writeFileSync, mkdirSync, statSync } from "node:fs";
 import { dirname, basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ModelHolder } from "../shared/model-holder.js";
+import type { DevicePool } from "../shared/device-pool.js";
 import type { KeyboardModel } from "../shared/keyboard-model.js";
 import { detectModelFromBackup } from "../shared/model-registry.js";
 
@@ -18,13 +18,15 @@ function defaultOutputPath(model: KeyboardModel): string {
   return join(dataDir, `${slug}_backup_inventory.md`);
 }
 
-export function registerExtractBackup(server: McpServer, holder: ModelHolder): void {
+export function registerExtractBackup(server: McpServer, pool: DevicePool): void {
   server.registerTool(
     "extract_backup",
     {
       description: "Read a keyboard backup file and generate a comprehensive inventory of all sounds, " +
         "programs, and settings stored on the keyboard. Automatically detects the mode based " +
-        "on whether the path is a file (full backup) or a directory (programs-only).",
+        "on whether the path is a file (full backup) or a directory (programs-only). " +
+        "If a connected device matches the file's model, its inventory is updated. " +
+        "When multiple matching devices are connected, pass `device` to choose which.",
       inputSchema: {
         file_path: z.string().describe(
           "Absolute path to a backup file or a folder of program files",
@@ -36,13 +38,31 @@ export function registerExtractBackup(server: McpServer, holder: ModelHolder): v
             "Optional path to write the generated markdown file. " +
               "Defaults to the Claude project memory folder.",
           ),
+        device: z.coerce.number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("Optional 1-based device index to update with the parsed inventory."),
       },
     },
-    async ({ file_path, output_path }) => {
-      let model: KeyboardModel;
-      if (holder.isLoaded) {
-        model = holder.requireModel();
-      } else {
+    async ({ file_path, output_path, device }) => {
+      // Pick model: explicit device > pool's only device > backup detection
+      let model: KeyboardModel | null = null;
+
+      if (device !== undefined) {
+        try {
+          model = pool.require(device).device.model;
+        } catch (err) {
+          return {
+            content: [{ type: "text", text: (err as Error).message }],
+            isError: true,
+          };
+        }
+      } else if (pool.size() === 1) {
+        model = pool.list()[0].device.model;
+      }
+
+      if (!model) {
         const detected = await detectModelFromBackup(file_path);
         if (!detected) {
           return {
@@ -101,9 +121,27 @@ export function registerExtractBackup(server: McpServer, holder: ModelHolder): v
 
         cache?.set(data);
 
-        // Update device instance's backup data if connected
-        if (holder.device) {
-          holder.device.backupData = data;
+        // Decide which devices receive this inventory.
+        //   - explicit `device` param  → only that device
+        //   - exactly one connected device of this model → just that one
+        //   - multiple connected devices of this model and no `device` param
+        //     → none, to avoid silently overwriting per-instance inventory.
+        // Per-instance backup keying lands in plan #5; until then this errs
+        // on the side of "do not clobber".
+        let updatedIndices: number[] = [];
+        if (device !== undefined) {
+          const entry = pool.get(device);
+          if (entry && entry.device.model.info.id === model.info.id) {
+            entry.device.backupData = data;
+            updatedIndices = [entry.index];
+          }
+        } else {
+          const matching = pool.list().filter((e) => e.device.model.info.id === model.info.id);
+          if (matching.length === 1) {
+            matching[0].device.backupData = data;
+            updatedIndices = [matching[0].index];
+          }
+          // else: zero (nothing connected) or multiple — leave devices untouched.
         }
 
         const dateMatch = basename(file_path).match(/(\d{4}-\d{2}-\d{2})/);
@@ -125,6 +163,18 @@ export function registerExtractBackup(server: McpServer, holder: ModelHolder): v
         const banks = new Set((data.programs ?? []).map((p: any) => p.bank)).size;
 
         const mode = stat.isDirectory() ? "programs-only" : "full";
+        const matchingCount = pool.list().filter((e) => e.device.model.info.id === model.info.id).length;
+        let appliedTo: string;
+        if (updatedIndices.length === 1) {
+          appliedTo = `Inventory applied to device ${updatedIndices[0]}.`;
+        } else if (device !== undefined) {
+          appliedTo = `Note: device ${device} is not a ${model.info.displayName} — inventory cached but not bound to any device.`;
+        } else if (matchingCount > 1) {
+          appliedTo = `Note: ${matchingCount} connected ${model.info.displayName} devices — pass \`device\` to bind the inventory to a specific one. Cache updated, no device modified.`;
+        } else {
+          appliedTo = "No matching connected device — cache updated only.";
+        }
+
         const summary =
           `Extracted ${mode} backup inventory:\n` +
           `- ${pianos} piano models\n` +
@@ -132,6 +182,7 @@ export function registerExtractBackup(server: McpServer, holder: ModelHolder): v
           `- ${programs} programs (${banks} banks)\n` +
           `- ${setLists} set list entries\n` +
           `- ${livePresets} live presets\n\n` +
+          `${appliedTo}\n` +
           `Written to: ${outPath}\n\n` +
           markdown;
 
