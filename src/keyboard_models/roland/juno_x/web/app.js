@@ -11,9 +11,10 @@ let ws = null;
 let reconnectTimer = null;
 
 function connect() {
-  // When loaded via file:// (Electron), location.host is empty — use localhost:3000
+  // Per-tab WS port — see Nord app.js for context.
+  const wsPort = new URLSearchParams(location.search).get("wsPort") || "3000";
   const wsUrl = location.protocol === "file:"
-    ? "ws://localhost:3000"
+    ? `ws://localhost:${wsPort}`
     : `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`;
   ws = new WebSocket(wsUrl);
 

@@ -122,6 +122,15 @@ export class MockEngine {
     });
   }
 
+  /**
+   * Tell the handler to re-read its on-disk caches (e.g. after `extract_backup`)
+   * and broadcast a fresh full-state snapshot to UI clients.
+   */
+  reloadCache(): void {
+    this.handler.onCacheReload?.();
+    this.broadcast(this.handler.getFullState(true));
+  }
+
   async stop(): Promise<void> {
     if (this.midiInput) {
       this.midiInput.close();

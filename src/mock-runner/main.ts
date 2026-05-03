@@ -1,14 +1,15 @@
 /**
- * Generic Mock Runner — Electron main process.
+ * Tabbed Mock Runner — Electron main process.
  *
- * Starts with a model picker, then loads the selected keyboard model's
- * mock device engine and web UI. No model-specific code here.
- *
- * Usage: npm run mock:runner
+ * The shell window is loaded once at startup and never reloaded. Each tab in
+ * the shell hosts an iframe (model chooser → model UI). The main process
+ * owns one MockEngine per tab on its own WebSocket port; ports are allocated
+ * sequentially from BASE_WS_PORT and freed on tab close.
  */
 
 import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
+import { statSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
@@ -22,99 +23,58 @@ const srcDir = join(__dirname, "..", "..", "src", "mock-runner");
 const SHELL_DIR = join(srcDir, "shell");
 const PRELOAD_PATH = join(srcDir, "preload.cjs");
 
-const WS_PORT = 3000;
+const BASE_WS_PORT = 3000;
 const LOWER_CH = parseInt(process.env.LOWER_CHANNEL ?? "0");
 const UPPER_CH = parseInt(process.env.UPPER_CHANNEL ?? "1");
 
+// ── Tab registry ──
+
+interface TabEntry {
+  tabId: string;
+  model: KeyboardModel | null;     // null until the user selects a model
+  engine: MockEngine | null;
+  wsPort: number | null;
+  label: string | null;             // user-assigned (defaults to "_default")
+}
+
+const tabs = new Map<string, TabEntry>();
+let nextTabSeq = 1;
+
+function nextTabId(): string {
+  return `tab-${nextTabSeq++}`;
+}
+
+function nextFreePort(): number {
+  const used = new Set<number>();
+  for (const t of tabs.values()) if (t.wsPort !== null) used.add(t.wsPort);
+  let port = BASE_WS_PORT;
+  while (used.has(port)) port++;
+  return port;
+}
+
 let mainWindow: BrowserWindow | null = null;
-let engine: MockEngine | null = null;
-let currentModel: KeyboardModel | null = null;
-let switching = false;
 
 // ── Window ──
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    title: "Keyboard Mock Runner",
+    width: 1640,
+    height: 980,
+    minWidth: 1200,
+    minHeight: 700,
+    title: "Mock Runner",
+    backgroundColor: "#101012",
     webPreferences: {
       preload: PRELOAD_PATH,
       contextIsolation: true,
       nodeIntegration: false,
+      // Allow iframe → parent postMessage; Electron applies sandbox per-frame
+      webviewTag: false,
     },
   });
 
   void mainWindow.loadFile(join(SHELL_DIR, "index.html"));
   mainWindow.on("closed", () => { mainWindow = null; });
-}
-
-// ── Model switching ──
-
-async function switchModel(modelId: string): Promise<void> {
-  if (switching) return;
-  switching = true;
-  try {
-    await switchModelInner(modelId);
-  } finally {
-    switching = false;
-  }
-}
-
-async function switchModelInner(modelId: string): Promise<void> {
-  // Stop existing engine
-  if (engine) {
-    console.log(`Unloading model ${currentModel?.info.displayName ?? "unknown"}...`);
-    await engine.stop();
-    engine = null;
-    currentModel = null;
-  }
-
-  console.log(`User picked ${modelId}, loading model...`);
-  const model = await loadModelById(modelId);
-  currentModel = model;
-
-  // Create handler and engine
-  const handler = model.createMockHandler?.();
-  if (!handler) {
-    console.error(`Model ${model.info.displayName} does not provide a mock handler.`);
-    return;
-  }
-  engine = new MockEngine(handler, {
-    lowerChannel: LOWER_CH,
-    upperChannel: UPPER_CH,
-    wsPort: WS_PORT,
-    portName: `${model.info.displayName} Mock`,
-  });
-  await engine.start();
-
-  // Update window
-  if (mainWindow) {
-    mainWindow.setTitle(`${model.info.displayName} — Mock Device`);
-
-    if (model.mockUiDir) {
-      void mainWindow.loadFile(join(model.mockUiDir, "index.html"));
-    }
-  }
-}
-
-async function goToModelPicker(): Promise<void> {
-  if (switching) return;
-  switching = true;
-  try {
-    if (engine) {
-      console.log(`Unloading model ${currentModel?.info.displayName ?? "unknown"}, switching to model picker...`);
-      await engine.stop();
-      engine = null;
-      currentModel = null;
-    }
-    if (mainWindow) {
-      mainWindow.setTitle("Keyboard Mock Runner");
-      void mainWindow.loadFile(join(SHELL_DIR, "index.html"));
-    }
-  } finally {
-    switching = false;
-  }
 }
 
 // ── Menu ──
@@ -125,9 +85,14 @@ function buildMenu(): void {
       label: "File",
       submenu: [
         {
-          label: "Switch Model…",
-          accelerator: "CmdOrCtrl+Shift+M",
-          click: () => goToModelPicker(),
+          label: "New Tab",
+          accelerator: "CmdOrCtrl+T",
+          click: () => mainWindow?.webContents.send("menu:new-tab"),
+        },
+        {
+          label: "Extract Backup…",
+          accelerator: "CmdOrCtrl+E",
+          click: () => mainWindow?.webContents.send("menu:extract-backup"),
         },
         { type: "separator" },
         { role: "quit" },
@@ -140,46 +105,221 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// ── Tab lifecycle ──
+
+async function destroyTab(entry: TabEntry): Promise<void> {
+  if (entry.engine) {
+    try { await entry.engine.stop(); } catch { /* swallow */ }
+    entry.engine = null;
+  }
+  entry.wsPort = null;
+  entry.model = null;
+}
+
 // ── IPC handlers ──
 
 ipcMain.handle("get-models", async (): Promise<KeyboardModelInfo[]> => {
   return discoverModels();
 });
 
-ipcMain.handle("select-model", async (_event, modelId: string): Promise<void> => {
-  await switchModel(modelId);
+ipcMain.handle("create-tab", (): { tabId: string } => {
+  const tabId = nextTabId();
+  tabs.set(tabId, { tabId, model: null, engine: null, wsPort: null, label: null });
+  return { tabId };
 });
 
-ipcMain.handle("get-current-model", (): KeyboardModelInfo | null => {
-  return currentModel?.info ?? null;
+ipcMain.handle("close-tab", async (_event, tabId: string): Promise<{ ok: boolean }> => {
+  const entry = tabs.get(tabId);
+  if (!entry) return { ok: false };
+  await destroyTab(entry);
+  tabs.delete(tabId);
+  return { ok: true };
 });
 
-ipcMain.handle("open-backup-dialog", async () => {
-  const win = BrowserWindow.getFocusedWindow();
+ipcMain.handle(
+  "select-model-for-tab",
+  async (_event, tabId: string, modelId: string, label?: string): Promise<{
+    wsPort: number;
+    modelUiDir: string | null;
+    displayName: string;
+    manufacturer: string;
+    modelInfoId: string;
+    label: string;
+  }> => {
+    const entry = tabs.get(tabId);
+    if (!entry) throw new Error(`Unknown tab ${tabId}`);
+
+    // If this tab already had a model, tear it down first
+    if (entry.engine) await destroyTab(entry);
+
+    const model = await loadModelById(modelId);
+    const handler = model.createMockHandler?.();
+    if (!handler) {
+      throw new Error(`Model ${model.info.displayName} does not provide a mock handler.`);
+    }
+
+    const wsPort = nextFreePort();
+    const resolvedLabel = label && label.trim().length > 0 ? label : "_default";
+    const portName = `${model.info.displayName} Mock`;
+
+    const engine = new MockEngine(handler, {
+      lowerChannel: LOWER_CH,
+      upperChannel: UPPER_CH,
+      wsPort,
+      portName,
+      label: resolvedLabel,
+    });
+    await engine.start();
+
+    entry.model = model;
+    entry.engine = engine;
+    entry.wsPort = wsPort;
+    entry.label = resolvedLabel;
+
+    return {
+      wsPort,
+      modelUiDir: model.mockUiDir ?? null,
+      displayName: model.info.displayName,
+      manufacturer: model.info.manufacturer,
+      modelInfoId: model.info.id,
+      label: resolvedLabel,
+    };
+  },
+);
+
+ipcMain.handle("list-tabs", (): Array<{
+  tabId: string;
+  modelInfoId: string | null;
+  displayName: string | null;
+  label: string | null;
+  wsPort: number | null;
+}> => {
+  return [...tabs.values()].map((t) => ({
+    tabId: t.tabId,
+    modelInfoId: t.model?.info.id ?? null,
+    displayName: t.model?.info.displayName ?? null,
+    label: t.label,
+    wsPort: t.wsPort,
+  }));
+});
+
+ipcMain.handle("open-backup-dialog", async (): Promise<string | null> => {
+  const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
   if (!win) return null;
-
   const result = await dialog.showOpenDialog(win, {
     title: "Select Backup",
     properties: ["openFile", "openDirectory"],
   });
-
   if (result.canceled || result.filePaths.length === 0) return null;
   return result.filePaths[0];
 });
+
+ipcMain.handle(
+  "extract-backup",
+  async (
+    _event,
+    args: { filePath: string; tabId?: string; label?: string },
+  ): Promise<{ ok: boolean; message: string }> => {
+    const { filePath } = args;
+    let entry: TabEntry | undefined;
+    if (args.tabId) entry = tabs.get(args.tabId);
+
+    // Resolution: explicit tab → its model + label. Otherwise try unique tab.
+    let model: KeyboardModel | null = null;
+    let label: string;
+    if (entry?.model) {
+      model = entry.model;
+      label = entry.label ?? "_default";
+    } else if (args.label && args.label.trim().length > 0) {
+      label = args.label;
+      // Pick the first tab with backup capability (best-effort fallback)
+      for (const t of tabs.values()) {
+        if (t.model?.backup) { model = t.model; break; }
+      }
+    } else {
+      // Single tab with a loaded model?
+      const loaded = [...tabs.values()].filter((t) => t.model);
+      if (loaded.length === 1) {
+        model = loaded[0].model;
+        label = loaded[0].label ?? "_default";
+      } else {
+        return { ok: false, message: "Specify a tab — multiple or no tabs are loaded." };
+      }
+    }
+
+    if (!model?.backup) {
+      return { ok: false, message: `${model?.info.displayName ?? "This model"} does not support backup extraction.` };
+    }
+
+    try {
+      const stat = statSync(filePath);
+      let data: Record<string, any>;
+      if (stat.isDirectory()) {
+        if (!model.backup.parseProgramsFolder) {
+          return { ok: false, message: "This model does not support programs-only extraction." };
+        }
+        const cached = model.backupCache?.get(label);
+        if (!cached) {
+          return {
+            ok: false,
+            message: `Programs-only extraction needs an existing full-backup cache under "${label}".`,
+          };
+        }
+        const programs = await model.backup.parseProgramsFolder(filePath);
+        data = { ...cached, ...programs };
+      } else {
+        data = await model.backup.parseBackup(filePath);
+      }
+
+      model.backupCache?.set(data, label);
+      model.backupCache?.setLastBackupPath(filePath, label);
+
+      // Write the markdown inventory next to the cache
+      const dataRoot = process.env.KEYBOARDS_MCP_DATA_DIR
+        ?? join(__dirname, "..", "..", "data");
+      const slug = model.info.id.replace(/[^a-z0-9]+/gi, "_");
+      const labelDir = join(dataRoot, "backups", label.replace(/[^a-z0-9._-]/gi, "-"));
+      mkdirSync(labelDir, { recursive: true });
+      const dateMatch = basename(filePath).match(/(\d{4}-\d{2}-\d{2})/);
+      const md = model.backup.formatAsMarkdown(data, dateMatch ? dateMatch[1] : undefined);
+      writeFileSync(join(labelDir, `${slug}_backup_inventory.md`), md, "utf-8");
+
+      // Tell the live mock(s) of this model + label to reload from disk
+      for (const t of tabs.values()) {
+        if (t.model?.info.id === model.info.id && (t.label ?? "_default") === label) {
+          t.engine?.reloadCache?.();
+        }
+      }
+
+      const programs = (data as any).programs?.length ?? 0;
+      const samples = (data as any).samples?.length ?? 0;
+      return {
+        ok: true,
+        message: `Extracted under "${label}": ${programs} programs, ${samples} samples.`,
+      };
+    } catch (err) {
+      return { ok: false, message: `Failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  },
+);
 
 // ── App lifecycle ──
 
 void app.whenReady().then(() => {
   buildMenu();
   createWindow();
-
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on("window-all-closed", async () => {
-  console.log("\nShutting down...");
-  if (engine) await engine.stop();
+  console.log("\nShutting down all tab engines...");
+  for (const t of tabs.values()) {
+    if (t.engine) {
+      try { await t.engine.stop(); } catch { /* swallow */ }
+    }
+  }
+  tabs.clear();
   app.quit();
 });

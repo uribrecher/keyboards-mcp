@@ -129,7 +129,8 @@ function updateUI(state) {
 }
 
 function connect() {
-  ws = new WebSocket("ws://localhost:3000");
+  const wsPort = new URLSearchParams(location.search).get("wsPort") || "3000";
+  ws = new WebSocket(`ws://localhost:${wsPort}`);
 
   ws.onopen = () => {
     document.getElementById("status").textContent = "Connected";
