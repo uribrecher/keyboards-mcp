@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { ModelHolder } from "../shared/model-holder.js";
+import type { DevicePool } from "../shared/device-pool.js";
 
-export function registerListParameters(server: McpServer, holder: ModelHolder): void {
+export function registerListParameters(server: McpServer, pool: DevicePool): void {
   server.registerTool(
     "list_parameters",
     {
@@ -14,14 +14,19 @@ export function registerListParameters(server: McpServer, holder: ModelHolder): 
           .string()
           .optional()
           .describe("Optional section filter (e.g. organ, piano, effect1, reverb, etc.). Omit to list all parameters."),
+        device: z.coerce.number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("1-based device index from is_connected. Required when more than one device is connected."),
       },
     },
-    async ({ section }) => {
-      let device;
-      try { device = holder.requireDevice(); }
+    async ({ section, device }) => {
+      let kdev;
+      try { kdev = pool.resolve(device).device; }
       catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
 
-      return device.listParameters(section);
+      return kdev.listParameters(section);
     },
   );
 }

@@ -22,7 +22,7 @@ AI Agent  <──MCP──>  MCP Server  <──MIDI──>  Keyboard (or Mock)
                             │
                      tools/ (thin delegates)
                             │
-                     ModelHolder → KeyboardDevice
+                     DevicePool → KeyboardDevice (1..N)
                             │
                keyboard_models/<mfr>/<model>/
 ```

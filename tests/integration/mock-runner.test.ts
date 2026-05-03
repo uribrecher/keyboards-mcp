@@ -51,5 +51,24 @@ describe("headless mock runner", { concurrency: 1 }, () => {
       const code = await MockProcess.startExpectingFailure({ model: "nonexistent-model", wsPort: nextPort++ });
       assert.ok(code !== 0, `expected non-zero exit code, got ${code}`);
     });
+
+    it("two mocks run simultaneously and stay independent", async () => {
+      const mockA = await MockProcess.start({ model: "nord-electro-5d", wsPort: nextPort++ });
+      const mockB = await MockProcess.start({ model: "sequential-prophet-6", wsPort: nextPort++ });
+      try {
+        const stateA = await mockA.waitForState();
+        const stateB = await mockB.waitForState();
+        // Each mock produces its own model-specific state shape
+        assert.ok(stateA.preset1Drawbars, "Nord state missing preset1Drawbars");
+        assert.ok(stateB.global?.arp_mode, "Prophet-6 state missing arp_mode");
+        // Stop A — B keeps running
+        await mockA.stop();
+        const stateBAfter = await mockB.waitForState();
+        assert.ok(stateBAfter.global, "Prophet-6 stopped responding after Nord stopped");
+      } finally {
+        try { await mockA.stop(); } catch { /* ignore */ }
+        try { await mockB.stop(); } catch { /* ignore */ }
+      }
+    });
   }
 });

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { ModelHolder } from "../shared/model-holder.js";
+import type { DevicePool } from "../shared/device-pool.js";
 
-export function registerListPrograms(server: McpServer, holder: ModelHolder): void {
+export function registerListPrograms(server: McpServer, pool: DevicePool): void {
   server.registerTool(
     "list_programs",
     {
@@ -13,18 +13,22 @@ export function registerListPrograms(server: McpServer, holder: ModelHolder): vo
           .string()
           .optional()
           .describe("Optional name filter (case-insensitive substring match)"),
-        bank: z
-          .number()
+        bank: z.coerce.number()
           .optional()
           .describe("Optional bank number to filter by"),
+        device: z.coerce.number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("1-based device index from is_connected. Required when more than one device is connected."),
       },
     },
-    async ({ filter, bank }) => {
-      let device;
-      try { device = holder.requireDevice(); }
+    async ({ filter, bank, device }) => {
+      let kdev;
+      try { kdev = pool.resolve(device).device; }
       catch (err) { return { content: [{ type: "text", text: (err as Error).message }], isError: true }; }
 
-      return device.listPrograms(filter, bank);
+      return kdev.listPrograms(filter, bank);
     },
   );
 }
