@@ -314,8 +314,8 @@ export class JunoXMockHandler implements MockHandler {
     this.inner = createJunoXMockHandler();
   }
 
-  init(lowerChannel: number, upperChannel: number): void {
-    this.inner.init(lowerChannel, upperChannel);
+  init(lowerChannel: number, upperChannel: number, label?: string): void {
+    this.inner.init(lowerChannel, upperChannel, label);
   }
 
   onMIDI(msg: MidiMessage): MockHandlerResult {

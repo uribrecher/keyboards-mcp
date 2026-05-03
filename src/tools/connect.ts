@@ -6,13 +6,27 @@ import { autoDetectModel, loadModelById } from "../shared/model-registry.js";
 import { WsMidiConnection } from "../midi/ws-midi-connection.js";
 import type { KeyboardModel, KeyboardDevice } from "../shared/keyboard-model.js";
 
-function createDeviceForModel(model: KeyboardModel): KeyboardDevice {
+/** Same sanitizer as the model-level backup-cache. */
+function sanitizeLabelForCache(label: string | undefined | null): string {
+  if (!label) return "_default";
+  let slug = label.trim().toLowerCase();
+  slug = slug.replace(/\s+/g, "-");
+  slug = slug.replace(/[^a-z0-9._-]/g, "");
+  if (slug === "" || slug === "." || slug === ".." || slug.includes("..")) {
+    return "_default";
+  }
+  return slug;
+}
+
+function createDeviceForModel(model: KeyboardModel, label?: string): KeyboardDevice {
   if (!model.createDevice) {
     throw new Error(`Model ${model.info.displayName} does not provide a device factory.`);
   }
-  model.backupCache?.load();
+  const cacheLabel = sanitizeLabelForCache(label);
+  model.backupCache?.load(cacheLabel);
   const device = model.createDevice();
-  const backupData = model.backupCache?.get();
+  if (label) device.label = label;
+  const backupData = model.backupCache?.get(cacheLabel);
   if (backupData) {
     device.backupData = backupData;
   }
@@ -109,8 +123,7 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
             };
           }
           const model = await loadModelById(modelId);
-          const device = createDeviceForModel(model);
-          if (label) device.label = label;
+          const device = createDeviceForModel(model, label);
           const wsConn = await WsMidiConnection.connect(wsUrl);
           device.attach(wsConn);
           const index = pool.connect(device, () => { wsConn.close?.(); });
@@ -150,8 +163,7 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
         // Per-device MidiManager owns this device's output, input, forward, and mock WS
         const midi = new MidiManager();
         if (mock_ws_port !== undefined) midi.setMockWsPort(mock_ws_port);
-        const device = createDeviceForModel(model);
-        if (label) device.label = label;
+        const device = createDeviceForModel(model, label);
 
         // Set MIDI channels
         if (channel !== undefined) {
