@@ -6,6 +6,7 @@
  */
 
 import type { MidiMessage, MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
+import type { KeyboardParameter } from "../../../shared/types.js";
 import { parseDT1 } from "../../../shared/roland-dt1.js";
 import { addAddresses } from "../../../shared/roland-dt1.js";
 import { JUNO_X_MODEL_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
@@ -23,7 +24,39 @@ interface PartState {
   sceneParams: Record<string, number>;   // address-key → value
 }
 
-// ── Build a CC → param-name lookup across all engine definitions ──
+interface ParamEntryState {
+  value: number;
+  name: string;
+  displayName?: string;
+  section: string;
+  type: string;
+  index?: number;
+  labels?: Record<number, string>;
+}
+
+// ── Build per-engine CC → param lookups ──
+
+function buildEngineCcLookups(): Record<JunoXEngine, Map<number, KeyboardParameter>> {
+  const lookups: Record<JunoXEngine, Map<number, KeyboardParameter>> = {
+    [JunoXEngine.AnalogSynth]: paramMapToCcLookup(createAnalogSynthParams()),
+    [JunoXEngine.ZCore]: paramMapToCcLookup(createZCoreParams()),
+    [JunoXEngine.JunoXModel]: paramMapToCcLookup(createJunoXModelParams()),
+    [JunoXEngine.RDPiano]: paramMapToCcLookup(createRDPianoParams()),
+  };
+  return lookups;
+}
+
+function paramMapToCcLookup(map: Record<string, KeyboardParameter>): Map<number, KeyboardParameter> {
+  const lookup = new Map<number, KeyboardParameter>();
+  for (const param of Object.values(map)) {
+    if (param.cc !== undefined && !lookup.has(param.cc)) {
+      lookup.set(param.cc, param);
+    }
+  }
+  return lookup;
+}
+
+// ── Cross-engine CC → param-name (for log lines) ──
 
 function buildCcLookup(): Map<number, string> {
   const allParams = {
@@ -91,15 +124,25 @@ export function createJunoXMockHandler(): MockHandler {
   let pendingBankLSB = 0;
 
   const ccLookup: Map<number, string> = buildCcLookup();
+  const engineCcLookups = buildEngineCcLookups();
   const sysexLookup: Map<string, string> = buildSysexLookup();
 
   function initParts(lowerChannel: number, upperChannel: number): void {
     channels = [lowerChannel, upperChannel, 2, 3, 4];
-    parts = Array.from({ length: PART_COUNT }, () => ({
-      engine: JunoXEngine.AnalogSynth,
-      params: new Map<number, number>(),
-      sceneParams: {},
-    }));
+    parts = Array.from({ length: PART_COUNT }, () => {
+      const params = new Map<number, number>();
+      // Seed the active engine's CCs with defaults so the UI can drive labels
+      // and initial values from state metadata before any MIDI arrives.
+      const defaults = engineCcLookups[JunoXEngine.AnalogSynth];
+      for (const [cc, param] of defaults) {
+        params.set(cc, param.defaultValue);
+      }
+      return {
+        engine: JunoXEngine.AnalogSynth,
+        params,
+        sceneParams: {},
+      };
+    });
     sceneGlobal = {};
   }
 
@@ -107,13 +150,31 @@ export function createJunoXMockHandler(): MockHandler {
     return channels.indexOf(channel);
   }
 
+  function buildParamEntry(param: KeyboardParameter, value: number): ParamEntryState {
+    const entry: ParamEntryState = {
+      value,
+      name: param.name,
+      section: param.section,
+      type: param.type,
+    };
+    if (param.displayName) entry.displayName = param.displayName;
+    if (param.type === "discrete" && param.labels) {
+      const range = param.max - param.min;
+      entry.index = range === 0 ? 0 : Math.round((value / 127) * range);
+      entry.labels = param.labels;
+    }
+    return entry;
+  }
+
   function partsToState(): Record<string, any> {
     const result: Record<string, any> = {};
     for (let i = 0; i < PART_COUNT; i++) {
       const part = parts[i];
-      const paramObj: Record<string, number> = {};
+      const paramObj: Record<string, ParamEntryState | number> = {};
+      const lookup = engineCcLookups[part.engine];
       for (const [cc, value] of part.params) {
-        paramObj[`cc${cc}`] = value;
+        const param = lookup.get(cc);
+        paramObj[`cc${cc}`] = param ? buildParamEntry(param, value) : value;
       }
       result[`part${i + 1}`] = {
         engine: part.engine,

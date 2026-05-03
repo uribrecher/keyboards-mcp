@@ -13,6 +13,7 @@ interface ParamState {
   value: number;
   label: string;
   name: string;
+  displayName?: string;
   section: string;
   type: string;
   index?: number;
@@ -52,9 +53,12 @@ export function createProphet6MockHandler(): MockHandler {
       section: param.section,
       type: param.type,
     };
+    if (param.displayName) entry.displayName = param.displayName;
     if ((param.type === "discrete" || param.type === "toggle") && param.labels) {
       const range = param.max - param.min;
       entry.index = range === 0 ? 0 : Math.round((midiValue / 127) * range);
+    }
+    if (param.type === "discrete" && param.labels) {
       entry.labels = param.labels;
     }
     return entry;
