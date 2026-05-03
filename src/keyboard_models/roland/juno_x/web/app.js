@@ -102,26 +102,35 @@ function updateEngineSelect(partData) {
 // ── Slider / value display update ──
 
 function updateControlLabels(partData) {
-  // Override hardcoded HTML labels with displayName from the midi-map. Only
-  // overrides when displayName is set — the curated HTML labels (e.g. "PW",
-  // "SAW") are kept as the fallback so we don't paste long param names like
-  // "OSC PW Level" into slim columns. Re-runs on every state update because
-  // the same CC can mean different things across engines.
+  // Override hardcoded HTML labels with displayName from the midi-map.
+  //
+  // The curated HTML labels (e.g. "PW", "SAW") are the fallback when
+  // displayName is absent, so we don't paste long param names like
+  // "OSC PW Level" into slim columns. We cache the original text once in
+  // data-default-label so we can restore it when the active part/engine
+  // brings a CC into view that has no displayName (otherwise stale text
+  // from a previous engine would persist).
   const params = partData.params;
   if (!params) return;
   for (const target of document.querySelectorAll("[data-cc]")) {
     const cc = parseInt(target.dataset.cc, 10);
     if (isNaN(cc)) continue;
-    const entry = params["cc" + cc];
-    if (typeof entry !== "object" || entry === null) continue;
-    if (!entry.displayName) continue;
-    if (target.tagName === "BUTTON") {
-      target.textContent = entry.displayName;
-    } else if (target.id) {
-      const label = document.querySelector(`label[for="${target.id}"]`);
-      if (label) label.textContent = entry.displayName;
+    const slot = labelSlotFor(target);
+    if (!slot) continue;
+    if (slot.dataset.defaultLabel === undefined) {
+      slot.dataset.defaultLabel = slot.textContent;
     }
+    const entry = params["cc" + cc];
+    const isObj = typeof entry === "object" && entry !== null;
+    const next = isObj && entry.displayName ? entry.displayName : slot.dataset.defaultLabel;
+    slot.textContent = next;
   }
+}
+
+function labelSlotFor(target) {
+  if (target.tagName === "BUTTON") return target;
+  if (!target.id) return null;
+  return document.querySelector(`label[for="${target.id}"]`);
 }
 
 function updatePartParams(partData) {

@@ -234,15 +234,17 @@ function updateUI(data) {
     "delay_part_select",
     "eq_part_select",
   ];
+  const partClassMap = { 0: "lower", 1: "upper", 2: "both" };
   for (const ps of partSelectParams) {
     const indicator = document.getElementById(`pi-${ps}`);
     if (!indicator || !data.global || !data.global[ps]) continue;
-    const idx = data.global[ps].index ?? data.global[ps].value;
-    const labelMap = { 0: "Lower", 1: "Upper", 2: "Both" };
-    const classMap = { 0: "lower", 1: "upper", 2: "both" };
-    indicator.textContent = labelMap[idx] || "Both";
+    const entry = data.global[ps];
+    const idx = entry.index ?? entry.value;
+    // Handler stamps entry.label "Both" for the rotary-forced case (idx 2);
+    // labels[idx] handles 0/1 from the midi-map.
+    indicator.textContent = entry.labels?.[idx] ?? entry.label ?? "Both";
     const baseClass = indicator.classList.contains("part-indicator-vertical") ? "part-indicator-vertical" : "part-indicator";
-    indicator.className = baseClass + " " + (classMap[idx] || "both");
+    indicator.className = baseClass + " " + (partClassMap[idx] || "both");
   }
 
   // Last change
@@ -271,10 +273,9 @@ function updateEngineParams(data) {
 
   // Organ model display (green panel like piano model)
   if (params.organ_model) {
-    const organLabels = { 0: "B3", 1: "B3+Bass", 2: "Pipe", 3: "Vox", 4: "Farfisa" };
     const idx = params.organ_model.index ?? params.organ_model.value;
     const el = document.getElementById("val-organ_model");
-    if (el) el.textContent = organLabels[idx] || "B3";
+    if (el) el.textContent = params.organ_model.labels?.[idx] ?? params.organ_model.label;
   }
 
   // Selectors (engine params, now global IDs)
@@ -302,10 +303,9 @@ function updateEngineParams(data) {
 
   // Percussion speed/level display
   if (params.percussion_speed_level) {
-    const percLabels = { 0: "SLOW/NORM", 1: "FAST/NORM", 2: "SLOW/SOFT", 3: "FAST/SOFT" };
     const idx = params.percussion_speed_level.index ?? params.percussion_speed_level.value;
     const valEl = document.getElementById("val-percussion_speed_level");
-    if (valEl) valEl.textContent = percLabels[idx] || "S/N";
+    if (valEl) valEl.textContent = params.percussion_speed_level.labels?.[idx] ?? params.percussion_speed_level.label;
   }
 
   // LEDs (engine params, now global IDs)
@@ -485,24 +485,22 @@ function updateGlobalParams(params) {
   // Split point display
   const splitEnabled = params.kb_split_mode ? params.kb_split_mode.value > 0 : false;
   if (params.kb_split_point) {
-    const splitLabels = { 0: "C3", 1: "F3", 2: "C4", 3: "F4", 4: "C5", 5: "F5" };
     const idx = params.kb_split_point.index ?? params.kb_split_point.value;
     const valEl = document.getElementById("val-kb_split_point");
     if (valEl) {
-      valEl.textContent = splitLabels[idx] || "C4";
+      valEl.textContent = params.kb_split_point.labels?.[idx] ?? params.kb_split_point.label;
       const splitDisplay = valEl.closest(".display");
       if (splitDisplay) splitDisplay.classList.toggle("dimmed", !splitEnabled);
     }
   }
 
   // Engine select displays
-  const engineLabels = { 0: "Organ", 1: "Piano", 2: "Synth" };
   for (const part of ["lower", "upper"]) {
     const key = `part_${part}_engine_select`;
     if (!params[key]) continue;
     const idx = params[key].index ?? params[key].value;
     const valEl = document.getElementById(`val-${key}`);
-    if (valEl) valEl.textContent = engineLabels[idx] || "Organ";
+    if (valEl) valEl.textContent = params[key].labels?.[idx] ?? params[key].label;
   }
 
   // Global LEDs

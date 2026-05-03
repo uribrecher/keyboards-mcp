@@ -160,14 +160,14 @@ describe("Nord Electro 5D mock handler", () => {
     it("continuous param entry has no labels field", () => {
       handler.onMIDI({ type: "cc", controller: CC_DRAWBAR_1, value: 64, channel: LOWER_CH });
       const state = handler.getFullState(false);
-      assert.strictEqual(state.upper.drawbar_1.labels, undefined);
+      assert.strictEqual(state.lower.drawbar_1.labels, undefined);
     });
 
     it("toggle param entry has no labels field", () => {
       // vibrato_enable is type 'toggle' with labels in MIDI map; should NOT surface in state
       handler.onMIDI({ type: "cc", controller: CC_VIBRATO_ENABLE, value: 127, channel: LOWER_CH });
       const state = handler.getFullState(false);
-      assert.strictEqual(state.upper.vibrato_enable.labels, undefined);
+      assert.strictEqual(state.lower.vibrato_enable.labels, undefined);
     });
 
     it("labels survive across getFullState calls", () => {
