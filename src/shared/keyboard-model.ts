@@ -78,13 +78,29 @@ export interface BackupCapability {
  */
 export type BackupData = Record<string, any>;
 
+/**
+ * Per-instance backup cache. Each device has a `label` (e.g. "studio nord");
+ * the cache stores its inventory under that label so two units of the same
+ * model don't clobber each other's programs and samples.
+ *
+ * `label` defaults to `"_default"` when omitted — this preserves
+ * single-device, no-label backwards compatibility.
+ */
 export interface BackupCacheCapability {
-  load(): void;
-  get(): BackupData | null;
-  set(data: BackupData): void;
-  reload(): boolean;
-  getLastBackupPath(): string | null;
-  setLastBackupPath(path: string): void;
+  /** Load this label's cache from disk into memory. No-op if already loaded. */
+  load(label?: string): void;
+  /** Return the in-memory cache for this label, or null if absent. */
+  get(label?: string): BackupData | null;
+  /** Persist data to this label's cache file. */
+  set(data: BackupData, label?: string): void;
+  /** Force re-read of this label's cache from disk. Returns true if a file was found. */
+  reload(label?: string): boolean;
+  /** Last source backup file path stored under this label. */
+  getLastBackupPath(label?: string): string | null;
+  /** Persist the source backup file path for this label. */
+  setLastBackupPath(path: string, label?: string): void;
+  /** All labels with a stored cache (excluding `_default` if it has no data). */
+  listLabels(): string[];
 }
 
 export interface ProgramLoaderCapability {
@@ -121,8 +137,12 @@ export interface MockHandlerResult {
  * The handler owns ALL state and logic — the engine is just MIDI I/O + WebSocket.
  */
 export interface MockHandler {
-  /** Called once when the mock engine starts */
-  init(lowerChannel: number, upperChannel: number): void;
+  /**
+   * Called once when the mock engine starts.
+   * `label` (optional) selects which per-instance backup cache to load —
+   * see `BackupCacheCapability`. Defaults to `"_default"`.
+   */
+  init(lowerChannel: number, upperChannel: number, label?: string): void;
   /** Process any MIDI message. Returns state to broadcast and/or a log line. */
   onMIDI(msg: MidiMessage): MockHandlerResult;
   /** Return the complete current state (for new WebSocket clients) */

@@ -14,6 +14,8 @@ export interface EngineOptions {
   upperChannel: number;
   wsPort: number;
   portName: string;
+  /** Per-instance backup label this mock should load. Defaults to `_default`. */
+  label?: string;
   /** Skip creating a virtual MIDI port — WS-only mode for CI/Docker */
   noMidi?: boolean;
 }
@@ -34,8 +36,8 @@ export class MockEngine {
   }
 
   async start(): Promise<void> {
-    // Init handler with channel config
-    this.handler.init(this.opts.lowerChannel, this.opts.upperChannel);
+    // Init handler with channel config and per-instance backup label
+    this.handler.init(this.opts.lowerChannel, this.opts.upperChannel, this.opts.label);
 
     // Create virtual MIDI port (skip in WS-only mode for CI/Docker)
     if (!this.opts.noMidi) {
