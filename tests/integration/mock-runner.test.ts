@@ -107,7 +107,9 @@ describe("headless mock runner", { concurrency: 1 }, () => {
         const entries = readActive();
         const ours = entries.find((e) => e.modelId === "nord-electro-5d");
         assert.ok(ours, `expected a registry entry for nord-electro-5d, got: ${JSON.stringify(entries)}`);
-        assert.equal(ours.midiPort, "Nord Electro 5D Mock");
+        // The OS may suffix duplicates ("Foo" → "Foo1"), but with a single
+        // mock the requested name should land verbatim.
+        assert.match(ours.midiPort, /^Nord Electro 5D Mock\d?$/);
         assert.equal(typeof ours.wsPort, "number");
       } finally {
         if (mock) await mock.stop();
@@ -116,6 +118,35 @@ describe("headless mock runner", { concurrency: 1 }, () => {
         const after = readActive();
         const stillThere = after.find((e) => e.modelId === "nord-electro-5d");
         assert.equal(stillThere, undefined, "expected the entry to be removed on stop");
+        if (prevEnv === undefined) delete process.env.KEYBOARDS_MCP_DATA_DIR;
+        else process.env.KEYBOARDS_MCP_DATA_DIR = prevEnv;
+        rmSync(tmpData, { recursive: true, force: true });
+      }
+    });
+
+    it("two same-model mocks both publish — wsPort keeps them distinct", async () => {
+      const tmpData = mkdtempSync(join(tmpdir(), "mock-registry-int-"));
+      const prevEnv = process.env.KEYBOARDS_MCP_DATA_DIR;
+      process.env.KEYBOARDS_MCP_DATA_DIR = tmpData;
+      const mocks: MockProcess[] = [];
+      try {
+        mocks.push(await MockProcess.start({ model: "nord-electro-5d", wsPort: nextPort++ }));
+        mocks.push(await MockProcess.start({ model: "nord-electro-5d", wsPort: nextPort++ }));
+        await Promise.all(mocks.map((m) => m.waitForState()));
+        await new Promise((r) => setTimeout(r, 150));
+
+        const ours = readActive().filter((e) => e.modelId === "nord-electro-5d");
+        assert.equal(ours.length, 2,
+          `expected 2 nord registry entries, got ${ours.length}: ${JSON.stringify(ours.map((e) => ({ midi: e.midiPort, ws: e.wsPort })))}`);
+        // Distinct wsPorts (registry key)
+        assert.notEqual(ours[0].wsPort, ours[1].wsPort);
+        // The OS hands out distinct names per Core MIDI's auto-suffix rule
+        assert.notEqual(ours[0].midiPort, ours[1].midiPort,
+          `expected distinct OS-assigned port names, got both "${ours[0].midiPort}"`);
+      } finally {
+        await Promise.all(mocks.map(async (m) => {
+          try { await m.stop(); } catch { /* ignore */ }
+        }));
         if (prevEnv === undefined) delete process.env.KEYBOARDS_MCP_DATA_DIR;
         else process.env.KEYBOARDS_MCP_DATA_DIR = prevEnv;
         rmSync(tmpData, { recursive: true, force: true });

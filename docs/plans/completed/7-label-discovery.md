@@ -38,8 +38,9 @@ data/runtime/mocks.json:
 
 - Written by `MockEngine.start()`, updated by `MockEngine.relabel()`, removed by `MockEngine.stop()`.
 - Each engine touches `lastTouched` periodically (every 30s) so consumers can detect stale entries (process killed without cleanup).
-- Atomic write: write to `mocks.json.tmp` + `rename`.
+- Atomic write: per-process tmp file (`mocks.json.<pid>.<ts>.<rand>.tmp`) + `rename`. Per-process tmp names prevent two writers from colliding on the same scratch path.
 - File is intentionally inside the existing `data/` root; respects `KEYBOARDS_MCP_DATA_DIR`.
+- **Keyed by `wsPort`** (not by `midiPort`). Two same-model mocks on the same machine can share a virtual MIDI port name — Core MIDI auto-suffixes the second so the OS-assigned names differ, but if the lookup were keyed on the requested name the second registration would still clobber the first. wsPort is unique per running engine, so it's the stable key. The engine reads the actual OS-assigned `midiPort` back via `easymidi.getOutputs()` immediately after creating the virtual port, so the stored midiPort always matches what `list_midi_devices` will see.
 
 ### 2. MCP reads the registry
 
@@ -57,11 +58,12 @@ Two consumers:
 ```
 
 **`connect_to_keyboard`** — when no `label` arg is given:
-1. Look up the registry by the resolved primary port name.
-2. If found, use `entry.label`. Set `mock_ws_port` from the entry too (so the status WS hits the right mock).
-3. If not found, fall back to `_default` (current behavior).
+1. Resolve the primary port via `midi.connect()` first — substring matching (`port: "Nord"`) becomes the actual OS port name (`"Nord Electro 5D Mock"`).
+2. Look up the registry by that **resolved** name.
+3. If found, use `entry.label` and set `mock_ws_port` from the entry (so the status WS hits the right mock — important when two mocks share a port name and only the wsPort distinguishes them).
+4. If not found, fall back to `_default`.
 
-The explicit `label` arg stays as an override.
+The explicit `label` arg stays as an override; when present, the live label-update listener is also disabled so the user's choice can't be silently rewritten by the mock's first broadcast.
 
 ### 3. Pool device label tracks the mock
 
@@ -71,7 +73,7 @@ For real-time updates of `device.label` while connected: the `MidiManager.mockWs
 
 ### 4. Stale-entry cleanup
 
-On every `list_midi_devices` (and on registry reads), filter out entries whose `pid` no longer exists or whose `lastTouched` is older than 5 minutes. Keep them in the file (for debugging) but mark `stale: true` in memory. The mock-runner main process can also rewrite the file on startup, dropping any stale entries it owned previously.
+`readActive()` filters out entries whose `pid` no longer exists or whose `lastTouched` is older than `STALE_AFTER_MS` (5 min). For diagnostic surfaces, `readAllWithStaleFlag()` keeps every entry and tags each with a `stale: boolean` — `list_midi_devices` uses that and renders stale entries with a `(stale)` marker so the user can see "this mock disappeared but its registry entry hasn't been swept yet". The mock-runner main process also calls `purgeStale()` at startup, dropping entries whose owning PID is gone (typical after a crash).
 
 ### What doesn't change
 
@@ -95,9 +97,9 @@ On every `list_midi_devices` (and on registry reads), filter out entries whose `
 
 ### Tests
 
-- **`tests/unit/mock-registry.test.ts`** (new): write → read round-trip, atomic write under contention, stale-entry filtering, label sanitization.
-- **`tests/integration/mock-runner.test.ts`**: extend the "two mocks run simultaneously" case to assert each mock writes its entry; after stopping one, its entry is gone.
-- **`tests/e2e/multi-device.test.ts`**: extend the existing 3-mock harness to assert `connect_to_keyboard` (no `label` arg) auto-adopts the mock's label.
+- **`tests/unit/mock-registry.test.ts`** (new, 21 cases): wsPort-keyed upsert, two-same-midiPort coexistence, `findByMidiPort` (returns most-recently-touched on collisions) + `findByWsPort`, PID-scoped touch / relabel / unregister, dropOwnedByThisProcess, staleness via dead PID + old heartbeat, `readAllWithStaleFlag`, purgeStale, atomic-write recovery from corrupt file, per-process tmp-file policy (50 concurrent writes leave no leftover `.tmp`), malformed-entry filtering.
+- **`tests/integration/mock-runner.test.ts`**: each running mock writes an active registry entry; entry is removed on stop. Two same-model mocks both publish — wsPort keeps them distinct and Core MIDI hands out distinct OS-assigned port names.
+- **`tests/e2e/label-discovery.test.ts`**: `list_midi_devices` shows the running mocks' labels and ws ports; `connect_to_keyboard` with no `label` adopts the running mock's label; substring `port: "Prophet"` resolves to the actual MIDI name and still hits the registry.
 
 ## Backwards compatibility
 

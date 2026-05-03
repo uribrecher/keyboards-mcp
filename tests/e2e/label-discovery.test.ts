@@ -74,4 +74,18 @@ describe("E2E: label discovery", { concurrency: 1, skip: isDocker }, () => {
     const status = await h.callTool("is_connected");
     assert.match(status.content[0].text, /device 1: Nord Electro 5D "_default"/);
   });
+
+  it("substring port resolves to the actual MIDI name and auto-adopts the right label", async () => {
+    // Simulating an agent that knows only "Prophet" and lets the
+    // connect tool resolve the full port name. Registry lookup must
+    // happen against the resolved name, not the raw input.
+    const r = await h.callTool("connect_to_keyboard", {
+      port: "Prophet",
+      auto_input: false,
+      auto_forward: false,
+    });
+    assert.ok(!r.isError, `substring connect failed: ${r.content[0].text}`);
+    assert.match(r.content[0].text, /Label: auto-adopted from running mock/);
+    assert.match(r.content[0].text, /Prophet-6/);
+  });
 });

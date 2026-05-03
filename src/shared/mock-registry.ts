@@ -6,9 +6,19 @@
  * can show labels and `connect_to_keyboard` can auto-adopt a label without
  * the caller passing one.
  *
- * Storage: `<dataDir>/runtime/mocks.json`. Atomic write via tmp+rename.
+ * Entries are keyed by `wsPort`, which is unique per running engine. Two
+ * mocks of the same model on the same machine will share a virtual MIDI
+ * port name (Core MIDI auto-suffixes the second as `… Mock1`, etc.); the
+ * registry stores the actual OS-assigned `midiPort` for both, distinct
+ * by their wsPort.
+ *
+ * Storage: `<dataDir>/runtime/mocks.json`. Atomic write via a per-process
+ * tmp file + rename so concurrent mocks heart-beating at the same time
+ * never collide on the temp path. Honors `KEYBOARDS_MCP_DATA_DIR`.
+ *
  * Stale entries (process gone or `lastTouched` older than STALE_AFTER_MS)
- * are filtered by `readActive()`. Honors `KEYBOARDS_MCP_DATA_DIR`.
+ * are filtered by `readActive()`. `readAllWithStaleFlag()` keeps them and
+ * marks `stale: true` for diagnostic surfaces (`list_midi_devices`).
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
@@ -22,9 +32,9 @@ const __dirname = dirname(__filename);
 export const STALE_AFTER_MS = 5 * 60 * 1000;
 
 export interface MockRegistryEntry {
-  /** Virtual MIDI port name (e.g. "Nord Electro 5D Mock"). */
+  /** Virtual MIDI port name as seen by Core MIDI / easymidi. */
   midiPort: string;
-  /** WebSocket port the mock engine listens on. */
+  /** WebSocket port — also the registry key. Unique per running engine. */
   wsPort: number;
   /** Model id (e.g. "nord-electro-5d"). */
   modelId: string;
@@ -93,12 +103,21 @@ export function readActive(): MockRegistryEntry[] {
   return readAll().filter((e) => !isStale(e));
 }
 
-/** Atomic write of the full list. */
+/** Read all entries with a `stale` flag — used by diagnostic UIs that want to surface dead mocks. */
+export function readAllWithStaleFlag(): Array<MockRegistryEntry & { stale: boolean }> {
+  return readAll().map((e) => ({ ...e, stale: isStale(e) }));
+}
+
+/**
+ * Atomic write of the full list. Uses a per-process tmp file so multiple
+ * concurrent writers (e.g. a tab heart-beating while another tab is
+ * registering) don't collide on the same `<path>.tmp`.
+ */
 function writeAll(entries: MockRegistryEntry[]): void {
   const path = registryPath();
   try {
     mkdirSync(dirname(path), { recursive: true });
-    const tmp = path + ".tmp";
+    const tmp = `${path}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
     writeFileSync(tmp, JSON.stringify(entries, null, 2), "utf-8");
     renameSync(tmp, path);
   } catch {
@@ -107,37 +126,38 @@ function writeAll(entries: MockRegistryEntry[]): void {
 }
 
 /**
- * Insert or update an entry, keyed by `midiPort` (each virtual MIDI port
- * is unique per Core MIDI). Used by MockEngine.start() and on relabel.
+ * Insert or update an entry, keyed by `wsPort`. Two engines may share a
+ * `midiPort` (Core MIDI may auto-suffix duplicates), so the wsPort is the
+ * stable handle.
  */
 export function register(entry: MockRegistryEntry): void {
-  const list = readAll().filter((e) => e.midiPort !== entry.midiPort);
+  const list = readAll().filter((e) => e.wsPort !== entry.wsPort);
   list.push(entry);
   writeAll(list);
 }
 
 /** Refresh `lastTouched` for an entry owned by this process. No-op if missing. */
-export function touch(midiPort: string): void {
+export function touch(wsPort: number): void {
   const list = readAll();
-  const entry = list.find((e) => e.midiPort === midiPort && e.pid === process.pid);
+  const entry = list.find((e) => e.wsPort === wsPort && e.pid === process.pid);
   if (!entry) return;
   entry.lastTouched = new Date().toISOString();
   writeAll(list);
 }
 
 /** Update label for an existing entry. */
-export function relabel(midiPort: string, label: string): void {
+export function relabel(wsPort: number, label: string): void {
   const list = readAll();
-  const entry = list.find((e) => e.midiPort === midiPort && e.pid === process.pid);
+  const entry = list.find((e) => e.wsPort === wsPort && e.pid === process.pid);
   if (!entry) return;
   entry.label = label;
   entry.lastTouched = new Date().toISOString();
   writeAll(list);
 }
 
-/** Remove an entry, keyed by `midiPort` + own pid. */
-export function unregister(midiPort: string): void {
-  const list = readAll().filter((e) => !(e.midiPort === midiPort && e.pid === process.pid));
+/** Remove an entry, keyed by `wsPort` + own pid. */
+export function unregister(wsPort: number): void {
+  const list = readAll().filter((e) => !(e.wsPort === wsPort && e.pid === process.pid));
   writeAll(list);
 }
 
@@ -153,9 +173,21 @@ export function purgeStale(): void {
   writeAll(list);
 }
 
-/** Look up by exact MIDI port name. */
+/**
+ * Look up the active entry for a MIDI port name. Two engines may share
+ * a midiPort (rare, race), in which case the most-recently-touched one
+ * wins so a fresh restart shadows a half-dead duplicate.
+ */
 export function findByMidiPort(midiPort: string): MockRegistryEntry | undefined {
-  return readActive().find((e) => e.midiPort === midiPort);
+  const matches = readActive().filter((e) => e.midiPort === midiPort);
+  if (matches.length === 0) return undefined;
+  return matches.reduce((a, b) =>
+    Date.parse(a.lastTouched) > Date.parse(b.lastTouched) ? a : b);
+}
+
+/** Look up by wsPort (always unique). */
+export function findByWsPort(wsPort: number): MockRegistryEntry | undefined {
+  return readActive().find((e) => e.wsPort === wsPort);
 }
 
 /** Test-only: wipe the registry file. */

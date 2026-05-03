@@ -39,10 +39,13 @@ export class MockEngine {
   private clients = new Set<WebSocket>();
   private mcpClients = new Set<WebSocket>();
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  /** Actual OS-assigned MIDI port name (Core MIDI suffixes duplicates). */
+  private actualPortName: string;
 
   constructor(handler: MockHandler, opts: EngineOptions) {
     this.handler = handler;
     this.opts = opts;
+    this.actualPortName = opts.portName;
   }
 
   async start(): Promise<void> {
@@ -52,7 +55,13 @@ export class MockEngine {
     // Create virtual MIDI port (skip in WS-only mode for CI/Docker)
     if (!this.opts.noMidi) {
       const easymidi = await import("easymidi");
+      const before = new Set<string>(easymidi.default.getOutputs());
       this.midiInput = new easymidi.default.Input(this.opts.portName, true);
+      // Capture the OS-assigned name. Core MIDI suffixes duplicates
+      // ("Foo" then "Foo1") so two same-model mocks have distinct names.
+      const after = easymidi.default.getOutputs();
+      const newOnes = after.filter((p: string) => !before.has(p));
+      if (newOnes.length === 1) this.actualPortName = newOnes[0];
     }
 
     // Bare HTTP server for WebSocket
@@ -143,7 +152,7 @@ export class MockEngine {
     if (this.opts.noRegistry || !this.opts.modelId) return;
     const now = new Date().toISOString();
     registry.register({
-      midiPort:    this.opts.portName,
+      midiPort:    this.actualPortName,
       wsPort:      this.opts.wsPort,
       modelId:     this.opts.modelId,
       displayName: this.opts.displayName ?? this.opts.modelId,
@@ -154,7 +163,7 @@ export class MockEngine {
     });
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = setInterval(() => {
-      registry.touch(this.opts.portName);
+      registry.touch(this.opts.wsPort);
     }, HEARTBEAT_MS);
     if (this.heartbeatTimer.unref) this.heartbeatTimer.unref();
   }
@@ -176,7 +185,7 @@ export class MockEngine {
   relabel(label: string, lowerChannel: number, upperChannel: number): void {
     this.opts.label = label;
     this.handler.init(lowerChannel, upperChannel, label);
-    if (!this.opts.noRegistry) registry.relabel(this.opts.portName, label);
+    if (!this.opts.noRegistry) registry.relabel(this.opts.wsPort, label);
     this.broadcast(this.handler.getFullState(true));
   }
 
@@ -185,7 +194,7 @@ export class MockEngine {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
-    if (!this.opts.noRegistry) registry.unregister(this.opts.portName);
+    if (!this.opts.noRegistry) registry.unregister(this.opts.wsPort);
     if (this.midiInput) {
       this.midiInput.close();
       this.midiInput = null;

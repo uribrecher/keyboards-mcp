@@ -161,24 +161,12 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           };
         }
 
-        // Resolve the primary port name we'll bind to so we can look it up
-        // in the runtime mock registry (label discovery, plan #7).
-        const candidatePortName: string | undefined = port !== undefined
-          ? (typeof port === "number" ? outputPorts[port]?.name : port)
-          : outputPorts.find((p) =>
-              model!.info.midiPortPatterns.some((pat) =>
-                p.name.toLowerCase().includes(pat.toLowerCase())))?.name;
-        const registryEntry = candidatePortName ? findByMidiPort(candidatePortName) : undefined;
-
-        // Effective label: explicit `label` arg > running mock's advertised label > undefined.
-        const effectiveLabel = label ?? registryEntry?.label;
-        // Effective mock WS port: explicit > registry > env/default (handled inside MidiManager).
-        const effectiveMockWsPort = mock_ws_port ?? registryEntry?.wsPort;
-
-        // Per-device MidiManager owns this device's output, input, forward, and mock WS
+        // Per-device MidiManager owns this device's output, input, forward, and mock WS.
+        // Note: registry lookup happens AFTER `midi.connect()` resolves the actual
+        // OS port name — substring `port: "Nord"` would otherwise miss the registry.
         const midi = new MidiManager();
-        if (effectiveMockWsPort !== undefined) midi.setMockWsPort(effectiveMockWsPort);
-        const device = createDeviceForModel(model, effectiveLabel);
+        // Defer label resolution until after the port is bound — see below.
+        const device = createDeviceForModel(model, label);
 
         // Set MIDI channels
         if (channel !== undefined) {
@@ -199,6 +187,29 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           result = midi.autoConnect(model.info.midiPortPatterns);
         }
 
+        // Now that the actual MIDI port name is known, look up the runtime
+        // mock registry. `port: "Nord"` substring resolves through
+        // `midi.connect()` to e.g. "Nord Electro 5D Mock"; the registry
+        // is keyed on that exact name.
+        const resolvedPortName = midi.getConnectedPort();
+        const registryEntry = resolvedPortName ? findByMidiPort(resolvedPortName) : undefined;
+
+        // If the caller didn't pass an explicit label, adopt the mock's.
+        if (label === undefined && registryEntry) {
+          device.label = registryEntry.label;
+          // Pre-load that label's cache so device.backupData lines up.
+          model.backupCache?.load(registryEntry.label);
+          const cached = model.backupCache?.get(registryEntry.label);
+          if (cached) device.backupData = cached;
+        }
+        // Likewise route the status WS to the correct mock without an
+        // explicit `mock_ws_port` arg.
+        if (mock_ws_port === undefined && registryEntry) {
+          midi.setMockWsPort(registryEntry.wsPort);
+        } else if (mock_ws_port !== undefined) {
+          midi.setMockWsPort(mock_ws_port);
+        }
+
         // Connect input — explicit port wins; auto-detect only if autoInput !== false
         let inputResult = "";
         if (input_port !== undefined) {
@@ -211,6 +222,17 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
             const res = midi.autoConnectInput(model.info.midiPortPatterns);
             inputResult = `, input: ${res.portName}`;
           } catch { /* auto-input optional */ }
+        }
+
+        // Live-track label changes from the mock (plan #7). Register the
+        // listener BEFORE any path that opens the mock-status WebSocket
+        // (connectForward / attachMockStatusWs) so we don't lose the
+        // first state message — which carries the mock's current label
+        // and is the canonical source of truth when no `label` arg was
+        // passed. We update `device.label` directly; the pool entry is
+        // a reference, so subsequent reads see the new value.
+        if (label === undefined) {
+          midi.setOnMockLabel((newLabel) => { device.label = newLabel; });
         }
 
         // Connect forward — explicit port wins; auto-detect only if autoForward !== false
@@ -263,17 +285,6 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           },
         );
 
-        // Live-track label changes from the mock (plan #7) — but only if
-        // the caller didn't pass an explicit `label`. An explicit override
-        // is the user's intent and must not be silently rewritten by the
-        // mock's first broadcast.
-        if (label === undefined) {
-          midi.setOnMockLabel((newLabel) => {
-            const entry = pool.get(index);
-            if (entry) entry.device.label = newLabel;
-          });
-        }
-
         // If the mock disappears, drop only this device — leave others alone
         midi.setOnMockDisconnect(() => {
           const entry = pool.get(index);
@@ -282,8 +293,7 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           }
         });
 
-        const adoptedLabel = effectiveLabel ?? device.label;
-        const labelTag = adoptedLabel ? ` "${adoptedLabel}"` : "";
+        const labelTag = device.label ? ` "${device.label}"` : "";
         const labelSrc = label
           ? "user-provided"
           : registryEntry
