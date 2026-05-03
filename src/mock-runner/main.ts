@@ -52,6 +52,38 @@ function nextFreePort(): number {
   return port;
 }
 
+/**
+ * Auto-generate the next monotonic label for a model — `<model-id>-1`,
+ * `<model-id>-2`, etc. Skips numbers already in use by other tabs of
+ * the same model. The user can override via the rename-tab IPC.
+ *
+ * Format matches the backup-cache sanitization rule (lowercase
+ * `[a-z0-9._-]` only) so display === storage.
+ */
+function nextLabelForModel(model: KeyboardModel): string {
+  const slug = model.info.id;
+  const taken = new Set<string>();
+  for (const t of tabs.values()) {
+    if (t.model?.info.id === slug && t.label) taken.add(t.label);
+  }
+  for (let n = 1; n < 1000; n++) {
+    const candidate = `${slug}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${slug}-1`;
+}
+
+/** Sanitization mirrors the model-side backup-cache rule. */
+function sanitizeLabel(label: string): string {
+  let slug = label.trim().toLowerCase();
+  slug = slug.replace(/\s+/g, "-");
+  slug = slug.replace(/[^a-z0-9._-]/g, "");
+  if (slug === "" || slug === "." || slug === ".." || slug.includes("..")) {
+    return "_default";
+  }
+  return slug;
+}
+
 let mainWindow: BrowserWindow | null = null;
 
 // ── Window ──
@@ -159,7 +191,9 @@ ipcMain.handle(
     }
 
     const wsPort = nextFreePort();
-    const resolvedLabel = label && label.trim().length > 0 ? label : "_default";
+    const resolvedLabel = label && label.trim().length > 0
+      ? sanitizeLabel(label)
+      : nextLabelForModel(model);
     const portName = `${model.info.displayName} Mock`;
 
     const engine = new MockEngine(handler, {
@@ -184,6 +218,40 @@ ipcMain.handle(
       modelInfoId: model.info.id,
       label: resolvedLabel,
     };
+  },
+);
+
+ipcMain.handle(
+  "rename-tab",
+  async (_event, tabId: string, newLabel: string): Promise<{ ok: boolean; label?: string; error?: string }> => {
+    const entry = tabs.get(tabId);
+    if (!entry) return { ok: false, error: `Unknown tab ${tabId}` };
+
+    const slug = sanitizeLabel(newLabel);
+    if (slug.length === 0 || slug === "_default") {
+      return { ok: false, error: "Label can't be empty or '_default'" };
+    }
+
+    // Reject collisions with other tabs of the same model
+    for (const other of tabs.values()) {
+      if (other.tabId === tabId) continue;
+      if (other.model?.info.id === entry.model?.info.id && other.label === slug) {
+        return { ok: false, error: `Label "${slug}" already used by another tab.` };
+      }
+    }
+
+    entry.label = slug;
+
+    // Tell the live engine to re-init under the new label so the right
+    // backup cache loads. Cheapest path: handler.init() with the new label,
+    // then broadcast a fresh state snapshot.
+    if (entry.engine && entry.model?.createMockHandler) {
+      try { entry.engine.relabel(slug, LOWER_CH, UPPER_CH); } catch (err) {
+        console.error("relabel failed:", err);
+      }
+    }
+
+    return { ok: true, label: slug };
   },
 );
 

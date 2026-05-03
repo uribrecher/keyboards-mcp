@@ -47,7 +47,8 @@ function renderTabButton(tab) {
 
   const title = document.createElement("span");
   title.className = "tab__title";
-  title.textContent = tab.displayName ?? "new tab";
+  title.textContent = tabTitleText(tab);
+  title.title = tab.modelInfoId ? `Double-click to rename · ${tab.displayName}` : "";
 
   const close = document.createElement("span");
   close.className = "tab__close";
@@ -65,7 +66,76 @@ function renderTabButton(tab) {
     setActive(tab.tabId);
   });
 
+  // Double-click the title → inline rename. Only meaningful once the tab
+  // has a model loaded (and therefore a label).
+  title.addEventListener("dblclick", (e) => {
+    if (!tab.modelInfoId) return;
+    e.stopPropagation();
+    beginRename(tab, title);
+  });
+
   return btn;
+}
+
+function tabTitleText(tab) {
+  if (!tab.modelInfoId) return "new tab";
+  return tab.label || tab.displayName || "—";
+}
+
+function beginRename(tab, titleEl) {
+  const original = tab.label ?? "";
+  titleEl.contentEditable = "true";
+  titleEl.spellcheck = false;
+  titleEl.classList.add("tab__title--editing");
+  titleEl.textContent = original;
+
+  // Select all
+  const range = document.createRange();
+  range.selectNodeContents(titleEl);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  titleEl.focus();
+
+  let commitHandled = false;
+
+  const commit = async () => {
+    if (commitHandled) return;
+    commitHandled = true;
+    titleEl.contentEditable = "false";
+    titleEl.classList.remove("tab__title--editing");
+    const next = (titleEl.textContent || "").trim();
+    if (!next || next === original) {
+      titleEl.textContent = tabTitleText(tab);
+      return;
+    }
+    const result = await api.renameTab(tab.tabId, next);
+    if (result.ok && result.label) {
+      tab.label = result.label;
+      titleEl.textContent = tabTitleText(tab);
+      titleEl.title = `Double-click to rename · ${tab.displayName}`;
+      // Refresh iframe so the model UI re-init with the new label takes
+      // effect for any header-bound state. The wsPort doesn't change.
+    } else {
+      titleEl.textContent = tabTitleText(tab);
+      appendRow("system", `Rename failed: ${result.error ?? "(unknown)"}`);
+    }
+  };
+
+  titleEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      titleEl.blur();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      commitHandled = true;
+      titleEl.contentEditable = "false";
+      titleEl.classList.remove("tab__title--editing");
+      titleEl.textContent = tabTitleText(tab);
+    }
+  }, { once: false });
+
+  titleEl.addEventListener("blur", () => { void commit(); }, { once: true });
 }
 
 async function newTab() {
@@ -132,9 +202,13 @@ async function selectModelForTab(tabId, modelId) {
   tab.label         = result.label;
   tab.wsPort        = result.wsPort;
 
-  // Re-skin the tab button
+  // Re-skin the tab button. The visible title is the *label* — that's the
+  // identifier the user (and the backup cache) actually cares about. Hover
+  // tooltip carries the model display name + ws port.
   tab.button.classList.remove("is-pending");
-  tab.button.querySelector(".tab__title").textContent = result.displayName;
+  const titleEl = tab.button.querySelector(".tab__title");
+  titleEl.textContent = tabTitleText(tab);
+  titleEl.title = `Double-click to rename · ${result.displayName} · ws ${result.wsPort}`;
   tab.button.title = `${result.displayName} · ws:${result.wsPort} · "${result.label}"`;
 
   // Navigate the iframe to the model UI with the per-tab wsPort

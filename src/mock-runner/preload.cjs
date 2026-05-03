@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("mockRunnerAPI", {
   closeTab: (tabId) => ipcRenderer.invoke("close-tab", tabId),
   selectModelForTab: (tabId, modelId, label) =>
     ipcRenderer.invoke("select-model-for-tab", tabId, modelId, label),
+  renameTab: (tabId, label) => ipcRenderer.invoke("rename-tab", tabId, label),
   listTabs: () => ipcRenderer.invoke("list-tabs"),
 
   // Backup workflow

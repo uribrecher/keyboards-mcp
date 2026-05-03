@@ -131,6 +131,17 @@ export class MockEngine {
     this.broadcast(this.handler.getFullState(true));
   }
 
+  /**
+   * Re-init the handler under a new per-instance backup label without
+   * tearing down the WebSocket or virtual MIDI port. The new label's
+   * cache (if any) is loaded immediately.
+   */
+  relabel(label: string, lowerChannel: number, upperChannel: number): void {
+    this.opts.label = label;
+    this.handler.init(lowerChannel, upperChannel, label);
+    this.broadcast(this.handler.getFullState(true));
+  }
+
   async stop(): Promise<void> {
     if (this.midiInput) {
       this.midiInput.close();
