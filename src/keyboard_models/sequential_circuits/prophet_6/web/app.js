@@ -128,17 +128,24 @@ function updateUI(state) {
   }
 }
 
+function setMcpStatus(connected) {
+  const el = document.getElementById("status");
+  el.textContent = connected ? "MCP CONNECTED" : "MCP DISCONNECTED";
+  el.className = connected ? "connected" : "disconnected";
+}
+
 function connect() {
-  ws = new WebSocket("ws://localhost:3000");
+  const wsPort = new URLSearchParams(location.search).get("wsPort") || "3000";
+  ws = new WebSocket(`ws://localhost:${wsPort}`);
 
   ws.onopen = () => {
-    document.getElementById("status").textContent = "Connected";
-    document.getElementById("status").className = "connected";
+    // WS to the mock engine is up — but MCP-server connectivity is a
+    // separate signal, broadcast inside each state message as
+    // `mcpConnected`. Stay "MCP DISCONNECTED" until we hear otherwise.
   };
 
   ws.onclose = () => {
-    document.getElementById("status").textContent = "Disconnected";
-    document.getElementById("status").className = "disconnected";
+    setMcpStatus(false);
     setTimeout(connect, 2000);
   };
 
@@ -151,6 +158,8 @@ function connect() {
     if (data.global && Object.keys(paramElements).length === 0) {
       buildUI(data.global);
     }
+
+    if (typeof data.mcpConnected === "boolean") setMcpStatus(data.mcpConnected);
 
     updateUI(data);
   };

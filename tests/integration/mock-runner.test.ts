@@ -70,5 +70,41 @@ describe("headless mock runner", { concurrency: 1 }, () => {
         try { await mockB.stop(); } catch { /* ignore */ }
       }
     });
+
+    it("three concurrent mocks on different ports stay independent", async () => {
+      const mocks = [
+        await MockProcess.start({ model: "nord-electro-5d", wsPort: nextPort++ }),
+        await MockProcess.start({ model: "roland-juno-x", wsPort: nextPort++ }),
+        await MockProcess.start({ model: "sequential-prophet-6", wsPort: nextPort++ }),
+      ];
+      try {
+        const states = await Promise.all(mocks.map((m) => m.waitForState()));
+        assert.ok(states[0].preset1Drawbars, "Nord state missing");
+        assert.ok(states[1].part1, "JUNO-X state missing");
+        assert.ok(states[2].global?.arp_mode, "Prophet-6 state missing");
+      } finally {
+        await Promise.all(mocks.map(async (m) => {
+          try { await m.stop(); } catch { /* ignore */ }
+        }));
+      }
+    });
+
+    it("port reuse — restarting on the same port works after the previous mock stops", async () => {
+      const port = nextPort++;
+      const first = await MockProcess.start({ model: "nord-electro-5d", wsPort: port });
+      await first.waitForState();
+      await first.stop();
+
+      // Brief settle so the OS releases the port
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const second = await MockProcess.start({ model: "sequential-prophet-6", wsPort: port });
+      try {
+        const state = await second.waitForState();
+        assert.ok(state.global?.arp_mode, "Prophet-6 state missing after port reuse");
+      } finally {
+        await second.stop();
+      }
+    });
   }
 });

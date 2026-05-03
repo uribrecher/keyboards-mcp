@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pick a mock</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Fraunces:opsz,wght,SOFT@9..144,400;9..144,500;9..144,700&display=swap">
+  <style>
+    :root {
+      --c-shell:        #0c0c0e;
+      --c-chassis:      #161618;
+      --c-chassis-hi:   #1f1f23;
+      --c-chassis-low:  #08080a;
+      --c-edge:         #353539;
+      --c-text:         #cfcdc6;
+      --c-text-dim:     #6a6a6f;
+      --c-text-faint:   #43434a;
+      --c-text-bright:  #f0eee6;
+      --c-amber:        #f0a830;
+      --c-amber-glow:   rgba(240,168,48,0.45);
+      --c-amber-deep:   #b87a14;
+      --c-paper-dim:    #b4ac9a;
+      --font-display:   "Roboto Mono", ui-monospace, "SF Mono", Menlo, monospace;
+      --font-body:      "Fraunces", "Iowan Old Style", "Hoefler Text", Georgia, serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100vh; overflow: hidden; }
+    body {
+      background:
+        repeating-linear-gradient(
+          to bottom,
+          rgba(255,255,255,0.012) 0px,
+          rgba(255,255,255,0.012) 1px,
+          transparent 1px,
+          transparent 3px
+        ),
+        radial-gradient(ellipse at top, rgba(240,168,48,0.04) 0%, transparent 60%),
+        var(--c-shell);
+      color: var(--c-text);
+      font-family: var(--font-display);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 24px;
+      padding: 36px 48px;
+    }
+
+    /* ── Slot label (mimics rack-mount blank panel) ── */
+    .slate {
+      text-align: center;
+      letter-spacing: 0.5em;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--c-text-faint);
+      text-transform: uppercase;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 18px;
+      align-items: center;
+    }
+    .slate__rule {
+      height: 1px;
+      background: linear-gradient(90deg,
+        transparent, var(--c-text-faint) 30%, var(--c-text-faint) 70%, transparent);
+    }
+    .slate__title {
+      letter-spacing: 0.6em;
+      color: var(--c-text-dim);
+    }
+
+    /* ── Headline ── */
+    .headline {
+      align-self: center;
+      max-width: 800px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .headline__kicker {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.45em;
+      color: var(--c-amber);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .headline__kicker::before,
+    .headline__kicker::after {
+      content: "";
+      width: 18px; height: 1px;
+      background: currentColor;
+    }
+    .headline__title {
+      font-family: var(--font-body);
+      font-style: italic;
+      font-weight: 400;
+      font-size: clamp(34px, 4.4vw, 56px);
+      line-height: 1.05;
+      letter-spacing: -0.01em;
+      color: var(--c-text-bright);
+      margin-bottom: 18px;
+    }
+    .headline__title em {
+      font-style: italic;
+      color: var(--c-amber);
+      font-weight: 500;
+    }
+    .headline__sub {
+      font-family: var(--font-body);
+      font-style: italic;
+      font-size: 16px;
+      font-weight: 400;
+      line-height: 1.45;
+      color: var(--c-paper-dim);
+      max-width: 580px;
+      margin: 0 auto;
+    }
+
+    /* ── Model grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      max-width: 880px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .card {
+      position: relative;
+      background:
+        linear-gradient(180deg, var(--c-chassis-hi) 0%, var(--c-chassis-low) 100%);
+      border: 1px solid var(--c-edge);
+      border-radius: 4px;
+      padding: 18px 18px 16px 22px;
+      cursor: pointer;
+      transition: border-color .15s, transform .12s, box-shadow .15s;
+      overflow: hidden;
+      isolation: isolate;
+    }
+    .card::before {
+      /* left amber bar — like a fader cap */
+      content: "";
+      position: absolute;
+      left: 0; top: 12px; bottom: 12px;
+      width: 3px;
+      background: var(--c-text-faint);
+      transition: background .15s, box-shadow .15s;
+    }
+    .card::after {
+      /* warm gradient that swells on hover */
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 100% 0%, rgba(240,168,48,0.08), transparent 50%);
+      opacity: 0;
+      transition: opacity .25s;
+      z-index: -1;
+    }
+    .card:hover {
+      border-color: var(--c-amber-deep);
+      transform: translateY(-1px);
+      box-shadow:
+        0 6px 20px -8px rgba(0,0,0,0.7),
+        0 0 18px -2px var(--c-amber-glow);
+    }
+    .card:hover::before {
+      background: var(--c-amber);
+      box-shadow: 0 0 6px var(--c-amber-glow);
+    }
+    .card:hover::after { opacity: 1; }
+
+    .card__mfr {
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.32em;
+      color: var(--c-text-faint);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .card__mfr::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: currentColor;
+      opacity: 0.3;
+    }
+    .card__name {
+      font-family: var(--font-body);
+      font-style: italic;
+      font-weight: 500;
+      font-size: 22px;
+      letter-spacing: -0.005em;
+      color: var(--c-text-bright);
+      line-height: 1.1;
+      margin-bottom: 6px;
+    }
+    .card__id {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      color: var(--c-text-dim);
+      text-transform: uppercase;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      font-size: 9.5px;
+      letter-spacing: 0.32em;
+      color: var(--c-text-faint);
+      text-transform: uppercase;
+    }
+
+    .empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      font-family: var(--font-body);
+      font-style: italic;
+      color: var(--c-paper-dim);
+      padding: 40px;
+    }
+  </style>
+</head>
+<body>
+  <div class="slate">
+    <span class="slate__rule"></span>
+    <span class="slate__title">— Slot Open —</span>
+    <span class="slate__rule"></span>
+  </div>
+
+  <header class="headline">
+    <div class="headline__kicker">Choose a unit</div>
+    <h1 class="headline__title">Which keyboard would you like to <em>rack up</em> here?</h1>
+    <p class="headline__sub">Each tab hosts its own mock device on its own MIDI port. Bring up as many as you want — they stay independent.</p>
+  </header>
+
+  <main class="grid" id="grid"></main>
+
+  <footer class="footer">SELECT A MODEL · OR PRESS ⌘T FOR A NEW SLOT</footer>
+
+  <script>
+    /* The chooser lives inside an iframe; the preload-bridged
+     * mockRunnerAPI only exists on the parent frame. Use postMessage
+     * to ask the parent for the model list. */
+    const grid = document.getElementById("grid");
+
+    function renderCards(models) {
+      grid.innerHTML = "";
+      if (!models || models.length === 0) {
+        grid.innerHTML = '<div class="empty">No keyboard models found in src/keyboard_models/.</div>';
+        return;
+      }
+      for (const model of models) {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "card";
+        card.innerHTML = `
+          <div class="card__mfr">${model.manufacturer}</div>
+          <div class="card__name">${model.displayName}</div>
+          <div class="card__id">id · ${model.id}</div>
+        `;
+        card.addEventListener("click", () => {
+          window.parent.postMessage({ type: "model-selected", modelId: model.id }, "*");
+        });
+        grid.appendChild(card);
+      }
+    }
+
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      if (data.type === "models" && Array.isArray(data.models)) {
+        renderCards(data.models);
+      }
+    });
+
+    // Ask parent for the catalog
+    window.parent.postMessage({ type: "request-models" }, "*");
+  </script>
+</body>
+</html>
