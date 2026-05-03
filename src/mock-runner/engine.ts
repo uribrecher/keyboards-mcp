@@ -8,16 +8,25 @@
 import { createServer, type Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { MockHandler, MidiMessage } from "../shared/keyboard-model.js";
+import * as registry from "../shared/mock-registry.js";
+
+const HEARTBEAT_MS = 30_000;
 
 export interface EngineOptions {
   lowerChannel: number;
   upperChannel: number;
   wsPort: number;
   portName: string;
+  /** Model id for the runtime registry (e.g. "nord-electro-5d"). */
+  modelId?: string;
+  /** Display name for the runtime registry. */
+  displayName?: string;
   /** Per-instance backup label this mock should load. Defaults to `_default`. */
   label?: string;
   /** Skip creating a virtual MIDI port — WS-only mode for CI/Docker */
   noMidi?: boolean;
+  /** Skip writing to the runtime registry — used by tests. */
+  noRegistry?: boolean;
 }
 
 export class MockEngine {
@@ -29,10 +38,14 @@ export class MockEngine {
   private wss: WebSocketServer | null = null;
   private clients = new Set<WebSocket>();
   private mcpClients = new Set<WebSocket>();
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+  /** Actual OS-assigned MIDI port name (Core MIDI suffixes duplicates). */
+  private actualPortName: string;
 
   constructor(handler: MockHandler, opts: EngineOptions) {
     this.handler = handler;
     this.opts = opts;
+    this.actualPortName = opts.portName;
   }
 
   async start(): Promise<void> {
@@ -42,7 +55,13 @@ export class MockEngine {
     // Create virtual MIDI port (skip in WS-only mode for CI/Docker)
     if (!this.opts.noMidi) {
       const easymidi = await import("easymidi");
+      const before = new Set<string>(easymidi.default.getOutputs());
       this.midiInput = new easymidi.default.Input(this.opts.portName, true);
+      // Capture the OS-assigned name. Core MIDI suffixes duplicates
+      // ("Foo" then "Foo1") so two same-model mocks have distinct names.
+      const after = easymidi.default.getOutputs();
+      const newOnes = after.filter((p: string) => !before.has(p));
+      if (newOnes.length === 1) this.actualPortName = newOnes[0];
     }
 
     // Bare HTTP server for WebSocket
@@ -64,10 +83,11 @@ export class MockEngine {
         });
       } else {
         this.clients.add(ws);
-        // Send full state to newly connected UI client
+        // Send full state to newly connected UI client (and MCP status WS).
         ws.send(JSON.stringify({
           ...this.handler.getFullState(true),
           mcpConnected: this.isMcpConnected(),
+          label: this.opts.label ?? "_default",
         }));
         ws.on("message", (raw) => {
           try {
@@ -117,9 +137,35 @@ export class MockEngine {
         }
         console.log(`  Lower channel: ${this.opts.lowerChannel}, Upper channel: ${this.opts.upperChannel}`);
         console.log(`  WebSocket: ws://localhost:${this.opts.wsPort}`);
+        this.publishToRegistry();
         resolve();
       });
     });
+  }
+
+  /**
+   * Publish (or refresh) this engine's entry in the runtime mock registry.
+   * Heartbeat timer keeps `lastTouched` fresh so consumers (`list_midi_devices`)
+   * can drop stale entries left by killed processes.
+   */
+  private publishToRegistry(): void {
+    if (this.opts.noRegistry || !this.opts.modelId) return;
+    const now = new Date().toISOString();
+    registry.register({
+      midiPort:    this.actualPortName,
+      wsPort:      this.opts.wsPort,
+      modelId:     this.opts.modelId,
+      displayName: this.opts.displayName ?? this.opts.modelId,
+      label:       this.opts.label ?? "_default",
+      pid:         process.pid,
+      startedAt:   now,
+      lastTouched: now,
+    });
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      registry.touch(this.opts.wsPort);
+    }, HEARTBEAT_MS);
+    if (this.heartbeatTimer.unref) this.heartbeatTimer.unref();
   }
 
   /**
@@ -139,10 +185,16 @@ export class MockEngine {
   relabel(label: string, lowerChannel: number, upperChannel: number): void {
     this.opts.label = label;
     this.handler.init(lowerChannel, upperChannel, label);
+    if (!this.opts.noRegistry) registry.relabel(this.opts.wsPort, label);
     this.broadcast(this.handler.getFullState(true));
   }
 
   async stop(): Promise<void> {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    if (!this.opts.noRegistry) registry.unregister(this.opts.wsPort);
     if (this.midiInput) {
       this.midiInput.close();
       this.midiInput = null;
@@ -170,15 +222,36 @@ export class MockEngine {
   }
 
   private broadcast(msg: Record<string, any>): void {
-    const json = JSON.stringify({ ...msg, mcpConnected: this.isMcpConnected() });
+    // Stamp every broadcast with mcpConnected (UI status indicator) and
+    // the engine's current label (consumed by MCP-side label discovery).
+    const json = JSON.stringify({
+      ...msg,
+      mcpConnected: this.isMcpConnected(),
+      label: this.opts.label ?? "_default",
+    });
+    // UI clients get the full state; MCP-status clients also need to see
+    // label changes so they can update the pool entry's device.label live.
     for (const ws of this.clients) {
       if (ws.readyState === ws.OPEN) ws.send(json);
+    }
+    const labelOnly = JSON.stringify({
+      mcpConnected: this.isMcpConnected(),
+      label: this.opts.label ?? "_default",
+    });
+    for (const ws of this.mcpClients) {
+      if (ws.readyState === ws.OPEN) ws.send(labelOnly);
     }
   }
 
   private broadcastMcpStatus(): void {
-    const json = JSON.stringify({ mcpConnected: this.isMcpConnected() });
+    const json = JSON.stringify({
+      mcpConnected: this.isMcpConnected(),
+      label: this.opts.label ?? "_default",
+    });
     for (const ws of this.clients) {
+      if (ws.readyState === ws.OPEN) ws.send(json);
+    }
+    for (const ws of this.mcpClients) {
       if (ws.readyState === ws.OPEN) ws.send(json);
     }
   }

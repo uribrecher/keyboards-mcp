@@ -54,6 +54,7 @@ export class MidiManager implements MidiConnection {
   private onCCCallback: ((msg: { controller: number; value: number; channel: number }) => void) | null = null;
   private onProgramChangeCallback: ((msg: { number: number; channel: number }) => void) | null = null;
   private onMockDisconnectCallback: (() => void) | null = null;
+  private onMockLabelCallback: ((label: string) => void) | null = null;
   private channel: Channel = 0;
   private lowerChannel: Channel = 1;
   private upperChannel: Channel = 2;
@@ -229,6 +230,15 @@ export class MidiManager implements MidiConnection {
     this.onMockDisconnectCallback = callback;
   }
 
+  /**
+   * Register a listener that fires whenever the mock's WS broadcasts a
+   * different `label` than we last saw. Used by the device pool to keep
+   * each pool entry's `device.label` in sync with the running mock.
+   */
+  setOnMockLabel(callback: (label: string) => void): void {
+    this.onMockLabelCallback = callback;
+  }
+
   connectInput(portNameOrIndex: string | number): { success: boolean; portName: string } {
     this.disconnectInput();
 
@@ -363,8 +373,20 @@ export class MidiManager implements MidiConnection {
       const wsPort = this.mockWsPort ?? process.env.MOCK_WS_PORT ?? "3000";
       const ws = new WebSocket(`ws://localhost:${wsPort}?client=mcp`);
       let everOpened = false;
+      let lastSeenLabel: string | null = null;
       ws.on("error", () => {}); // Swallow — best-effort signaling
       ws.on("open", () => { everOpened = true; });
+      ws.on("message", (raw) => {
+        // Mock state messages stamp `label` (plan #7). Surface every
+        // change up to the pool via the registered callback.
+        try {
+          const msg = JSON.parse(String(raw));
+          if (msg && typeof msg.label === "string" && msg.label !== lastSeenLabel) {
+            lastSeenLabel = msg.label;
+            this.onMockLabelCallback?.(msg.label);
+          }
+        } catch { /* non-JSON or non-state — ignore */ }
+      });
       ws.on("close", () => {
         // Only treat close as "mock disappeared" if we actually had a live
         // connection. A connect-refused WS that never opened (e.g. no mock

@@ -5,6 +5,7 @@ import type { DevicePool } from "../shared/device-pool.js";
 import { autoDetectModel, loadModelById } from "../shared/model-registry.js";
 import { WsMidiConnection } from "../midi/ws-midi-connection.js";
 import type { KeyboardModel, KeyboardDevice } from "../shared/keyboard-model.js";
+import { findByMidiPort } from "../shared/mock-registry.js";
 
 /** Same sanitizer as the model-level backup-cache. */
 function sanitizeLabelForCache(label: string | undefined | null): string {
@@ -160,9 +161,11 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           };
         }
 
-        // Per-device MidiManager owns this device's output, input, forward, and mock WS
+        // Per-device MidiManager owns this device's output, input, forward, and mock WS.
+        // Note: registry lookup happens AFTER `midi.connect()` resolves the actual
+        // OS port name — substring `port: "Nord"` would otherwise miss the registry.
         const midi = new MidiManager();
-        if (mock_ws_port !== undefined) midi.setMockWsPort(mock_ws_port);
+        // Defer label resolution until after the port is bound — see below.
         const device = createDeviceForModel(model, label);
 
         // Set MIDI channels
@@ -184,6 +187,29 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           result = midi.autoConnect(model.info.midiPortPatterns);
         }
 
+        // Now that the actual MIDI port name is known, look up the runtime
+        // mock registry. `port: "Nord"` substring resolves through
+        // `midi.connect()` to e.g. "Nord Electro 5D Mock"; the registry
+        // is keyed on that exact name.
+        const resolvedPortName = midi.getConnectedPort();
+        const registryEntry = resolvedPortName ? findByMidiPort(resolvedPortName) : undefined;
+
+        // If the caller didn't pass an explicit label, adopt the mock's.
+        if (label === undefined && registryEntry) {
+          device.label = registryEntry.label;
+          // Pre-load that label's cache so device.backupData lines up.
+          model.backupCache?.load(registryEntry.label);
+          const cached = model.backupCache?.get(registryEntry.label);
+          if (cached) device.backupData = cached;
+        }
+        // Likewise route the status WS to the correct mock without an
+        // explicit `mock_ws_port` arg.
+        if (mock_ws_port === undefined && registryEntry) {
+          midi.setMockWsPort(registryEntry.wsPort);
+        } else if (mock_ws_port !== undefined) {
+          midi.setMockWsPort(mock_ws_port);
+        }
+
         // Connect input — explicit port wins; auto-detect only if autoInput !== false
         let inputResult = "";
         if (input_port !== undefined) {
@@ -196,6 +222,17 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
             const res = midi.autoConnectInput(model.info.midiPortPatterns);
             inputResult = `, input: ${res.portName}`;
           } catch { /* auto-input optional */ }
+        }
+
+        // Live-track label changes from the mock (plan #7). Register the
+        // listener BEFORE any path that opens the mock-status WebSocket
+        // (connectForward / attachMockStatusWs) so we don't lose the
+        // first state message — which carries the mock's current label
+        // and is the canonical source of truth when no `label` arg was
+        // passed. We update `device.label` directly; the pool entry is
+        // a reference, so subsequent reads see the new value.
+        if (label === undefined) {
+          midi.setOnMockLabel((newLabel) => { device.label = newLabel; });
         }
 
         // Connect forward — explicit port wins; auto-detect only if autoForward !== false
@@ -256,13 +293,20 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           }
         });
 
+        const labelTag = device.label ? ` "${device.label}"` : "";
+        const labelSrc = label
+          ? "user-provided"
+          : registryEntry
+            ? "auto-adopted from running mock"
+            : "_default";
+
         return {
           content: [
             {
               type: "text",
               text: `Detected model: ${model.info.displayName}\n` +
                 `Connected to: ${result.portName} (global ch ${midi.getChannel() + 1}, lower ch ${midi.getLowerChannel() + 1}, upper ch ${midi.getUpperChannel() + 1}${inputResult}${forwardResult})\n` +
-                `Assigned device ${index}${label ? ` "${label}"` : ""}.`,
+                `Assigned device ${index}${labelTag}. Label: ${labelSrc}.`,
             },
           ],
         };
