@@ -68,14 +68,6 @@ export class TestHarness {
     return this.mcpClient.callTool({ name, arguments: args });
   }
 
-  getMockState(): Record<string, any> | null {
-    return this.mock.getLastState();
-  }
-
-  async waitForMockState(timeoutMs?: number): Promise<Record<string, any>> {
-    return this.mock.waitForState(timeoutMs);
-  }
-
   /** Reset device state between tests (without killing the MCP process) */
   async reset(): Promise<void> {
     try { await this.callTool("disconnect_from_keyboard"); } catch { /* ignore */ }
