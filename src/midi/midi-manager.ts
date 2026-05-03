@@ -362,14 +362,22 @@ export class MidiManager implements MidiConnection {
     try {
       const wsPort = this.mockWsPort ?? process.env.MOCK_WS_PORT ?? "3000";
       const ws = new WebSocket(`ws://localhost:${wsPort}?client=mcp`);
+      let everOpened = false;
       ws.on("error", () => {}); // Swallow — best-effort signaling
+      ws.on("open", () => { everOpened = true; });
       ws.on("close", () => {
-        // Mock device was unloaded — trigger full disconnect
-        if (this.mockWs === ws) {
-          console.error("Mock device disconnected — dropping MIDI connection");
-          this.disconnect();
-          this.onMockDisconnectCallback?.();
+        // Only treat close as "mock disappeared" if we actually had a live
+        // connection. A connect-refused WS that never opened (e.g. no mock
+        // listening on this port) must not tear down the MIDI connection —
+        // it just means the mock UI status signal isn't available.
+        if (this.mockWs !== ws) return;
+        if (!everOpened) {
+          this.mockWs = null;
+          return;
         }
+        console.error("Mock device disconnected — dropping MIDI connection");
+        this.disconnect();
+        this.onMockDisconnectCallback?.();
       });
       this.mockWs = ws;
     } catch {
