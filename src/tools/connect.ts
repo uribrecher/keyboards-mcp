@@ -263,15 +263,16 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           },
         );
 
-        // Live-track label changes from the mock (plan #7). When the user
-        // renames a tab in the mock-runner, the engine relabels and starts
-        // broadcasting the new label; the MidiManager picks it up and we
-        // update the pool entry's device.label so subsequent
-        // `is_connected` and `extract_backup` calls see the new label.
-        midi.setOnMockLabel((newLabel) => {
-          const entry = pool.get(index);
-          if (entry) entry.device.label = newLabel;
-        });
+        // Live-track label changes from the mock (plan #7) — but only if
+        // the caller didn't pass an explicit `label`. An explicit override
+        // is the user's intent and must not be silently rewritten by the
+        // mock's first broadcast.
+        if (label === undefined) {
+          midi.setOnMockLabel((newLabel) => {
+            const entry = pool.get(index);
+            if (entry) entry.device.label = newLabel;
+          });
+        }
 
         // If the mock disappears, drop only this device — leave others alone
         midi.setOnMockDisconnect(() => {

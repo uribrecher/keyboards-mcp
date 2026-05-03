@@ -220,14 +220,29 @@ export class MockEngine {
       mcpConnected: this.isMcpConnected(),
       label: this.opts.label ?? "_default",
     });
+    // UI clients get the full state; MCP-status clients also need to see
+    // label changes so they can update the pool entry's device.label live.
     for (const ws of this.clients) {
       if (ws.readyState === ws.OPEN) ws.send(json);
+    }
+    const labelOnly = JSON.stringify({
+      mcpConnected: this.isMcpConnected(),
+      label: this.opts.label ?? "_default",
+    });
+    for (const ws of this.mcpClients) {
+      if (ws.readyState === ws.OPEN) ws.send(labelOnly);
     }
   }
 
   private broadcastMcpStatus(): void {
-    const json = JSON.stringify({ mcpConnected: this.isMcpConnected() });
+    const json = JSON.stringify({
+      mcpConnected: this.isMcpConnected(),
+      label: this.opts.label ?? "_default",
+    });
     for (const ws of this.clients) {
+      if (ws.readyState === ws.OPEN) ws.send(json);
+    }
+    for (const ws of this.mcpClients) {
       if (ws.readyState === ws.OPEN) ws.send(json);
     }
   }
