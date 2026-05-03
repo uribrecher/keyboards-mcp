@@ -16,12 +16,13 @@ const { values } = parseArgs({
     "lower-channel": { type: "string", default: "0" },
     "upper-channel": { type: "string", default: "1" },
     "no-midi": { type: "boolean", default: false },
+    label: { type: "string" },
   },
   strict: true,
 });
 
 if (!values.model) {
-  console.error("Usage: --model <model-id> [--ws-port <port>] [--lower-channel <ch>] [--upper-channel <ch>]");
+  console.error("Usage: --model <model-id> [--ws-port <port>] [--lower-channel <ch>] [--upper-channel <ch>] [--label <label>]");
   process.exit(1);
 }
 
@@ -37,6 +38,7 @@ const engine = new MockEngine(handler, {
   upperChannel: parseInt(values["upper-channel"]!),
   wsPort: parseInt(values["ws-port"]!),
   portName: `${model.info.displayName} Mock`,
+  label: values.label,
   noMidi: values["no-midi"],
 });
 

@@ -47,6 +47,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
 
   // ── Backup cache ──
   const backupCache = createBackupCache();
+  let activeLabel: string | undefined; // resolved at init() time
 
   // ── Per-preset drawbar state ──
   const presetDrawbarState = new Map<string, Map<number, number>>([
@@ -90,7 +91,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
   }
 
   // ── Inventory data ──
-  let _backup = getBackupData();
+  let _backup = getBackupData(activeLabel);
   let _pianoModels: Record<string, string[]> | undefined;
   let _sampleNames: string[] | undefined;
   let _lastProgramChange: { bank: number; slot: number; name?: string } | undefined;
@@ -281,7 +282,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
   // ── Backup/inventory helpers ──
 
   function buildInventoryFromCache(): void {
-    _backup = getBackupData();
+    _backup = getBackupData(activeLabel);
     if (!_backup) {
       _pianoModels = undefined;
       _sampleNames = undefined;
@@ -294,7 +295,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
       { key: "4", type: "Clav" }, { key: "5", type: "Harpsichord" },
     ];
     for (const { key, type } of types) {
-      const models = getPianoModelsForType(type);
+      const models = getPianoModelsForType(type, activeLabel);
       if (models) {
         const names: string[] = [];
         for (const m of models) names[m.location - 1] = m.name;
@@ -491,12 +492,13 @@ export function createNordElectro5DMockHandler(): MockHandler {
   // ══════════════════════════════════════════
 
   return {
-    init(lower: number, upper: number): void {
+    init(lower: number, upper: number, label?: string): void {
       lowerChannel = lower;
       upperChannel = upper;
+      activeLabel = label;
       initChannel(lowerChannel);
       initChannel(upperChannel);
-      backupCache.load();
+      backupCache.load(activeLabel);
       buildInventoryFromCache();
     },
 
@@ -517,7 +519,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
 
     onCacheReload(): void {
       console.log("Reloading backup cache...");
-      if (backupCache.reload()) {
+      if (backupCache.reload(activeLabel)) {
         buildInventoryFromCache();
         console.log(`Backup cache reloaded: ${_backup?.programs.length ?? 0} programs, ${_backup?.samples.length ?? 0} samples`);
       } else {
