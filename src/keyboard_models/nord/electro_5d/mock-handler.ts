@@ -220,6 +220,16 @@ export function createNordElectro5DMockHandler(): MockHandler {
       preset1Drawbars: buildPresetDrawbarEntries("preset1"),
       preset2Drawbars: buildPresetDrawbarEntries("preset2"),
       presetOrganToggles,
+      // Raw set-list / program state — exposed so plan #9 setFullState can
+      // round-trip without re-deriving from the cosmetic `setList` / `program`
+      // blocks below.
+      setListMode,
+      currentSetList,
+      currentSong,
+      currentPart,
+      currentBank,
+      currentProgram,
+      programLoaded,
     };
 
     // Program info
@@ -524,6 +534,70 @@ export function createNordElectro5DMockHandler(): MockHandler {
         console.log(`Backup cache reloaded: ${_backup?.programs.length ?? 0} programs, ${_backup?.samples.length ?? 0} samples`);
       } else {
         console.log("No backup cache file found on disk");
+      }
+    },
+
+    setFullState(snapshot: Record<string, any>): void {
+      // Best-effort tolerant restore (plan #9). Missing fields keep
+      // current defaults; unknown fields are ignored. Never broadcast —
+      // engine emits a single getFullState(true) after this returns.
+      try {
+        const restoreSection = (ch: number, section: any) => {
+          if (!section || typeof section !== "object") return;
+          if (!channelState.has(ch)) initChannel(ch);
+          const chState = channelState.get(ch)!;
+          for (const [paramKey, ps] of Object.entries<any>(section)) {
+            const param = PARAMS[paramKey];
+            if (!param || param.cc === undefined) continue;
+            if (ps && typeof ps === "object" && typeof ps.value === "number") {
+              chState.set(param.cc, ps.value);
+            }
+          }
+        };
+        restoreSection(lowerChannel, snapshot.lower);
+        restoreSection(upperChannel, snapshot.upper);
+        // Global params live on lowerChannel in the existing buildFullState.
+        restoreSection(lowerChannel, snapshot.global);
+
+        // Per-preset drawbars — buildFullState produces a Record keyed by
+        // paramKey, with each entry holding a `value` field.
+        const restorePreset = (presetKey: "preset1" | "preset2", entries: any) => {
+          const map = presetDrawbarState.get(presetKey);
+          if (!map) return;
+          map.clear();
+          if (!entries || typeof entries !== "object") return;
+          for (const [paramKey, ps] of Object.entries<any>(entries)) {
+            const param = PARAMS[paramKey];
+            if (!param || param.cc === undefined || param.encoding.kind !== "drawbar") continue;
+            if (ps && typeof ps === "object" && typeof ps.value === "number") {
+              map.set(param.cc, ps.value);
+            }
+          }
+        };
+        if (snapshot.preset1Drawbars !== undefined) restorePreset("preset1", snapshot.preset1Drawbars);
+        if (snapshot.preset2Drawbars !== undefined) restorePreset("preset2", snapshot.preset2Drawbars);
+
+        // Preset organ toggles
+        if (snapshot.presetOrganToggles && typeof snapshot.presetOrganToggles === "object") {
+          presetOrganToggles = {
+            pst1Vib: !!snapshot.presetOrganToggles.pst1Vib,
+            pst1Prc: !!snapshot.presetOrganToggles.pst1Prc,
+            pst2Vib: !!snapshot.presetOrganToggles.pst2Vib,
+            pst2Prc: !!snapshot.presetOrganToggles.pst2Prc,
+          };
+        }
+
+        // Set-list / program raw fields (only present when buildFullState
+        // includes them — extension below).
+        if (typeof snapshot.setListMode === "boolean") setListMode = snapshot.setListMode;
+        if (typeof snapshot.currentSetList === "number") currentSetList = snapshot.currentSetList;
+        if (typeof snapshot.currentSong === "number") currentSong = snapshot.currentSong;
+        if (typeof snapshot.currentPart === "number") currentPart = snapshot.currentPart;
+        if (typeof snapshot.currentBank === "number") currentBank = snapshot.currentBank;
+        if (typeof snapshot.currentProgram === "number") currentProgram = snapshot.currentProgram;
+        if (typeof snapshot.programLoaded === "boolean") programLoaded = snapshot.programLoaded;
+      } catch (err) {
+        console.error("Nord setFullState: partial recovery —", err);
       }
     },
   };
