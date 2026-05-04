@@ -2,7 +2,7 @@
  * Mock Runner shell — tab state, iframe routing, chat console.
  * ────────────────────────────────────────────────────────────── */
 
-import { AgentClient } from "@sounds-and-recreation/agent-client";
+import { AgentClient, isWebSearchResult } from "@sounds-and-recreation/agent-client";
 
 // Port 2999 is reserved for the agent in plan #6 specifically to keep
 // it OUT of the mock-engine WS range that starts at 3000.
@@ -430,17 +430,29 @@ async function sendChat() {
           break;
         }
         case "tool-output-available":
-          // Match the REPL — don't try to render event.result. Some
-          // tools (e.g. provider-side web_search) emit
-          // tool-output-available with result === undefined, and
-          // there's no general way to render an arbitrary `unknown`
-          // payload in a chat row. Just signal completion by ticking
-          // the existing tool row.
+          // Tick the existing tool row to signal completion.
           if (currentToolRow) {
             currentToolRow.textContent += " ✓";
             saveChatHistory();
           }
           currentToolRow = null;
+          // For web_search specifically, the SDK exposes a typed
+          // accessor for the visited sources. Render one row per URL
+          // (URL only — no titles/snippets, per design intent). The
+          // `is-result` class already gets a "↳" prefix from CSS, so
+          // the row text is just the URL — no in-text arrow. Persist
+          // once at the end of the loop instead of per-row, since
+          // saveChatHistory() walks the entire log.
+          if (isWebSearchResult(event.toolName, event.output)) {
+            let appended = 0;
+            for (const source of event.output.results) {
+              if (source.url) {
+                appendRow("tool", source.url, { result: true, skipPersist: true });
+                appended++;
+              }
+            }
+            if (appended > 0) saveChatHistory();
+          }
           break;
         case "done":
           // Successful turn completion — assistant message is already in
