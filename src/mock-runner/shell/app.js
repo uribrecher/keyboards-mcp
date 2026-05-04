@@ -429,15 +429,19 @@ async function sendChat() {
           }
           break;
         }
-        case "tool-output-available": {
-          const raw = typeof event.result === "string"
-            ? event.result
-            : JSON.stringify(event.result);
-          const text = raw.length > 220 ? raw.slice(0, 220) + "…" : raw;
-          appendRow("tool", text, { result: true });
+        case "tool-output-available":
+          // Match the REPL — don't try to render event.result. Some
+          // tools (e.g. provider-side web_search) emit
+          // tool-output-available with result === undefined, and
+          // there's no general way to render an arbitrary `unknown`
+          // payload in a chat row. Just signal completion by ticking
+          // the existing tool row.
+          if (currentToolRow) {
+            currentToolRow.textContent += " ✓";
+            saveChatHistory();
+          }
           currentToolRow = null;
           break;
-        }
         case "done":
           // Successful turn completion — assistant message is already in
           // agentClient.messages. Flip meter "on" (this is also the only
@@ -453,8 +457,13 @@ async function sendChat() {
       // message; reset handler already wrote "Conversation reset."
       // No additional UI to render here.
     } else {
-      agentReachable = false;
-      appendRow("system", `Agent unreachable at ${AGENT_URL}: ${err?.message ?? err}`);
+      // The error could be a network failure (agent really down) OR
+      // a bug in this renderer's event handler. Distinguishing them
+      // reliably is hard, so don't make a definitive claim about
+      // reachability — show the actual message and let the user
+      // judge. agentReachable is left as-is (the most recent `done`
+      // event is still authoritative for the meter state).
+      appendRow("system", `Chat error: ${err?.message ?? err}`);
     }
   } finally {
     inFlightAbort = null;
