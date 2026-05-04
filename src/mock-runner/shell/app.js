@@ -2,12 +2,17 @@
  * Mock Runner shell — tab state, iframe routing, chat console.
  * ────────────────────────────────────────────────────────────── */
 
+import { AgentClient } from "@sounds-and-recreation/agent-client";
+
 // Port 2999 is reserved for the agent in plan #6 specifically to keep
-// it OUT of the mock-engine WS range that starts at 3000 — otherwise
-// the chat's fetch hits a mock's bare http.Server (which has no request
-// handler) and hangs the connection indefinitely.
+// it OUT of the mock-engine WS range that starts at 3000.
 const AGENT_URL = "http://localhost:2999";
 const CHAT_HISTORY_KEY = "mock-runner.chat-history.v1";
+
+// One AgentClient owns the conversation history for this renderer
+// (plan #12). The SDK is the single source of truth for the wire
+// protocol — the REPL in sound-recreation-agent uses the same client.
+const agentClient = new AgentClient({ serverUrl: AGENT_URL });
 
 const api = window.mockRunnerAPI;
 
@@ -348,8 +353,13 @@ loadChatHistory();
 
 // ── Reset ──
 
-chatReset.addEventListener("click", async () => {
-  try { await fetch(`${AGENT_URL}/reset`, { method: "POST" }); } catch { /* swallow */ }
+let inFlightAbort = null;
+
+chatReset.addEventListener("click", () => {
+  // If a turn is mid-stream, abort it. The SDK rolls back the in-flight
+  // user message automatically, so client.messages stays consistent.
+  if (inFlightAbort) inFlightAbort.abort();
+  agentClient.reset();
   chatLog.innerHTML = "";
   try { localStorage.removeItem(CHAT_HISTORY_KEY); } catch { /* ignore */ }
   appendRow("system", "Conversation reset.");
@@ -383,74 +393,77 @@ async function sendChat() {
 
   let assistantLine = null;
   let assistantText = "";
+  // The currently-streaming tool row (created on tool-input-start,
+  // updated on tool-input-available). One per tool call.
+  let currentToolRow = null;
 
+  inFlightAbort = new AbortController();
   try {
-    const res = await fetch(`${AGENT_URL}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
-    });
-
-    agentReachable = true;
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let event = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (line.startsWith("event: ")) {
-          event = line.slice(7).trim();
-        } else if (line.startsWith("data: ") && event) {
-          let data;
-          try { data = JSON.parse(line.slice(6)); } catch { event = null; continue; }
-
-          if (event === "text") {
-            if (!assistantLine) {
-              assistantLine = appendRow("assistant", "");
-              assistantText = "";
-            }
-            assistantText += data.text ?? "";
-            assistantLine.textContent = assistantText;
-            chatLog.scrollTop = chatLog.scrollHeight;
-            saveChatHistory();
-          } else if (event === "tool_use") {
-            assistantLine = null;
+    for await (const event of agentClient.send(message, { signal: inFlightAbort.signal })) {
+      switch (event.type) {
+        case "text-delta":
+          if (!assistantLine) {
+            assistantLine = appendRow("assistant", "");
             assistantText = "";
-            const summary = summarizeToolInput(data.name, data.input);
-            appendRow("tool", `${data.name}${summary}`);
-          } else if (event === "tool_result") {
-            const text = (data.result ?? "").length > 220
-              ? (data.result ?? "").slice(0, 220) + "…"
-              : (data.result ?? "");
-            appendRow("tool", text, { result: true, error: !!data.isError });
-          } else if (event === "error") {
-            appendRow("system", `Error: ${data.error ?? "(unknown)"}`);
           }
-          event = null;
-        } else if (line.trim() === "") {
-          event = null;
+          assistantText += event.delta ?? "";
+          assistantLine.textContent = assistantText;
+          chatLog.scrollTop = chatLog.scrollHeight;
+          saveChatHistory();
+          break;
+        case "tool-input-start":
+          // Tool calls interrupt the assistant text stream — the next
+          // text-delta after a tool starts a fresh assistant line.
+          assistantLine = null;
+          assistantText = "";
+          currentToolRow = appendRow("tool", `${event.toolName}…`);
+          break;
+        case "tool-input-available": {
+          const summary = summarizeToolInput(event.toolName, event.input);
+          if (currentToolRow) {
+            currentToolRow.textContent = `${event.toolName}${summary}`;
+            saveChatHistory();
+          } else {
+            // Defensive: SDK is supposed to emit start before available.
+            appendRow("tool", `${event.toolName}${summary}`);
+          }
+          break;
         }
+        case "tool-output-available": {
+          const raw = typeof event.result === "string"
+            ? event.result
+            : JSON.stringify(event.result);
+          const text = raw.length > 220 ? raw.slice(0, 220) + "…" : raw;
+          appendRow("tool", text, { result: true });
+          currentToolRow = null;
+          break;
+        }
+        case "done":
+          // Successful turn completion — assistant message is already in
+          // agentClient.messages. Flip meter "on" (this is also the only
+          // signal the renderer has that the agent is reachable, since
+          // there's no /health endpoint on the server).
+          agentReachable = true;
+          break;
       }
     }
   } catch (err) {
-    agentReachable = false;
-    appendRow("system", `Agent unreachable at ${AGENT_URL}. Is the agent running?`);
+    if (err?.name === "AbortError") {
+      // User clicked reset mid-stream. SDK rolled back the user
+      // message; reset handler already wrote "Conversation reset."
+      // No additional UI to render here.
+    } else {
+      agentReachable = false;
+      appendRow("system", `Agent unreachable at ${AGENT_URL}: ${err?.message ?? err}`);
+    }
+  } finally {
+    inFlightAbort = null;
+    chatBusy = false;
+    chatInput.disabled = false;
+    chatSend.disabled = false;
+    setMeter(agentReachable ? "on" : "off");
+    chatInput.focus();
   }
-
-  chatBusy = false;
-  chatInput.disabled = false;
-  chatSend.disabled = false;
-  setMeter(agentReachable ? "on" : "off");
-  chatInput.focus();
 }
 
 chatForm.addEventListener("submit", (e) => {
@@ -465,17 +478,9 @@ chatInput.addEventListener("keydown", (e) => {
   }
 });
 
-// Probe the agent once at startup so the meter reflects reality
-void (async () => {
-  try {
-    await fetch(`${AGENT_URL}/health`, { method: "GET" });
-    agentReachable = true;
-    setMeter("on");
-  } catch {
-    agentReachable = false;
-    setMeter("off");
-  }
-})();
+// No startup probe — the agent has no /health endpoint. Meter starts
+// "off" and flips to "on" after the first successful "done" event from
+// /chat (or "off" again if a send fails).
 
 // ─────────────────────────────────────────────────────────────────
 // Backup picker modal
