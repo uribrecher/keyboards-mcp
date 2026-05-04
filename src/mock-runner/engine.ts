@@ -129,8 +129,26 @@ export class MockEngine extends EventEmitter {
       });
     }
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
+      // listen() reports failure via the server's "error" event, not by
+      // throwing. Without a listener, an EADDRINUSE (or similar) crashes
+      // the whole Electron process — bypassing the try/catch that
+      // loadSetupFromPath wraps engine.start() in. Wire a one-shot error
+      // listener so the promise rejects cleanly, and clean up the
+      // virtual MIDI port we may have opened above.
+      const onError = (err: Error): void => {
+        this.httpServer?.removeListener("error", onError);
+        if (this.midiInput) {
+          try { this.midiInput.close(); } catch { /* swallow */ }
+          this.midiInput = null;
+        }
+        this.httpServer = null;
+        this.wss = null;
+        reject(err);
+      };
+      this.httpServer!.once("error", onError);
       this.httpServer!.listen(this.opts.wsPort, () => {
+        this.httpServer!.removeListener("error", onError);
         console.log(`Mock device ready`);
         if (this.opts.noMidi) {
           console.log(`  MIDI: disabled (WS-only mode)`);
