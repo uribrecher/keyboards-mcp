@@ -332,6 +332,21 @@ function createWindow(): void {
   });
 
   void mainWindow.loadFile(join(SHELL_DIR, "index.html"));
+  // Intercept the window-close path (red X / Cmd+W) before the window
+  // is destroyed, so confirmDiscardIfDirty has a parent window to anchor
+  // its dialog to. Without this, by the time `before-quit` fires the
+  // window is already gone and the prompt silently no-ops.
+  mainWindow.on("close", (event) => {
+    if (pendingQuit) return;       // user already confirmed
+    if (!isDirty) return;
+    event.preventDefault();
+    void (async () => {
+      if (await confirmDiscardIfDirty()) {
+        pendingQuit = true;
+        mainWindow?.destroy();
+      }
+    })();
+  });
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 
