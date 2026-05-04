@@ -8,6 +8,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
+    "build:sdk": "npm --prefix ../sound-recreation-agent/client-sdk run build",
+    "premock:runner": "npm run build:sdk",
+    "premock:runner:debug": "npm run build:sdk",
     "mock:runner": "electron dist/mock-runner/main.js",
     "mock:runner:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 MOCK_RUNNER_DEVTOOLS=1 electron --inspect=5858 dist/mock-runner/main.js",
     "mock:headless": "tsx src/mock-runner/cli.ts",
@@ -21,6 +24,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@sounds-and-recreation/agent-client": "file:../sound-recreation-agent/client-sdk",
     "adm-zip": "^0.5.16",
     "easymidi": "^3.0.0",
     "ws": "^8.20.0",
