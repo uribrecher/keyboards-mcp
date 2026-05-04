@@ -297,8 +297,10 @@ body {
   display: grid;
   /* Console panel was 380px fixed — too narrow for monospaced LLM output
    * (ASCII tables, code, long URLs). Clamp lets it breathe at larger
-   * window sizes while protecting the model-UI slot at the 1200px min. */
-  grid-template-columns: 1fr clamp(440px, 32vw, 560px);
+   * window sizes while protecting the model-UI slot at the 1200px min.
+   * Bumped ~10% wider (484/35vw/616) over the first iteration after the
+   * user reported it still felt cramped. */
+  grid-template-columns: 1fr clamp(484px, 35vw, 616px);
   gap: 0;
   min-height: 0;
   height: 100%;
@@ -503,6 +505,11 @@ body {
     var(--c-console);
   scrollbar-width: thin;
   scrollbar-color: var(--c-edge) transparent;
+  /* Opt back into text selection — the html/body rule disables it
+   * across the whole chassis. Chat content (assistant text, URLs,
+   * tool output) needs to be copy-pasteable. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 .console__log::-webkit-scrollbar { width: 8px; }
 .console__log::-webkit-scrollbar-thumb {
@@ -536,7 +543,7 @@ body {
 
 .chat-line {
   font-family: var(--font-chat);
-  font-size: 15.5px;
+  font-size: 15px;
   line-height: 1.5;
   font-weight: 400;
   color: var(--c-paper);
@@ -558,9 +565,115 @@ body {
   font-weight: 500;
 }
 
+/* ── Markdown rendering inside assistant rows ────────────────────
+ * Assistant messages render via marked. Style only the elements the
+ * agent actually emits; restrain visuals to the chassis palette so the
+ * console keeps a unified look. */
+.chat-row--assistant .chat-line :first-child { margin-top: 0; }
+.chat-row--assistant .chat-line :last-child  { margin-bottom: 0; }
+.chat-row--assistant .chat-line p {
+  margin: 0 0 0.6em;
+}
+.chat-row--assistant .chat-line strong { font-weight: 600; color: var(--c-text-bright); }
+.chat-row--assistant .chat-line em     { font-style: italic; }
+.chat-row--assistant .chat-line a {
+  color: var(--c-amber);
+  text-decoration: underline;
+  text-decoration-color: var(--c-amber-deep);
+  text-underline-offset: 2px;
+}
+.chat-row--assistant .chat-line a:hover {
+  text-decoration-color: var(--c-amber);
+}
+.chat-row--assistant .chat-line h1,
+.chat-row--assistant .chat-line h2,
+.chat-row--assistant .chat-line h3,
+.chat-row--assistant .chat-line h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--c-text-bright);
+  margin: 0.6em 0 0.4em;
+}
+.chat-row--assistant .chat-line h1 { font-size: 1.15em; }
+.chat-row--assistant .chat-line h2 { font-size: 1.05em; }
+.chat-row--assistant .chat-line h3,
+.chat-row--assistant .chat-line h4 { font-size: 1em; }
+.chat-row--assistant .chat-line ul,
+.chat-row--assistant .chat-line ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.4em;
+}
+.chat-row--assistant .chat-line li { margin-bottom: 0.15em; }
+.chat-row--assistant .chat-line blockquote {
+  margin: 0 0 0.6em;
+  padding-left: 0.8em;
+  border-left: 2px solid var(--c-edge);
+  color: var(--c-paper-dim);
+}
+/* Inline code: subtle tinted chip, same mono so glyphs still align. */
+.chat-row--assistant .chat-line code {
+  font-family: var(--font-chat);
+  font-size: 0.92em;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 0.5px 5px;
+  border-radius: 2px;
+  color: var(--c-paper);
+}
+/* Code block: scroll horizontally on overflow rather than wrap, so
+ * indentation and ASCII art survive intact regardless of panel width. */
+.chat-row--assistant .chat-line pre {
+  margin: 0.4em 0 0.7em;
+  padding: 8px 10px;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  overflow-x: auto;
+}
+.chat-row--assistant .chat-line pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre;
+}
+/* Tables — the original itch. Wrap in a horizontal scroller so wide
+ * tables don't break panel layout when they don't fit. */
+.chat-row--assistant .chat-line table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 0.4em 0 0.7em;
+  border-collapse: collapse;
+  overflow-x: auto;
+  font-size: 13.5px;
+}
+.chat-row--assistant .chat-line th,
+.chat-row--assistant .chat-line td {
+  border: 1px solid var(--c-edge);
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+.chat-row--assistant .chat-line th {
+  background: rgba(255,255,255,0.04);
+  color: var(--c-text-bright);
+  font-weight: 600;
+}
+.chat-row--assistant .chat-line tr:nth-child(even) td {
+  background: rgba(255,255,255,0.015);
+}
+.chat-row--assistant .chat-line hr {
+  border: none;
+  border-top: 1px solid var(--c-edge);
+  margin: 0.8em 0;
+}
+
 .chat-row--system .chat-line {
   color: var(--c-paper-dim);
-  font-size: 14px;
+  font-size: 13.5px;
 }
 
 .chat-row--tool .chat-line {
@@ -582,6 +695,15 @@ body {
 .chat-row--tool.is-result .chat-line::before {
   content: "  ↳ ";
   color: var(--c-text-faint);
+}
+/* Web search source rows opt out of the "↳" marker and use a globe
+ * instead — instantly readable as "external URL" and visually distinct
+ * from generic tool-output rows. */
+.chat-row--tool.is-url .chat-line::before {
+  content: "🌐 ";
+  /* Color emojis in monospace tend to render slightly oversized; the
+   * tiny down-scale keeps them visually flush with the URL text. */
+  font-size: 0.9em;
 }
 
 /* ── Composer ── */
