@@ -97,6 +97,31 @@ function onEngineStateChanged(): void {
 
 // ── Save / Open flows ──────────────────────────────────────────────
 
+/**
+ * True iff at least one tab has both a model and an engine — i.e. the
+ * rack would produce a non-empty `tabs` array in the snapshot. Used to
+ * gate Save / Save As so we never write an empty .mockrack (which is
+ * useless at best and overwrites a valid saved file at worst).
+ */
+function hasContentToSave(): boolean {
+  for (const t of tabs.values()) {
+    if (t.model && t.engine) return true;
+  }
+  return false;
+}
+
+/**
+ * Surface to the user why a save was refused. The menu items are
+ * already disabled in this state (Layer 1), so this only fires from
+ * keyboard accelerators or programmatic callers — but it's important
+ * those don't fail silently.
+ */
+function notifyEmptySaveRefused(): void {
+  mainWindow?.webContents.send("menu:console-note", {
+    text: "Nothing to save — add a tab and pick a model first.",
+  });
+}
+
 function buildSetupSnapshot(): MockrackV1 {
   const entries = [...tabs.values()].filter((t) => t.model && t.engine);
   const tabsOut: MockrackTab[] = entries.map((t) => ({
@@ -120,6 +145,10 @@ function buildSetupSnapshot(): MockrackV1 {
 }
 
 async function saveCurrent(): Promise<void> {
+  if (!hasContentToSave()) {
+    notifyEmptySaveRefused();
+    return;
+  }
   if (!currentFilePath) { await saveAs(); return; }
   try {
     writeMockrackAtomic(currentFilePath, buildSetupSnapshot());
@@ -131,6 +160,10 @@ async function saveCurrent(): Promise<void> {
 }
 
 async function saveAs(): Promise<void> {
+  if (!hasContentToSave()) {
+    notifyEmptySaveRefused();
+    return;
+  }
   const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
   if (!win) return;
   const result = await dialog.showSaveDialog(win, {
@@ -159,21 +192,36 @@ async function confirmDiscardIfDirty(): Promise<boolean> {
   const fileLabel = currentFilePath
     ? basename(currentFilePath)
     : "current setup";
+  // When the rack has nothing to save, drop the "Save" button — the
+  // semantically correct dialog is just "Discard | Cancel". Offering
+  // Save here would either create a useless empty file or overwrite
+  // an opened-then-emptied rack with nothing.
+  const canSave = hasContentToSave();
+  const buttons = canSave
+    ? ["Save", "Don't Save", "Cancel"]
+    : ["Discard", "Cancel"];
+  const cancelId = canSave ? 2 : 1;
+  const message = canSave
+    ? `Save changes to "${fileLabel}"?`
+    : `Discard changes to "${fileLabel}"?`;
+  const detail = canSave
+    ? "Your changes will be lost if you don't save them."
+    : "The rack is empty — there is nothing to save. Continue and discard the change?";
   const result = await dialog.showMessageBox(win, {
     type: "warning",
-    buttons: ["Save", "Don't Save", "Cancel"],
+    buttons,
     defaultId: 0,
-    cancelId: 2,
-    message: `Save changes to "${fileLabel}"?`,
-    detail: "Your changes will be lost if you don't save them.",
+    cancelId,
+    message,
+    detail,
   });
-  if (result.response === 2) return false; // Cancel
-  if (result.response === 0) {              // Save
+  if (result.response === cancelId) return false;
+  if (canSave && result.response === 0) {   // Save
     if (currentFilePath) await saveCurrent();
     else await saveAs();
     if (isDirty) return false;              // Save dialog was cancelled
   }
-  return true;                              // Don't Save (or Save succeeded)
+  return true;                              // Discard / Don't Save / Save succeeded
 }
 
 async function tearDownAllTabs(): Promise<void> {
@@ -307,8 +355,16 @@ function refreshMenuEnabledState(): void {
   // (the last case covers "user created a tab then closed it without
   // saving" — empty rack but still dirty).
   if (newItem) newItem.enabled = tabs.size > 0 || currentFilePath !== null || isDirty;
+  const hasContent = hasContentToSave();
   const saveItem = menu.getMenuItemById("file.save");
-  if (saveItem) saveItem.enabled = currentFilePath !== null;
+  // Save needs both a destination file AND something to put in it,
+  // otherwise Cmd+S would silently overwrite a saved file with empty
+  // content (data loss on closing all tabs of an opened rack).
+  if (saveItem) saveItem.enabled = currentFilePath !== null && hasContent;
+  const saveAsItem = menu.getMenuItemById("file.saveAs");
+  // Save As needs only content — no point creating a destination file
+  // when there's nothing to put in it.
+  if (saveAsItem) saveAsItem.enabled = hasContent;
 }
 
 function nextTabId(): string {
@@ -444,8 +500,10 @@ function buildMenu(): void {
           click: () => { void saveCurrent(); },
         },
         {
+          id: "file.saveAs",
           label: "Save As…",
           accelerator: "CmdOrCtrl+Shift+S",
+          enabled: false,
           click: () => { void saveAs(); },
         },
         { type: "separator" },
@@ -549,6 +607,9 @@ ipcMain.handle(
     entry.wsPort = wsPort;
     entry.label = resolvedLabel;
     markDirty();
+    // The tab just transitioned from "no model" to "has model+engine",
+    // which flips hasContentToSave() — refresh Save / Save As enabled.
+    refreshMenuEnabledState();
 
     return {
       wsPort,
