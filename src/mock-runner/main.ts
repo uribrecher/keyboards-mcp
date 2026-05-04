@@ -377,6 +377,14 @@ function createWindow(): void {
   });
 
   void mainWindow.loadFile(join(SHELL_DIR, "index.html"));
+
+  // Open renderer DevTools in detached mode when launched via
+  // `npm run mock:runner:debug`. Detached so the DevTools window keeps
+  // working even if the main window freezes.
+  if (process.env.MOCK_RUNNER_DEVTOOLS === "1") {
+    mainWindow.webContents.openDevTools({ mode: "detach" });
+  }
+
   // Intercept the window-close path (red X / Cmd+W) before the window
   // is destroyed, so confirmDiscardIfDirty has a parent window to anchor
   // its dialog to. Without this, by the time `before-quit` fires the
