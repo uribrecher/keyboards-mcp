@@ -582,6 +582,7 @@ api.onCloseTab?.(({ tabId }) => {
 
 // Open flow asks the renderer to mount each restored tab's iframe directly
 // — main has already created the engine, so we skip the createTab/IPC dance.
+// `info.isActive` indicates which mounted tab should be foregrounded.
 api.onMountTab?.((info) => {
   const tab = {
     tabId: info.tabId,
@@ -610,7 +611,16 @@ api.onMountTab?.((info) => {
   iframe.src = info.modelUiDir
     ? `file://${info.modelUiDir}/index.html?wsPort=${info.wsPort}`
     : "chooser.html";
+  iframe.hidden = !info.isActive;     // only the active tab's iframe is visible
   slotEl.appendChild(iframe);
   tab.iframe = iframe;
-  setActive(info.tabId);
+
+  // Only the tab marked active should foreground; otherwise just sync
+  // the empty-rack flag and the active CSS class.
+  if (info.isActive) {
+    setActive(info.tabId);
+  } else {
+    btn.classList.remove("is-active");
+    slotEmpty.hidden = tabs.length > 0;
+  }
 });

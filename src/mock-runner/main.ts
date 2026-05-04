@@ -26,6 +26,11 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Set the app name early so the macOS app menu (the leftmost item in the
+// menu bar — which Electron auto-generates from app.name when no app menu
+// is in the template) reads "Mock Runner" rather than "Electron".
+app.setName("Mock Runner");
+
 // Resolve paths back to src/ (from dist/mock-runner/)
 const srcDir = join(__dirname, "..", "..", "src", "mock-runner");
 const SHELL_DIR = join(srcDir, "shell");
@@ -229,11 +234,13 @@ async function loadSetupFromPath(path: string): Promise<void> {
           { text: `${model.info.displayName} ("${t.label}"): full state restore not yet implemented — knobs reset to defaults.` });
       }
 
+      const isActive = i === parsed.activeTabIndex;
       mainWindow?.webContents.send("file:mount-tab", {
         tabId, modelInfoId: model.info.id, displayName: model.info.displayName,
         label: t.label, wsPort, modelUiDir: model.mockUiDir ?? null,
+        isActive,
       });
-      if (i === parsed.activeTabIndex) activeTabId = tabId;
+      if (isActive) activeTabId = tabId;
     }
 
     if (activeTabId) lastActiveTabId = activeTabId;
