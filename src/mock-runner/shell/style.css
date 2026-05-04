@@ -1,9 +1,9 @@
 /* ─────────────────────────────────────────────────────────────────────
  * MOCK RUNNER — Studio rack chassis hosting per-tab keyboard mock UIs.
  * Aesthetic: matte graphite + brushed-metal pinstripes, milled labels in
- *            Roboto Mono, warm amber LED accents (tube-amp glow), and a
- *            humanist editorial body face (Fraunces) inside the chat
- *            console for deliberate contrast against the cold chassis.
+ *            Roboto Mono, warm amber LED accents (tube-amp glow), and an
+ *            industrial-diagnostic chat console set in IBM Plex Mono so
+ *            ASCII tables and code from the agent render cleanly.
  * ────────────────────────────────────────────────────────────────── */
 
 :root {
@@ -37,6 +37,12 @@
 
   --font-display:   "Roboto Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --font-body:      "Fraunces", "Iowan Old Style", "Hoefler Text", Georgia, serif;
+  /* Chat console body: a different mono than the chassis labels so the
+   * console keeps its own voice. IBM Plex Mono was designed by IBM for
+   * industrial/code contexts — it pairs cleanly with the chassis aesthetic
+   * and renders ASCII tables and code without the kerning artifacts that
+   * killed readability when chat text was set in Fraunces italic. */
+  --font-chat:      "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -289,7 +295,10 @@ body {
 
 .bay {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  /* Console panel was 380px fixed — too narrow for monospaced LLM output
+   * (ASCII tables, code, long URLs). Clamp lets it breathe at larger
+   * window sizes while protecting the model-UI slot at the 1200px min. */
+  grid-template-columns: 1fr clamp(440px, 32vw, 560px);
   gap: 0;
   min-height: 0;
   height: 100%;
@@ -503,45 +512,55 @@ body {
 
 .chat-row {
   display: grid;
-  grid-template-columns: 64px 1fr;
-  gap: 12px;
-  margin-bottom: 14px;
+  /* Tiny gutter for a role-coded bullet — far less wasted horizontal
+   * space than the previous 64px timestamp gutter. Tool rows opt out
+   * (their own ▸ / ↳ inline marker on .chat-line provides the cue). */
+  grid-template-columns: 14px 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
   align-items: baseline;
 }
-
-.chat-stamp {
-  font-family: var(--font-display);
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.10em;
+.chat-row::before {
+  content: "•";
   color: var(--c-paper-faint);
-  text-align: right;
-  padding-top: 4px;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.5;
 }
+.chat-row--user::before     { color: var(--c-amber); }
+.chat-row--system::before   { color: var(--c-text-faint); }
+.chat-row--tool {
+  grid-template-columns: 1fr;
+}
+.chat-row--tool::before     { content: none; }
 
 .chat-line {
-  font-family: var(--font-body);
-  font-size: 14.5px;
-  line-height: 1.45;
+  font-family: var(--font-chat);
+  font-size: 15.5px;
+  line-height: 1.5;
   font-weight: 400;
-  font-style: italic;
   color: var(--c-paper);
   letter-spacing: 0;
+  /* ASCII tables, code blocks, and indented output need actual whitespace
+   * preservation — not the default `normal` collapsing. tab-size:2 keeps
+   * \t-indented output compact. word-break + hyphens off keep long URLs
+   * from being prettified into broken segments. */
+  white-space: pre-wrap;
+  tab-size: 2;
+  -moz-tab-size: 2;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  hyphens: none;
 }
 
 .chat-row--user .chat-line {
-  font-style: normal;
   color: var(--c-amber);
   font-weight: 500;
-}
-.chat-row--user .chat-stamp {
-  color: var(--c-amber-deep);
 }
 
 .chat-row--system .chat-line {
   color: var(--c-paper-dim);
-  font-size: 13px;
-  font-style: italic;
+  font-size: 14px;
 }
 
 .chat-row--tool .chat-line {
@@ -569,7 +588,9 @@ body {
 
 .composer {
   display: grid;
-  grid-template-columns: 22px 1fr auto;
+  /* Just prompt-glyph + textarea — pressing Enter submits, so the
+   * dedicated send button was removed. */
+  grid-template-columns: 22px 1fr;
   gap: 6px;
   align-items: stretch;
   padding: 10px 12px 12px;
@@ -593,11 +614,13 @@ body {
   background: rgba(0,0,0,0.35);
   border: 1px solid var(--c-edge);
   color: var(--c-paper);
-  font-family: var(--font-body);
-  font-size: 14px;
+  /* Match the chat-line surface: same monospace, same readable size, no
+   * italic. The user typing what they're about to send should see it
+   * rendered the way their message will appear in the log. */
+  font-family: var(--font-chat);
+  font-size: 15px;
   font-weight: 400;
-  font-style: italic;
-  line-height: 1.4;
+  line-height: 1.45;
   padding: 9px 11px;
   border-radius: 2px;
   resize: none;
@@ -611,46 +634,6 @@ body {
 }
 .composer__input::placeholder {
   color: var(--c-paper-faint);
-  font-style: italic;
-}
-
-.composer__send {
-  display: grid;
-  grid-template-rows: 1fr auto;
-  gap: 1px;
-  align-items: center;
-  justify-items: center;
-  padding: 0 14px;
-  background:
-    linear-gradient(180deg, #1f1f23 0%, #0e0e10 100%);
-  color: var(--c-text);
-  border: 1px solid var(--c-edge);
-  border-radius: 2px;
-  cursor: pointer;
-  font-family: var(--font-display);
-  transition: color .12s, border-color .12s, box-shadow .12s, transform .04s;
-}
-.composer__send:hover:not(:disabled) {
-  color: var(--c-amber);
-  border-color: var(--c-amber-deep);
-  box-shadow:
-    inset 0 0 12px rgba(240,168,48,0.10),
-    0 0 8px var(--c-amber-glow);
-}
-.composer__send:active:not(:disabled) {
-  transform: translateY(1px);
-}
-.composer__send:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.composer__send-glyph {
-  font-size: 14px;
-  line-height: 1;
-}
-.composer__send-label {
-  font-size: 8.5px;
-  font-weight: 700;
-  letter-spacing: 0.20em;
-  color: var(--c-text-dim);
 }
 
 /* ═════════════ Backup picker modal ═════════════ */

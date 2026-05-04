@@ -274,20 +274,12 @@ void newTab();
 const chatLog       = document.getElementById("chat-log");
 const chatForm      = document.getElementById("chat-form");
 const chatInput     = document.getElementById("chat-input");
-const chatSend      = document.getElementById("chat-send");
 const chatReset     = document.getElementById("chat-reset");
 const chatExtract   = document.getElementById("chat-extract");
 const meterEl       = document.getElementById("agent-status");
 
 let chatBusy = false;
 let agentReachable = null; // tri-state: null=unknown, true, false
-
-function pad2(n) { return String(n).padStart(2, "0"); }
-
-function timestamp() {
-  const d = new Date();
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-}
 
 function setMeter(state) {
   meterEl.dataset.state = state;
@@ -299,15 +291,11 @@ function appendRow(kind, text, opts = {}) {
   if (opts.error) row.classList.add("is-error");
   if (opts.result) row.classList.add("is-result");
 
-  const stamp = document.createElement("span");
-  stamp.className = "chat-stamp";
-  stamp.textContent = opts.stamp ?? timestamp();
-
   const line = document.createElement("p");
   line.className = "chat-line";
   line.textContent = text;
 
-  row.append(stamp, line);
+  row.append(line);
   chatLog.appendChild(row);
   chatLog.scrollTop = chatLog.scrollHeight;
   if (!opts.skipPersist) saveChatHistory();
@@ -321,11 +309,10 @@ function saveChatHistory() {
   for (const row of chatLog.children) {
     const kind = [...row.classList].find((c) => c.startsWith("chat-row--"))
       ?.replace("chat-row--", "") ?? "system";
-    const stamp = row.querySelector(".chat-stamp")?.textContent ?? "";
     const text  = row.querySelector(".chat-line")?.textContent ?? "";
     const error = row.classList.contains("is-error");
     const result = row.classList.contains("is-result");
-    entries.push({ kind, stamp, text, error, result });
+    entries.push({ kind, text, error, result });
   }
   try { localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
 }
@@ -342,7 +329,6 @@ function loadChatHistory() {
       appendRow(e.kind, e.text, {
         error: !!e.error,
         result: !!e.result,
-        stamp: e.stamp,
         skipPersist: true,
       });
     }
@@ -385,7 +371,6 @@ async function sendChat() {
 
   chatBusy = true;
   chatInput.disabled = true;
-  chatSend.disabled = true;
   chatInput.value = "";
   setMeter("busy");
 
@@ -481,7 +466,6 @@ async function sendChat() {
     inFlightAbort = null;
     chatBusy = false;
     chatInput.disabled = false;
-    chatSend.disabled = false;
     setMeter(agentReachable ? "on" : "off");
     chatInput.focus();
   }
