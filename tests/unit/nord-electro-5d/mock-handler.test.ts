@@ -27,7 +27,14 @@ describe("Nord Electro 5D mock handler", () => {
     it("getFullState has expected top-level keys", () => {
       const state = handler.getFullState(false);
       const keys = Object.keys(state).sort();
-      const expected = ["global", "lower", "preset1Drawbars", "preset2Drawbars", "presetOrganToggles", "upper"].sort();
+      const expected = [
+        "global", "lower", "upper",
+        "preset1Drawbars", "preset2Drawbars",
+        "presetOrganToggles",
+        // Raw set-list / program fields exposed for plan #9 setFullState round-trip
+        "currentBank", "currentProgram", "programLoaded",
+        "setListMode", "currentSetList", "currentSong", "currentPart",
+      ].sort();
       assert.deepStrictEqual(keys, expected);
     });
 

@@ -9,15 +9,27 @@
 
 import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
 import { join, dirname, basename } from "node:path";
-import { statSync, mkdirSync, writeFileSync } from "node:fs";
+import { statSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
 import { MockEngine } from "./engine.js";
 import * as mockRegistry from "../shared/mock-registry.js";
+import {
+  parseMockrack,
+  writeMockrackAtomic,
+  MOCKRACK_VERSION,
+  type MockrackV1,
+  type MockrackTab,
+} from "../shared/mockrack-format.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Set the app name early so the macOS app menu (the leftmost item in the
+// menu bar — which Electron auto-generates from app.name when no app menu
+// is in the template) reads "Mock Runner" rather than "Electron".
+app.setName("Mock Runner");
 
 // Resolve paths back to src/ (from dist/mock-runner/)
 const srcDir = join(__dirname, "..", "..", "src", "mock-runner");
@@ -40,6 +52,227 @@ interface TabEntry {
 
 const tabs = new Map<string, TabEntry>();
 let nextTabSeq = 1;
+
+// ── File-menu session state (plan #9) ──
+let currentFilePath: string | null = null;
+let isDirty = false;
+let restoring = false;
+let lastActiveTabId: string | null = null;
+let dirtyDebounceTimer: NodeJS.Timeout | null = null;
+
+function markDirty(): void {
+  if (restoring) return;
+  if (isDirty) return;
+  isDirty = true;
+  pushDirtyChanged();
+}
+
+function clearDirty(): void {
+  if (!isDirty) return;
+  isDirty = false;
+  pushDirtyChanged();
+}
+
+function pushDirtyChanged(): void {
+  // Send a precomputed file name so the renderer doesn't have to parse
+  // OS-specific paths (which would mishandle Windows `C:\\…` separators).
+  const currentFileName = currentFilePath ? basename(currentFilePath) : null;
+  mainWindow?.webContents.send("file:dirty-changed", {
+    isDirty, currentFilePath, currentFileName,
+  });
+}
+
+/** Debounced state-changed handler for engine broadcasts. */
+function onEngineStateChanged(): void {
+  if (restoring) return;
+  if (dirtyDebounceTimer) return;
+  dirtyDebounceTimer = setTimeout(() => {
+    dirtyDebounceTimer = null;
+    markDirty();
+  }, 250);
+  if (dirtyDebounceTimer.unref) dirtyDebounceTimer.unref();
+}
+
+// ── Save / Open flows ──────────────────────────────────────────────
+
+function buildSetupSnapshot(): MockrackV1 {
+  const entries = [...tabs.values()].filter((t) => t.model && t.engine);
+  const tabsOut: MockrackTab[] = entries.map((t) => ({
+    modelId: t.model!.info.id,
+    label:   t.label ?? "_default",
+    state:   t.engine!.getFullState(false),
+  }));
+  let activeTabIndex = 0;
+  if (lastActiveTabId) {
+    const i = entries.findIndex((t) => t.tabId === lastActiveTabId);
+    if (i >= 0) activeTabIndex = i;
+  }
+  return {
+    $schema: "mockrack/v1",
+    version: MOCKRACK_VERSION,
+    savedAt: new Date().toISOString(),
+    appVersion: app.getVersion(),
+    activeTabIndex,
+    tabs: tabsOut,
+  };
+}
+
+async function saveCurrent(): Promise<void> {
+  if (!currentFilePath) { await saveAs(); return; }
+  try {
+    writeMockrackAtomic(currentFilePath, buildSetupSnapshot());
+    app.addRecentDocument(currentFilePath);
+    clearDirty();
+  } catch (err) {
+    dialog.showErrorBox("Save failed", err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function saveAs(): Promise<void> {
+  const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+  if (!win) return;
+  const result = await dialog.showSaveDialog(win, {
+    title: "Save Studio Setup",
+    defaultPath: currentFilePath ?? "untitled.mockrack",
+    filters: [{ name: "Mock Runner Setup", extensions: ["mockrack"] }],
+  });
+  if (result.canceled || !result.filePath) return;
+  try {
+    writeMockrackAtomic(result.filePath, buildSetupSnapshot());
+    currentFilePath = result.filePath;
+    app.addRecentDocument(result.filePath);
+    clearDirty();
+    pushDirtyChanged();
+  } catch (err) {
+    dialog.showErrorBox("Save failed", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** Returns true if the user wants to proceed. False on Cancel. */
+async function confirmDiscardIfDirty(): Promise<boolean> {
+  if (!isDirty) return true;
+  const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+  if (!win) return true;
+  const fileLabel = currentFilePath
+    ? basename(currentFilePath)
+    : "current setup";
+  const result = await dialog.showMessageBox(win, {
+    type: "warning",
+    buttons: ["Save", "Don't Save", "Cancel"],
+    defaultId: 0,
+    cancelId: 2,
+    message: `Save changes to "${fileLabel}"?`,
+    detail: "Your changes will be lost if you don't save them.",
+  });
+  if (result.response === 2) return false; // Cancel
+  if (result.response === 0) {              // Save
+    if (currentFilePath) await saveCurrent();
+    else await saveAs();
+    if (isDirty) return false;              // Save dialog was cancelled
+  }
+  return true;                              // Don't Save (or Save succeeded)
+}
+
+async function tearDownAllTabs(): Promise<void> {
+  for (const entry of [...tabs.values()]) {
+    if (entry.engine) {
+      try { await entry.engine.stop(); } catch { /* swallow */ }
+    }
+    mainWindow?.webContents.send("file:close-tab", { tabId: entry.tabId });
+    tabs.delete(entry.tabId);
+  }
+}
+
+async function loadSetupFromPath(path: string): Promise<void> {
+  let text: string;
+  try { text = readFileSync(path, "utf-8"); }
+  catch (err) {
+    dialog.showErrorBox("Open failed", err instanceof Error ? err.message : String(err));
+    return;
+  }
+  let parsed;
+  try { parsed = parseMockrack(text); }
+  catch (err) {
+    dialog.showErrorBox("Open failed", err instanceof Error ? err.message : String(err));
+    return;
+  }
+
+  restoring = true;
+  try {
+    await tearDownAllTabs();
+
+    let activeTabId: string | null = null;
+    for (let i = 0; i < parsed.tabs.length; i++) {
+      const t = parsed.tabs[i];
+      let model;
+      try { model = await loadModelById(t.modelId); }
+      catch {
+        mainWindow?.webContents.send("menu:console-note",
+          { text: `Skipped tab "${t.label}": model "${t.modelId}" not registered.` });
+        continue;
+      }
+      const handler = model.createMockHandler?.();
+      if (!handler) continue;
+      const wsPort = nextFreePort();
+      const portName = `${model.info.displayName} Mock`;
+      const engine = new MockEngine(handler, {
+        lowerChannel: LOWER_CH,
+        upperChannel: UPPER_CH,
+        wsPort, portName,
+        modelId: model.info.id,
+        displayName: model.info.displayName,
+        label: t.label,
+      });
+      try { await engine.start(); }
+      catch (err) {
+        console.error(`Engine start failed for ${t.label}:`, err);
+        mainWindow?.webContents.send("menu:console-note", {
+          text: `Skipped tab "${t.label}" (${model.info.displayName}): engine failed to start — ${err instanceof Error ? err.message : String(err)}`,
+        });
+        continue;
+      }
+      engine.on("state-changed", onEngineStateChanged);
+
+      const tabId = nextTabId();
+      tabs.set(tabId, { tabId, model, engine, wsPort, label: t.label });
+
+      const restored = engine.restoreSnapshot(t.state);
+      if (!restored && t.state !== null) {
+        mainWindow?.webContents.send("menu:console-note",
+          { text: `${model.info.displayName} ("${t.label}"): full state restore not yet implemented — knobs reset to defaults.` });
+      }
+
+      const isActive = i === parsed.activeTabIndex;
+      mainWindow?.webContents.send("file:mount-tab", {
+        tabId, modelInfoId: model.info.id, displayName: model.info.displayName,
+        label: t.label, wsPort, modelUiDir: model.mockUiDir ?? null,
+        isActive,
+      });
+      if (isActive) activeTabId = tabId;
+    }
+
+    if (activeTabId) lastActiveTabId = activeTabId;
+    currentFilePath = path;
+    app.addRecentDocument(path);
+  } finally {
+    restoring = false;
+    clearDirty();
+    pushDirtyChanged();
+  }
+}
+
+async function openDialog(): Promise<void> {
+  if (!await confirmDiscardIfDirty()) return;
+  const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+  if (!win) return;
+  const result = await dialog.showOpenDialog(win, {
+    title: "Open Studio Setup",
+    properties: ["openFile"],
+    filters: [{ name: "Mock Runner Setup", extensions: ["mockrack"] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return;
+  await loadSetupFromPath(result.filePaths[0]);
+}
 
 function nextTabId(): string {
   return `tab-${nextTabSeq++}`;
@@ -107,13 +340,35 @@ function createWindow(): void {
   });
 
   void mainWindow.loadFile(join(SHELL_DIR, "index.html"));
+  // Intercept the window-close path (red X / Cmd+W) before the window
+  // is destroyed, so confirmDiscardIfDirty has a parent window to anchor
+  // its dialog to. Without this, by the time `before-quit` fires the
+  // window is already gone and the prompt silently no-ops.
+  mainWindow.on("close", (event) => {
+    if (pendingQuit) return;       // user already confirmed
+    if (!isDirty) return;
+    event.preventDefault();
+    void (async () => {
+      if (await confirmDiscardIfDirty()) {
+        pendingQuit = true;
+        mainWindow?.destroy();
+      }
+    })();
+  });
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 
 // ── Menu ──
 
 function buildMenu(): void {
+  const isMac = process.platform === "darwin";
   const template: Electron.MenuItemConstructorOptions[] = [
+    // macOS: explicit app menu so the SUBMENU items read "About / Hide
+    // / Quit Mock Runner". The BOLD menu-bar label still reads
+    // "Electron" in dev because that's the running binary's
+    // CFBundleName — it'll switch to "Mock Runner" once the app is
+    // packaged via electron-builder (plan: macos-packager).
+    ...(isMac ? [{ role: "appMenu" as const, label: app.name }] : []),
     {
       label: "File",
       submenu: [
@@ -123,12 +378,34 @@ function buildMenu(): void {
           click: () => mainWindow?.webContents.send("menu:new-tab"),
         },
         {
+          label: "Open…",
+          accelerator: "CmdOrCtrl+O",
+          click: () => { void openDialog(); },
+        },
+        { role: "recentDocuments", submenu: [{ role: "clearRecentDocuments" }] },
+        { type: "separator" },
+        {
+          label: "Save",
+          accelerator: "CmdOrCtrl+S",
+          click: () => { void saveCurrent(); },
+        },
+        {
+          label: "Save As…",
+          accelerator: "CmdOrCtrl+Shift+S",
+          click: () => { void saveAs(); },
+        },
+        { type: "separator" },
+        {
           label: "Extract Backup…",
           accelerator: "CmdOrCtrl+E",
           click: () => mainWindow?.webContents.send("menu:extract-backup"),
         },
-        { type: "separator" },
-        { role: "quit" },
+        // Quit lives in the app menu on macOS (no duplicate here). On
+        // Windows/Linux there's no app menu, so the File menu owns Quit.
+        ...(isMac ? [] : [
+          { type: "separator" as const },
+          { role: "quit" as const },
+        ]),
       ],
     },
     { role: "editMenu" },
@@ -158,6 +435,7 @@ ipcMain.handle("get-models", async (): Promise<KeyboardModelInfo[]> => {
 ipcMain.handle("create-tab", (): { tabId: string } => {
   const tabId = nextTabId();
   tabs.set(tabId, { tabId, model: null, engine: null, wsPort: null, label: null });
+  markDirty();
   return { tabId };
 });
 
@@ -166,6 +444,7 @@ ipcMain.handle("close-tab", async (_event, tabId: string): Promise<{ ok: boolean
   if (!entry) return { ok: false };
   await destroyTab(entry);
   tabs.delete(tabId);
+  markDirty();
   return { ok: true };
 });
 
@@ -207,11 +486,13 @@ ipcMain.handle(
       displayName: model.info.displayName,
     });
     await engine.start();
+    engine.on("state-changed", onEngineStateChanged);
 
     entry.model = model;
     entry.engine = engine;
     entry.wsPort = wsPort;
     entry.label = resolvedLabel;
+    markDirty();
 
     return {
       wsPort,
@@ -254,6 +535,7 @@ ipcMain.handle(
       }
     }
 
+    markDirty();
     return { ok: true, label: slug };
   },
 );
@@ -272,6 +554,18 @@ ipcMain.handle("list-tabs", (): Array<{
     label: t.label,
     wsPort: t.wsPort,
   }));
+});
+
+// Plan #9: renderer pushes the active tab id whenever it changes so main
+// can persist it on save. Tab changes ARE persisted into the .mockrack
+// file (as `activeTabIndex`), so they count as a dirty change — gated by
+// `restoring` so the Open flow doesn't flip dirty as it foregrounds the
+// restored tab.
+ipcMain.handle("set-active-tab", (_event, tabId: string): void => {
+  if (typeof tabId !== "string") return;
+  if (lastActiveTabId === tabId) return;          // no-op
+  lastActiveTabId = tabId;
+  markDirty();
 });
 
 ipcMain.handle("open-backup-dialog", async (): Promise<string | null> => {
@@ -364,6 +658,7 @@ ipcMain.handle(
 
       const programs = (data as any).programs?.length ?? 0;
       const samples = (data as any).samples?.length ?? 0;
+      markDirty();
       return {
         ok: true,
         message: `Extracted under "${label}": ${programs} programs, ${samples} samples.`,
@@ -376,6 +671,31 @@ ipcMain.handle(
 
 // ── App lifecycle ──
 
+// macOS hands paths to the running app via this event — fired by the
+// dock, by Open Recent, and by file-association double-click. The event
+// can arrive before app.whenReady() / createWindow() (cold-launch via
+// double-click), at which point loadSetupFromPath would create engines
+// but no window exists to receive file:mount-tab events. Queue the path
+// and replay it from the renderer's did-finish-load handler.
+let pendingOpenPath: string | null = null;
+
+app.on("open-file", (event, path) => {
+  event.preventDefault();
+  if (!mainWindow || mainWindow.webContents.isLoading()) {
+    pendingOpenPath = path;
+    return;
+  }
+  void (async () => {
+    if (!await confirmDiscardIfDirty()) return;
+    if (!existsSync(path)) {
+      mainWindow?.webContents.send("menu:console-note",
+        { text: `File not found: ${path}` });
+      return;
+    }
+    await loadSetupFromPath(path);
+  })();
+});
+
 void app.whenReady().then(() => {
   // Drop registry entries left behind by a previous crashed mock-runner.
   // (Heart-beat-based stale detection handles the rest at read time.)
@@ -385,6 +705,46 @@ void app.whenReady().then(() => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+
+  // Plan #9: auto-load. A pending `open-file` (cold-launch) wins over
+  // the recents fallback. Wait for the renderer to be ready so
+  // file:mount-tab events have a listener.
+  mainWindow?.webContents.once("did-finish-load", () => {
+    void (async () => {
+      if (pendingOpenPath) {
+        const path = pendingOpenPath;
+        pendingOpenPath = null;
+        if (existsSync(path)) {
+          await loadSetupFromPath(path);
+          return;
+        }
+        mainWindow?.webContents.send("menu:console-note",
+          { text: `File not found: ${path}` });
+      }
+      const recents = app.getRecentDocuments();
+      for (const path of recents) {
+        if (existsSync(path)) {
+          await loadSetupFromPath(path);
+          return;
+        }
+      }
+      // No surviving recents → empty rack (today's behavior).
+    })();
+  });
+});
+
+// Plan #9: dirty prompt on Quit (⌘Q / window-close on macOS).
+let pendingQuit = false;
+app.on("before-quit", (event) => {
+  if (pendingQuit) return;        // we already confirmed; let the quit proceed
+  if (!isDirty) return;
+  event.preventDefault();
+  void (async () => {
+    if (await confirmDiscardIfDirty()) {
+      pendingQuit = true;
+      app.quit();
+    }
+  })();
 });
 
 app.on("window-all-closed", async () => {

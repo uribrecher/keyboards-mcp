@@ -34,6 +34,7 @@ function setActive(tabId) {
     if (t.iframe) t.iframe.hidden = !isActive;
   }
   slotEmpty.hidden = tabs.length > 0;
+  if (tabId) void api.setActiveTab?.(tabId);
 }
 
 function renderTabButton(tab) {
@@ -549,3 +550,80 @@ async function runBackupExtract(tabId) {
 
 chatExtract.addEventListener("click", openBackupModal);
 api.onMenuExtractBackup?.(() => openBackupModal());
+
+// ─────────────────────────────────────────────────────────────────
+// Plan #9 — title-bar dirty indicator
+// ─────────────────────────────────────────────────────────────────
+
+api.onDirtyChanged?.(({ isDirty, currentFileName }) => {
+  // `currentFileName` is precomputed by main via node:path.basename(),
+  // so this works on Windows too (no manual `/` splitting).
+  const base = "Mock Runner";
+  document.title = currentFileName
+    ? `${base} — ${currentFileName}${isDirty ? " •" : ""}`
+    : base;
+});
+
+// Render in-shell notes from main (Open errors, graceful-degradation msgs).
+api.onConsoleNote?.(({ text }) => { appendRow("system", text); });
+
+// Open flow asks the renderer to drop a specific iframe (during teardown)
+api.onCloseTab?.(({ tabId }) => {
+  const tab = findTab(tabId);
+  if (!tab) return;
+  if (tab.iframe) tab.iframe.remove();
+  tab.button.remove();
+  const idx = tabs.indexOf(tab);
+  if (idx >= 0) tabs.splice(idx, 1);
+  if (activeTabId === tabId) {
+    const next = tabs[0]?.tabId ?? null;
+    activeTabId = next;
+    slotEmpty.hidden = tabs.length > 0;
+    for (const t of tabs) t.button.classList.toggle("is-active", t.tabId === next);
+  }
+});
+
+// Open flow asks the renderer to mount each restored tab's iframe directly
+// — main has already created the engine, so we skip the createTab/IPC dance.
+// `info.isActive` indicates which mounted tab should be foregrounded.
+api.onMountTab?.((info) => {
+  const tab = {
+    tabId: info.tabId,
+    modelInfoId: info.modelInfoId,
+    displayName: info.displayName,
+    label: info.label,
+    wsPort: info.wsPort,
+    iframe: null,
+    button: null,
+  };
+  tabs.push(tab);
+  const btn = renderTabButton(tab);
+  tab.button = btn;
+  tabbarEl.insertBefore(btn, tabPlusEl);
+  // Re-skin: a mounted tab is loaded, not pending
+  btn.classList.remove("is-pending");
+  const titleEl = btn.querySelector(".tab__title");
+  if (titleEl) {
+    titleEl.textContent = tab.label || tab.displayName || "—";
+    titleEl.title = `Double-click to rename · ${tab.displayName} · ws ${tab.wsPort}`;
+  }
+  btn.title = `${tab.displayName} · ws:${tab.wsPort} · "${tab.label}"`;
+
+  const iframe = document.createElement("iframe");
+  iframe.dataset.tabId = info.tabId;
+  iframe.src = info.modelUiDir
+    ? `file://${info.modelUiDir}/index.html?wsPort=${info.wsPort}`
+    : "chooser.html";
+  iframe.hidden = !info.isActive;     // only the active tab's iframe is visible
+  slotEl.appendChild(iframe);
+  tab.iframe = iframe;
+
+  // Only the tab marked active should foreground; otherwise just sync
+  // the empty-rack flag and the active CSS class.
+  if (info.isActive) {
+    setActive(info.tabId);
+  } else {
+    btn.classList.remove("is-active");
+    slotEmpty.hidden = tabs.length > 0;
+  }
+});

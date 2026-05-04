@@ -35,5 +35,16 @@
     "tsx": "^4.0.0",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.58.2"
+  },
+  "build": {
+    "appId": "io.mock-runner",
+    "productName": "Mock Runner",
+    "fileAssociations": [
+      {
+        "ext": "mockrack",
+        "name": "Mock Runner Setup",
+        "role": "Editor"
+      }
+    ]
   }
 }
