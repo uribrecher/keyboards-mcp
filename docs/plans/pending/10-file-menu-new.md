@@ -44,22 +44,33 @@ In `src/mock-runner/main.ts`:
    }
    ```
 2. Give the **New** and **Save** menu items stable `id`s
-   (`"file.new"`, `"file.save"`) and an initial `enabled` flag derived
-   from current state.
+   (`"file.new"`, `"file.save"`). Both start with a hardcoded
+   `enabled: false` in the template — at `buildMenu()` time the
+   application has no tabs, no attached file, and is not dirty, which
+   is exactly the disabled condition for both items. Subsequent
+   `refreshMenuEnabledState()` calls update them as state evolves.
 3. Add `refreshMenuEnabledState()` that fetches both items via
    `Menu.getApplicationMenu()?.getMenuItemById(id)` and toggles
-   `.enabled`.
+   `.enabled` based on:
+   - **New**: enabled iff `tabs.size > 0 || currentFilePath !== null
+     || isDirty` (anything to clear / discard).
+   - **Save**: enabled iff `currentFilePath !== null`.
 4. Call `refreshMenuEnabledState()` after every state transition that
    can flip the conditions:
-   - `create-tab`, `close-tab`, `select-model-for-tab` IPC handlers
-     (tab count changes)
-   - `loadSetupFromPath()` end (file path changes)
-   - `saveAs()` end (file path changes)
-   - `newSetup()` end (already covered above)
-5. Initial state at `buildMenu()` time: tabs is empty and
-   `currentFilePath` is null → both items disabled. After auto-load
-   of recents (or an `open-file` cold-launch), `loadSetupFromPath()`
-   refreshes them.
+   - `create-tab`, `close-tab` IPC handlers (tab count changes).
+     `select-model-for-tab` is intentionally NOT a refresh site —
+     it modifies an existing tab's model field but leaves
+     `tabs.size` untouched, so the menu enable conditions don't
+     change.
+   - `markDirty()` and `clearDirty()` (so **New** picks up the
+     dirty-only edge case where the rack is empty but unsaved
+     changes remain).
+   - `loadSetupFromPath()` end (file path changes).
+   - `saveAs()` end (file path changes).
+   - `newSetup()` end (already covered above).
+5. After auto-load of recents (or an `open-file` cold-launch),
+   `loadSetupFromPath()` refreshes both items — so the cold-start
+   `enabled: false` is corrected as soon as the rack is populated.
 
 No mock-handler / model-side changes; renderer is unchanged (the
 title bar already reacts to `file:dirty-changed`).

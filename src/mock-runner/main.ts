@@ -65,12 +65,14 @@ function markDirty(): void {
   if (isDirty) return;
   isDirty = true;
   pushDirtyChanged();
+  refreshMenuEnabledState();
 }
 
 function clearDirty(): void {
   if (!isDirty) return;
   isDirty = false;
   pushDirtyChanged();
+  refreshMenuEnabledState();
 }
 
 function pushDirtyChanged(): void {
@@ -300,7 +302,11 @@ function refreshMenuEnabledState(): void {
   const menu = Menu.getApplicationMenu();
   if (!menu) return;
   const newItem = menu.getMenuItemById("file.new");
-  if (newItem) newItem.enabled = tabs.size > 0 || currentFilePath !== null;
+  // Enable New whenever it would perform a meaningful reset: there are
+  // tabs to clear, a file is attached, OR there's a dirty flag to drop
+  // (the last case covers "user created a tab then closed it without
+  // saving" — empty rack but still dirty).
+  if (newItem) newItem.enabled = tabs.size > 0 || currentFilePath !== null || isDirty;
   const saveItem = menu.getMenuItemById("file.save");
   if (saveItem) saveItem.enabled = currentFilePath !== null;
 }
