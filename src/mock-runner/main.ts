@@ -338,7 +338,11 @@ function createWindow(): void {
 // ── Menu ──
 
 function buildMenu(): void {
+  const isMac = process.platform === "darwin";
   const template: Electron.MenuItemConstructorOptions[] = [
+    // macOS: explicit app menu so the leftmost item reads "Mock Runner"
+    // (with About / Hide / Quit) instead of Electron's default fallback.
+    ...(isMac ? [{ role: "appMenu" as const, label: app.name }] : []),
     {
       label: "File",
       submenu: [
