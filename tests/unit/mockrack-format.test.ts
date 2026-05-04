@@ -75,6 +75,17 @@ describe("parseMockrack", () => {
     assert.deepEqual(parsed.tabs[1].state, { foo: 1 });
   });
 
+  it("treats a missing state field as null (forward/backward compat)", () => {
+    const file = { ...makeFile(), tabs: [{ modelId: "x", label: "y" }] };
+    const parsed = parseMockrack(JSON.stringify(file));
+    assert.equal(parsed.tabs[0].state, null);
+  });
+
+  it("rejects an array state value", () => {
+    const file = makeFile({ tabs: [makeTab({ state: [1, 2, 3] as any })] });
+    assert.throws(() => parseMockrack(JSON.stringify(file)), /state must be an object or null/);
+  });
+
   it("clamps activeTabIndex into [0, tabs.length-1]", () => {
     const tooBig = parseMockrack(JSON.stringify(makeFile({ activeTabIndex: 99 })));
     assert.equal(tooBig.activeTabIndex, 0);

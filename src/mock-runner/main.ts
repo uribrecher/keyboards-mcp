@@ -74,7 +74,12 @@ function clearDirty(): void {
 }
 
 function pushDirtyChanged(): void {
-  mainWindow?.webContents.send("file:dirty-changed", { isDirty, currentFilePath });
+  // Send a precomputed file name so the renderer doesn't have to parse
+  // OS-specific paths (which would mishandle Windows `C:\\…` separators).
+  const currentFileName = currentFilePath ? basename(currentFilePath) : null;
+  mainWindow?.webContents.send("file:dirty-changed", {
+    isDirty, currentFilePath, currentFileName,
+  });
 }
 
 /** Debounced state-changed handler for engine broadcasts. */
@@ -149,7 +154,7 @@ async function confirmDiscardIfDirty(): Promise<boolean> {
   const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
   if (!win) return true;
   const fileLabel = currentFilePath
-    ? currentFilePath.split("/").pop() ?? "current setup"
+    ? basename(currentFilePath)
     : "current setup";
   const result = await dialog.showMessageBox(win, {
     type: "warning",
@@ -221,6 +226,9 @@ async function loadSetupFromPath(path: string): Promise<void> {
       try { await engine.start(); }
       catch (err) {
         console.error(`Engine start failed for ${t.label}:`, err);
+        mainWindow?.webContents.send("menu:console-note", {
+          text: `Skipped tab "${t.label}" (${model.info.displayName}): engine failed to start — ${err instanceof Error ? err.message : String(err)}`,
+        });
         continue;
       }
       engine.on("state-changed", onEngineStateChanged);
@@ -392,7 +400,12 @@ function buildMenu(): void {
           accelerator: "CmdOrCtrl+E",
           click: () => mainWindow?.webContents.send("menu:extract-backup"),
         },
-        // Quit lives in the app menu (macOS convention) — no duplicate here.
+        // Quit lives in the app menu on macOS (no duplicate here). On
+        // Windows/Linux there's no app menu, so the File menu owns Quit.
+        ...(isMac ? [] : [
+          { type: "separator" as const },
+          { role: "quit" as const },
+        ]),
       ],
     },
     { role: "editMenu" },
@@ -544,12 +557,15 @@ ipcMain.handle("list-tabs", (): Array<{
 });
 
 // Plan #9: renderer pushes the active tab id whenever it changes so main
-// can persist it on save. Switching tabs is pure navigation — NOT a dirty
-// trigger.
+// can persist it on save. Tab changes ARE persisted into the .mockrack
+// file (as `activeTabIndex`), so they count as a dirty change — gated by
+// `restoring` so the Open flow doesn't flip dirty as it foregrounds the
+// restored tab.
 ipcMain.handle("set-active-tab", (_event, tabId: string): void => {
-  if (typeof tabId === "string") {
-    lastActiveTabId = tabId;
-  }
+  if (typeof tabId !== "string") return;
+  if (lastActiveTabId === tabId) return;          // no-op
+  lastActiveTabId = tabId;
+  markDirty();
 });
 
 ipcMain.handle("open-backup-dialog", async (): Promise<string | null> => {
@@ -656,9 +672,19 @@ ipcMain.handle(
 // ── App lifecycle ──
 
 // macOS hands paths to the running app via this event — fired by the
-// dock, by Open Recent, and by file-association double-click.
+// dock, by Open Recent, and by file-association double-click. The event
+// can arrive before app.whenReady() / createWindow() (cold-launch via
+// double-click), at which point loadSetupFromPath would create engines
+// but no window exists to receive file:mount-tab events. Queue the path
+// and replay it from the renderer's did-finish-load handler.
+let pendingOpenPath: string | null = null;
+
 app.on("open-file", (event, path) => {
   event.preventDefault();
+  if (!mainWindow || mainWindow.webContents.isLoading()) {
+    pendingOpenPath = path;
+    return;
+  }
   void (async () => {
     if (!await confirmDiscardIfDirty()) return;
     if (!existsSync(path)) {
@@ -680,10 +706,21 @@ void app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 
-  // Plan #9: auto-load the most-recent surviving setup. Wait for the
-  // renderer to be ready so file:mount-tab events have a listener.
+  // Plan #9: auto-load. A pending `open-file` (cold-launch) wins over
+  // the recents fallback. Wait for the renderer to be ready so
+  // file:mount-tab events have a listener.
   mainWindow?.webContents.once("did-finish-load", () => {
     void (async () => {
+      if (pendingOpenPath) {
+        const path = pendingOpenPath;
+        pendingOpenPath = null;
+        if (existsSync(path)) {
+          await loadSetupFromPath(path);
+          return;
+        }
+        mainWindow?.webContents.send("menu:console-note",
+          { text: `File not found: ${path}` });
+      }
       const recents = app.getRecentDocuments();
       for (const path of recents) {
         if (existsSync(path)) {

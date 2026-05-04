@@ -555,10 +555,13 @@ api.onMenuExtractBackup?.(() => openBackupModal());
 // Plan #9 — title-bar dirty indicator
 // ─────────────────────────────────────────────────────────────────
 
-api.onDirtyChanged?.(({ isDirty, currentFilePath }) => {
+api.onDirtyChanged?.(({ isDirty, currentFileName }) => {
+  // `currentFileName` is precomputed by main via node:path.basename(),
+  // so this works on Windows too (no manual `/` splitting).
   const base = "Mock Runner";
-  const file = currentFilePath ? currentFilePath.split("/").pop() : null;
-  document.title = file ? `${base} — ${file}${isDirty ? " •" : ""}` : base;
+  document.title = currentFileName
+    ? `${base} — ${currentFileName}${isDirty ? " •" : ""}`
+    : base;
 });
 
 // Render in-shell notes from main (Open errors, graceful-degradation msgs).

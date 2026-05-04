@@ -61,8 +61,13 @@ export function parseMockrack(text: string): MockrackV1 {
     if (typeof t.label !== "string" || t.label.length === 0) {
       throw new Error(`Invalid .mockrack: tabs[${i}].label must be a non-empty string.`);
     }
-    if (t.state !== null && (typeof t.state !== "object")) {
-      throw new Error(`Invalid .mockrack: tabs[${i}].state must be an object or null.`);
+    // `state` is optional in the file (forward/backward compat). When
+    // present it must be a plain object — null, undefined, and arrays
+    // are not valid handler snapshots.
+    if (t.state !== null && t.state !== undefined) {
+      if (typeof t.state !== "object" || Array.isArray(t.state)) {
+        throw new Error(`Invalid .mockrack: tabs[${i}].state must be an object or null.`);
+      }
     }
     return { modelId: t.modelId, label: t.label, state: t.state ?? null };
   });
