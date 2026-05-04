@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "mock:runner": "electron dist/mock-runner/main.js",
+    "mock:runner:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 MOCK_RUNNER_DEVTOOLS=1 electron --inspect=5858 dist/mock-runner/main.js",
     "mock:headless": "tsx src/mock-runner/cli.ts",
     "lint": "eslint src/ tests/",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
