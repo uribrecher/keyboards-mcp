@@ -85,6 +85,26 @@ The Nord Electro 5D has two parts (Lower and Upper).
 - LAYER MODE (split off): Both parts span the entire keyboard. You CANNOT assign the same engine type to both parts — each layer must use a different engine (e.g., Organ + Piano, Piano + Sample Synth, Organ + Sample Synth).
 - SPLIT MODE (split on): Each part gets its own keyboard zone. You CAN use the same engine on both parts. However, Piano and Sample Synth share model/sample selection across parts — only one piano model and one sample at a time.
 
+PARAMETER PRECONDITIONS (read before every set_parameters call):
+Engine-specific parameters silently no-op when their engine is not selected on the target part. Each part has an engine selector — \`part_lower_engine_select\` / \`part_upper_engine_select\` — with values: 0=Organ, 1=Piano, 2=Sample Synth.
+
+Section → required engine value:
+- section "organ" (drawbars, vibrato_*, percussion_*, swell, organ_model, organ_preset_select, etc.) → engine 0
+- section "piano" (piano_model, piano_variation, piano_dyn, piano_kbtouch, piano_acoustics, etc.) → engine 1
+- section "sample_synth" (sample_index, sample_attack, sample_release, sample_dynamics, etc.) → engine 2
+
+Sections "amp", "delay", "effect1", "effect2", "eq", "reverb", "rotary", "global", "parts" are engine-agnostic and may be set without touching the engine selector.
+
+WORKFLOW RULE: when changing any engine-specific parameter, INCLUDE the matching \`part_*_engine_select\` in the same set_parameters call. Setting it to its current value is a no-op, so include it whenever you are not certain — never assume a previous turn left the engine correct.
+
+Examples:
+- "set organ drawbars on the lower part to 88 8000 000":
+    set_parameters({ part_lower_engine_select: 0, drawbar_1: 8, drawbar_2: 8, drawbar_3: 8 })
+- "load grand piano on the upper part":
+    set_parameters({ part_upper_engine_select: 1, piano_model: <index> })
+- "set sample release on the lower part to 5":
+    set_parameters({ part_lower_engine_select: 2, sample_release: 5 })
+
 ORGAN PRESET ROUTING:
 In split mode, Organ Preset 1 routes to the Lower part and Preset 2 routes to the Upper part. The organ model is global (shared), but each preset has its own drawbar registration. To set different organ sounds per part: select Preset 1, set its drawbars, then select Preset 2 and set different drawbars.
 
