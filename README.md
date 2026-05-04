@@ -109,13 +109,14 @@ Once connected, the following tools are available:
 
 ### Mock device
 
-For development without hardware:
+For development without hardware, the **Mock Runner** is an Electron app that simulates one or more keyboards as a tabbed multi-device rack with model-specific web UIs, persistent rack setups, and a built-in chat console.
 
 ```bash
-npm run mock:runner   # Electron app — model picker, then model-specific UI
+npm run mock:runner     # Electron app
+npm run mock:headless   # Plain Node (--model <id> required) — for tests/CI
 ```
 
-On launch, the app shows a model picker. After selecting a keyboard model, the model's web UI loads with real-time parameter visualization — drawbars, knobs, LEDs, and all engine parameters update as MIDI messages arrive. The engine is a thin shell; all state and logic lives in the model's `MockHandler`.
+See [docs/mock_runner.md](docs/mock_runner.md) for the full UI tour — tabs, labels and per-instance backups, the File menu and `.mockrack` save format, backup extraction, and the chat console.
 
 ## License
 
