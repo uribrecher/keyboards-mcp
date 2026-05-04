@@ -2,7 +2,11 @@
  * Mock Runner shell — tab state, iframe routing, chat console.
  * ────────────────────────────────────────────────────────────── */
 
-const AGENT_URL = "http://localhost:3001";
+// Port 2999 is reserved for the agent in plan #6 specifically to keep
+// it OUT of the mock-engine WS range that starts at 3000 — otherwise
+// the chat's fetch hits a mock's bare http.Server (which has no request
+// handler) and hangs the connection indefinitely.
+const AGENT_URL = "http://localhost:2999";
 const CHAT_HISTORY_KEY = "mock-runner.chat-history.v1";
 
 const api = window.mockRunnerAPI;
