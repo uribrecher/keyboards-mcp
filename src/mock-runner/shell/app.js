@@ -438,11 +438,20 @@ async function sendChat() {
           currentToolRow = null;
           // For web_search specifically, the SDK exposes a typed
           // accessor for the visited sources. Render one row per URL
-          // (URL only — no titles/snippets, per design intent).
+          // (URL only — no titles/snippets, per design intent). The
+          // `is-result` class already gets a "↳" prefix from CSS, so
+          // the row text is just the URL — no in-text arrow. Persist
+          // once at the end of the loop instead of per-row, since
+          // saveChatHistory() walks the entire log.
           if (isWebSearchResult(event.toolName, event.output)) {
+            let appended = 0;
             for (const source of event.output.results) {
-              if (source.url) appendRow("tool", `→ ${source.url}`, { result: true });
+              if (source.url) {
+                appendRow("tool", source.url, { result: true, skipPersist: true });
+                appended++;
+              }
             }
+            if (appended > 0) saveChatHistory();
           }
           break;
         case "done":
