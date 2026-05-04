@@ -143,6 +143,7 @@ async function saveAs(): Promise<void> {
     app.addRecentDocument(result.filePath);
     clearDirty();
     pushDirtyChanged();
+    refreshMenuEnabledState();
   } catch (err) {
     dialog.showErrorBox("Save failed", err instanceof Error ? err.message : String(err));
   }
@@ -258,6 +259,7 @@ async function loadSetupFromPath(path: string): Promise<void> {
     restoring = false;
     clearDirty();
     pushDirtyChanged();
+    refreshMenuEnabledState();
   }
 }
 
@@ -272,6 +274,35 @@ async function openDialog(): Promise<void> {
   });
   if (result.canceled || result.filePaths.length === 0) return;
   await loadSetupFromPath(result.filePaths[0]);
+}
+
+async function newSetup(): Promise<void> {
+  if (!await confirmDiscardIfDirty()) return;
+  restoring = true;
+  try {
+    await tearDownAllTabs();
+    lastActiveTabId = null;
+    currentFilePath = null;
+  } finally {
+    restoring = false;
+    clearDirty();
+    pushDirtyChanged();
+    refreshMenuEnabledState();
+  }
+}
+
+/**
+ * Update the dynamic enabled state of File-menu items that depend on
+ * session state (tab count, attached file path). Call this after any
+ * state transition that can flip those conditions.
+ */
+function refreshMenuEnabledState(): void {
+  const menu = Menu.getApplicationMenu();
+  if (!menu) return;
+  const newItem = menu.getMenuItemById("file.new");
+  if (newItem) newItem.enabled = tabs.size > 0 || currentFilePath !== null;
+  const saveItem = menu.getMenuItemById("file.save");
+  if (saveItem) saveItem.enabled = currentFilePath !== null;
 }
 
 function nextTabId(): string {
@@ -373,6 +404,13 @@ function buildMenu(): void {
       label: "File",
       submenu: [
         {
+          id: "file.new",
+          label: "New",
+          accelerator: "CmdOrCtrl+N",
+          enabled: false,
+          click: () => { void newSetup(); },
+        },
+        {
           label: "New Tab",
           accelerator: "CmdOrCtrl+T",
           click: () => mainWindow?.webContents.send("menu:new-tab"),
@@ -385,8 +423,10 @@ function buildMenu(): void {
         { role: "recentDocuments", submenu: [{ role: "clearRecentDocuments" }] },
         { type: "separator" },
         {
+          id: "file.save",
           label: "Save",
           accelerator: "CmdOrCtrl+S",
+          enabled: false,
           click: () => { void saveCurrent(); },
         },
         {
@@ -436,6 +476,7 @@ ipcMain.handle("create-tab", (): { tabId: string } => {
   const tabId = nextTabId();
   tabs.set(tabId, { tabId, model: null, engine: null, wsPort: null, label: null });
   markDirty();
+  refreshMenuEnabledState();
   return { tabId };
 });
 
@@ -445,6 +486,7 @@ ipcMain.handle("close-tab", async (_event, tabId: string): Promise<{ ok: boolean
   await destroyTab(entry);
   tabs.delete(tabId);
   markDirty();
+  refreshMenuEnabledState();
   return { ok: true };
 });
 
