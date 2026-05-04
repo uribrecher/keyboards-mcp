@@ -149,6 +149,20 @@ export interface MockHandler {
   getFullState(includeInventory: boolean): Record<string, any>;
   /** Reload cached data (e.g., backup cache) */
   onCacheReload?(): void;
+  /**
+   * Restore the handler's internal state from a snapshot previously
+   * produced by `getFullState(false)`.
+   *
+   * Implementers MUST treat the input as best-effort:
+   *   - missing fields → keep current defaults (don't throw)
+   *   - unknown extra fields → ignore
+   *   - malformed shapes → log and partially recover, never throw
+   *
+   * Implementers MUST NOT broadcast — the engine emits a single
+   * `getFullState(true)` broadcast after this call returns, so the UI
+   * sees one consistent transition.
+   */
+  setFullState?(snapshot: Record<string, any>): void;
 }
 
 // ── Device instance (new architecture) ──

@@ -6,6 +6,7 @@
  */
 
 import { createServer, type Server } from "node:http";
+import { EventEmitter } from "node:events";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { MockHandler, MidiMessage } from "../shared/keyboard-model.js";
 import * as registry from "../shared/mock-registry.js";
@@ -29,7 +30,7 @@ export interface EngineOptions {
   noRegistry?: boolean;
 }
 
-export class MockEngine {
+export class MockEngine extends EventEmitter {
   private handler: MockHandler;
   private opts: EngineOptions;
 
@@ -43,6 +44,7 @@ export class MockEngine {
   private actualPortName: string;
 
   constructor(handler: MockHandler, opts: EngineOptions) {
+    super();
     this.handler = handler;
     this.opts = opts;
     this.actualPortName = opts.portName;
@@ -189,6 +191,28 @@ export class MockEngine {
     this.broadcast(this.handler.getFullState(true));
   }
 
+  /** Snapshot of the handler's current state. Used by Save (plan #9). */
+  getFullState(includeInventory: boolean): Record<string, any> {
+    return this.handler.getFullState(includeInventory);
+  }
+
+  /**
+   * Restore the handler's internal state from a snapshot (plan #9).
+   * Returns false when the snapshot is missing or the handler doesn't
+   * implement `setFullState` (graceful-degradation path — caller logs).
+   *
+   * On success, broadcasts a single fresh full-state snapshot so UI
+   * clients (and the MCP status WS) see one consistent transition.
+   */
+  restoreSnapshot(snapshot: Record<string, any> | null): boolean {
+    if (!snapshot) return false;
+    if (!this.handler.setFullState) return false;
+    try { this.handler.setFullState(snapshot); }
+    catch (err) { console.error("setFullState failed:", err); return false; }
+    this.broadcast(this.handler.getFullState(true));
+    return true;
+  }
+
   async stop(): Promise<void> {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
@@ -241,6 +265,9 @@ export class MockEngine {
     for (const ws of this.mcpClients) {
       if (ws.readyState === ws.OPEN) ws.send(labelOnly);
     }
+    // Plan #9: signal main-process listeners that something changed,
+    // so they can flip the dirty flag without subscribing to WS messages.
+    this.emit("state-changed");
   }
 
   private broadcastMcpStatus(): void {
