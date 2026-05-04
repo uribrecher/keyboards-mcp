@@ -355,8 +355,11 @@ function createWindow(): void {
 function buildMenu(): void {
   const isMac = process.platform === "darwin";
   const template: Electron.MenuItemConstructorOptions[] = [
-    // macOS: explicit app menu so the leftmost item reads "Mock Runner"
-    // (with About / Hide / Quit) instead of Electron's default fallback.
+    // macOS: explicit app menu so the SUBMENU items read "About / Hide
+    // / Quit Mock Runner". The BOLD menu-bar label still reads
+    // "Electron" in dev because that's the running binary's
+    // CFBundleName — it'll switch to "Mock Runner" once the app is
+    // packaged via electron-builder (plan: macos-packager).
     ...(isMac ? [{ role: "appMenu" as const, label: app.name }] : []),
     {
       label: "File",
@@ -389,8 +392,7 @@ function buildMenu(): void {
           accelerator: "CmdOrCtrl+E",
           click: () => mainWindow?.webContents.send("menu:extract-backup"),
         },
-        { type: "separator" },
-        { role: "quit" },
+        // Quit lives in the app menu (macOS convention) — no duplicate here.
       ],
     },
     { role: "editMenu" },
