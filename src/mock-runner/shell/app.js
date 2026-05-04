@@ -3,6 +3,12 @@
  * ────────────────────────────────────────────────────────────── */
 
 import { AgentClient, isWebSearchResult } from "@sounds-and-recreation/agent-client";
+import { marked } from "marked";
+
+// GFM gives us markdown tables (the original itch); breaks:true so a
+// single \n becomes a <br> rather than being collapsed inside a paragraph,
+// which matches how chat output reads more naturally.
+marked.setOptions({ gfm: true, breaks: true });
 
 // Port 2999 is reserved for the agent in plan #6 specifically to keep
 // it OUT of the mock-engine WS range that starts at 3000.
@@ -274,20 +280,12 @@ void newTab();
 const chatLog       = document.getElementById("chat-log");
 const chatForm      = document.getElementById("chat-form");
 const chatInput     = document.getElementById("chat-input");
-const chatSend      = document.getElementById("chat-send");
 const chatReset     = document.getElementById("chat-reset");
 const chatExtract   = document.getElementById("chat-extract");
 const meterEl       = document.getElementById("agent-status");
 
 let chatBusy = false;
 let agentReachable = null; // tri-state: null=unknown, true, false
-
-function pad2(n) { return String(n).padStart(2, "0"); }
-
-function timestamp() {
-  const d = new Date();
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-}
 
 function setMeter(state) {
   meterEl.dataset.state = state;
@@ -298,20 +296,40 @@ function appendRow(kind, text, opts = {}) {
   row.className = "chat-row chat-row--" + kind;
   if (opts.error) row.classList.add("is-error");
   if (opts.result) row.classList.add("is-result");
+  if (opts.url) row.classList.add("is-url");
 
-  const stamp = document.createElement("span");
-  stamp.className = "chat-stamp";
-  stamp.textContent = opts.stamp ?? timestamp();
-
-  const line = document.createElement("p");
+  // Assistant rows render as markdown so tables, code blocks, **bold**,
+  // lists, etc. all render as real HTML — tables in particular benefit
+  // (browser auto-sizing + horizontal scroll instead of mangled
+  // pre-wrap text). All other row kinds (user, system, tool) stay
+  // plain text. <div> instead of <p> because <p> can't legally contain
+  // block elements like <table>.
+  const useMarkdown = kind === "assistant";
+  const line = document.createElement(useMarkdown ? "div" : "p");
   line.className = "chat-line";
-  line.textContent = text;
+  if (useMarkdown) {
+    line.dataset.raw = text;
+    line.innerHTML = renderMarkdown(text);
+  } else {
+    line.textContent = text;
+  }
 
-  row.append(stamp, line);
+  row.append(line);
   chatLog.appendChild(row);
   chatLog.scrollTop = chatLog.scrollHeight;
   if (!opts.skipPersist) saveChatHistory();
   return line; // for streaming text appends
+}
+
+function renderMarkdown(text) {
+  try {
+    return marked.parse(text);
+  } catch {
+    // Fall back to escaped plain text on any parser error.
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
 }
 
 // ── History persistence ──
@@ -321,11 +339,16 @@ function saveChatHistory() {
   for (const row of chatLog.children) {
     const kind = [...row.classList].find((c) => c.startsWith("chat-row--"))
       ?.replace("chat-row--", "") ?? "system";
-    const stamp = row.querySelector(".chat-stamp")?.textContent ?? "";
-    const text  = row.querySelector(".chat-line")?.textContent ?? "";
+    const lineEl = row.querySelector(".chat-line");
+    // Assistant rows render markdown; their textContent loses structural
+    // info (a rendered <table> textContent has no | separators). Read
+    // the raw markdown back from dataset.raw so reload re-renders the
+    // same content. Other kinds are plain text — textContent is fine.
+    const text  = lineEl?.dataset.raw ?? lineEl?.textContent ?? "";
     const error = row.classList.contains("is-error");
     const result = row.classList.contains("is-result");
-    entries.push({ kind, stamp, text, error, result });
+    const url = row.classList.contains("is-url");
+    entries.push({ kind, text, error, result, url });
   }
   try { localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
 }
@@ -342,7 +365,7 @@ function loadChatHistory() {
       appendRow(e.kind, e.text, {
         error: !!e.error,
         result: !!e.result,
-        stamp: e.stamp,
+        url: !!e.url,
         skipPersist: true,
       });
     }
@@ -385,7 +408,6 @@ async function sendChat() {
 
   chatBusy = true;
   chatInput.disabled = true;
-  chatSend.disabled = true;
   chatInput.value = "";
   setMeter("busy");
 
@@ -407,7 +429,12 @@ async function sendChat() {
             assistantText = "";
           }
           assistantText += event.delta ?? "";
-          assistantLine.textContent = assistantText;
+          // Re-render the whole assistant message on each delta. marked
+          // is fast enough at typical message lengths; the alternative
+          // (snap-to-rendered only on `done`) shows raw markdown source
+          // mid-stream which is uglier than a slightly noisier render.
+          assistantLine.dataset.raw = assistantText;
+          assistantLine.innerHTML = renderMarkdown(assistantText);
           chatLog.scrollTop = chatLog.scrollHeight;
           saveChatHistory();
           break;
@@ -447,7 +474,7 @@ async function sendChat() {
             let appended = 0;
             for (const source of event.output.results) {
               if (source.url) {
-                appendRow("tool", source.url, { result: true, skipPersist: true });
+                appendRow("tool", source.url, { result: true, url: true, skipPersist: true });
                 appended++;
               }
             }
@@ -481,7 +508,6 @@ async function sendChat() {
     inFlightAbort = null;
     chatBusy = false;
     chatInput.disabled = false;
-    chatSend.disabled = false;
     setMeter(agentReachable ? "on" : "off");
     chatInput.focus();
   }

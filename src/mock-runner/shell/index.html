@@ -6,7 +6,7 @@
   <title>MOCK RUNNER</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Fraunces:opsz,wght,SOFT@9..144,400;9..144,500;9..144,700;9..144,900&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Roboto+Mono:wght@400;500;700&family=Fraunces:opsz,wght,SOFT@9..144,400;9..144,500;9..144,700;9..144,900&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -56,7 +56,6 @@
 
       <div class="console__log" id="chat-log" role="log" aria-live="polite">
         <div class="chat-row chat-row--system">
-          <span class="chat-stamp">— —:—:—</span>
           <p class="chat-line">Bring up a model on the rack. Then ask Claude to drive it.</p>
         </div>
       </div>
@@ -67,12 +66,7 @@
           class="composer__input"
           id="chat-input"
           rows="1"
-          placeholder="Ask Claude to load a patch, sweep a filter, recreate a sound…"
         ></textarea>
-        <button type="submit" class="composer__send" id="chat-send" aria-label="Send">
-          <span class="composer__send-glyph">↵</span>
-          <span class="composer__send-label">SEND</span>
-        </button>
       </form>
     </aside>
   </main>
@@ -104,7 +98,8 @@
   <script type="importmap">
   {
     "imports": {
-      "@sounds-and-recreation/agent-client": "../../../node_modules/@sounds-and-recreation/agent-client/dist/index.js"
+      "@sounds-and-recreation/agent-client": "../../../node_modules/@sounds-and-recreation/agent-client/dist/index.js",
+      "marked": "../../../node_modules/marked/lib/marked.esm.js"
     }
   }
   </script>

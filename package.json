@@ -27,6 +27,7 @@
     "@sounds-and-recreation/agent-client": "file:../sound-recreation-agent/client-sdk",
     "adm-zip": "^0.5.16",
     "easymidi": "^3.0.0",
+    "marked": "^18.0.3",
     "ws": "^8.20.0",
     "zod": "^3.23.0"
   },
