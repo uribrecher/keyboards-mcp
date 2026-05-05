@@ -26,4 +26,21 @@ describe("Nord Electro 5D disabled-section warnings", () => {
     assert.ok(reverbWarning, `expected a Reverb warning, got: ${JSON.stringify(warnings)}`);
     assert.match(reverbWarning, /disabled/i);
   });
+
+  it("does NOT warn when reverb is enabled", () => {
+    const state = freshState();
+    state.set("reverb_enable", 1);
+
+    const warnings = validateParameterBatch(
+      [{ key: "reverb_dry_wet", value: 64 }],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    assert.ok(
+      !warnings.some((w) => w.includes("Reverb is currently disabled")),
+      `expected no Reverb-disabled warning, got: ${JSON.stringify(warnings)}`,
+    );
+  });
 });
