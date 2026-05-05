@@ -77,4 +77,44 @@ describe("Nord Electro 5D disabled-section warnings", () => {
       `expected no self-warning when picking an engine, got: ${JSON.stringify(warnings)}`,
     );
   });
+
+  it("does NOT warn when the same batch enables the section", () => {
+    const state = freshState();
+    state.set("effect1_enable", 0); // currently disabled
+
+    const warnings = validateParameterBatch(
+      [
+        { key: "effect1_rate", value: 70 },
+        { key: "effect1_enable", value: 1 },
+      ],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    assert.ok(
+      !warnings.some((w) => w.includes("Effect 1 is currently disabled")),
+      `expected no Effect 1 warning when batch enables it, got: ${JSON.stringify(warnings)}`,
+    );
+  });
+
+  it("does NOT warn when the same batch selects the engine", () => {
+    const state = freshState();
+    // No engine selected on either part initially.
+
+    const warnings = validateParameterBatch(
+      [
+        { key: "piano_model", value: 0 },
+        { key: "part_upper_engine_select", value: "Piano" },
+      ],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    assert.ok(
+      !warnings.some((w) => w.includes("Piano engine is currently disabled")),
+      `expected no Piano-engine warning when batch selects it, got: ${JSON.stringify(warnings)}`,
+    );
+  });
 });
