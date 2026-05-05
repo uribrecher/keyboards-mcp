@@ -593,7 +593,15 @@ async function probeAgent() {
       // 2.5s effectively means the server isn't listening.
       signal: AbortSignal.timeout(2500),
     });
-    ok = res.ok;
+    // Any response below 500 proves the agent server is alive — even
+    // a 404 means "the process is up, it just doesn't know this
+    // route". This matters when the renderer ships before the
+    // companion `/health` change has reached the running agent: a
+    // strict `res.ok` check would treat a healthy older server as
+    // `lost` and lock the composer for no good reason. Real outage
+    // signals (connection refused, DNS, timeout) come through the
+    // catch block below and are correctly counted as failures.
+    ok = res.status < 500;
   } catch {
     ok = false;
   }

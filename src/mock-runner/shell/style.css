@@ -449,13 +449,13 @@ body {
   border: 1px solid rgba(255,255,255,0.05);
   border-radius: 1px;
 }
-.console__meter[data-state="on"] span:nth-child(-n+3) {
+.console__meter[data-state="live"] span:nth-child(-n+3) {
   background: var(--c-amber);
   box-shadow: 0 0 4px var(--c-amber-glow);
   border-color: var(--c-amber-deep);
 }
-.console__meter[data-state="on"] span:nth-child(4),
-.console__meter[data-state="on"] span:nth-child(5) {
+.console__meter[data-state="live"] span:nth-child(4),
+.console__meter[data-state="live"] span:nth-child(5) {
   background: rgba(240,168,48,0.25);
 }
 .console__meter[data-state="busy"] span {
