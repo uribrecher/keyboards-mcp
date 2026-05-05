@@ -284,8 +284,16 @@ const chatReset     = document.getElementById("chat-reset");
 const chatExtract   = document.getElementById("chat-extract");
 const meterEl       = document.getElementById("agent-status");
 const consoleHeader = document.getElementById("console-header");
+const sidEl         = document.getElementById("agent-sid");
+const sidValueEl    = document.getElementById("agent-sid-value");
 
 let chatBusy = false;
+// Agent process identity — emitted by GET /health. Stable while the
+// agent runs; a change between probes means it restarted. We display
+// a short prefix (8 hex chars) in the console header where the
+// removed CLAUDE title used to live, full UUID stays in the title
+// attribute for hover.
+let agentInstanceId = null;
 
 // Four-state agent liveness:
 //   "unknown" — page just loaded, no probe yet
@@ -583,9 +591,37 @@ const PROBE_INTERVAL_DOWN = 8000;
 const PROBE_FAILURES_BEFORE_BACKOFF = 3;
 let probeFailureCount = 0;
 
+// Render the agent's instanceId (or absence of it) in the console
+// header SID slot. Shows the first 8 hex characters as a short
+// fingerprint; the full UUID lands in the title attribute for hover.
+// A change in id between probes means the agent restarted — drop a
+// system row so the user knows their conversation now talks to a
+// fresh process. Older agent builds that don't emit `instanceId`
+// fall back to "—" (the dash glyph from the initial HTML).
+function applyInstanceId(nextId) {
+  if (nextId === agentInstanceId) return;
+  const previousId = agentInstanceId;
+  agentInstanceId = nextId;
+  if (typeof nextId === "string" && nextId.length > 0) {
+    const short = nextId.replace(/-/g, "").slice(0, 8);
+    sidValueEl.textContent = short;
+    sidEl.title = `Agent process id ${nextId} — changes if the agent restarts`;
+  } else {
+    sidValueEl.textContent = "—";
+    sidEl.title = "Agent process id — server didn't supply one";
+  }
+  // Only annotate restarts (previous id existed AND changed). A
+  // first-ever id (previousId === null) is just normal startup, no
+  // need to spam the log on page load.
+  if (previousId && nextId && previousId !== nextId) {
+    appendRow("system", "agent restarted — new process id");
+  }
+}
+
 async function probeAgent() {
   if (chatBusy) return; // skip — chat in flight is its own heartbeat
   let ok = false;
+  let parsedInstanceId = null;
   try {
     const res = await fetch(`${AGENT_URL}/health`, {
       method: "GET",
@@ -602,9 +638,21 @@ async function probeAgent() {
     // signals (connection refused, DNS, timeout) come through the
     // catch block below and are correctly counted as failures.
     ok = res.status < 500;
+    if (ok) {
+      // Best-effort body parse — older agent builds may not return
+      // JSON or may not include `instanceId`. Either way, applyInstanceId
+      // handles missing values by falling back to "—".
+      try {
+        const body = await res.json();
+        if (body && typeof body.instanceId === "string") {
+          parsedInstanceId = body.instanceId;
+        }
+      } catch { /* ignore — body wasn't JSON */ }
+    }
   } catch {
     ok = false;
   }
+  applyInstanceId(parsedInstanceId);
   if (ok) {
     probeFailureCount = 0;
     if (lastConfirmed !== "live" && agentState !== "busy") applyAgentState("live");

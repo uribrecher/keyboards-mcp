@@ -436,6 +436,47 @@ body {
     inset 0 -1px 0 rgba(0,0,0,0.5);
 }
 
+/* SID — the agent's per-process instance id, surfaced from /health.
+ * Sits where the removed CLAUDE title used to live. Reads as a serial-
+ * number plate: small etched label + monospace fingerprint. The full
+ * UUID hangs in the title attribute for hover; we show the first 8
+ * hex chars so the value is instantly distinguishable between processes
+ * without dominating the header. */
+.console__sid {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  user-select: text;        /* the user might want to copy the id */
+  cursor: default;
+}
+.console__sid-label {
+  color: var(--c-text-faint);
+  font-weight: 700;
+}
+.console__sid-value {
+  font-family: var(--font-chat);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--c-paper-faint);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  /* Faint inset etch so the value reads like it's printed onto the
+   * chassis rather than floating above it. */
+  text-shadow: 0 1px 0 rgba(0,0,0,0.35);
+}
+/* Lost-state: the value stays visible but goes cold — same family of
+ * cues as the meter and lamp, no extra ceremony. */
+.console__header[data-state="lost"] .console__sid-label {
+  color: var(--c-fault-deep);
+}
+.console__header[data-state="lost"] .console__sid-value {
+  color: var(--c-fault-deep);
+  opacity: 0.7;
+}
+
 /* VU meter — five segments, off-state first */
 .console__meter {
   margin-left: auto;
