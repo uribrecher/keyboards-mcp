@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { DevicePool } from "../shared/device-pool.js";
+import { releaseLease, MCBError } from "../mcp-client/mcb-client.js";
 
 export function registerDisconnect(server: McpServer, pool: DevicePool): void {
   server.registerTool(
@@ -36,13 +37,31 @@ export function registerDisconnect(server: McpServer, pool: DevicePool): void {
       const { index, device: kdev } = entry;
       const modelName = kdev.model.info.displayName;
       const labelStr = kdev.label ? ` "${kdev.label}"` : "";
+      const mcbDeviceId = entry.ports?.mcbDeviceId;
       pool.disconnect(index);
+
+      // Release the MCB lease (if any). Tolerate failure — local cleanup already happened
+      // and MCB will GC the lease eventually anyway.
+      let mcbNote = "";
+      if (mcbDeviceId) {
+        try {
+          await releaseLease(mcbDeviceId);
+          mcbNote = ` (lease ${mcbDeviceId} released)`;
+        } catch (err) {
+          if (err instanceof MCBError) {
+            console.warn(`[mcp] MCB release failed (non-fatal): ${err.code}: ${err.message}`);
+            mcbNote = ` (warning: lease release failed: ${err.code})`;
+          } else {
+            throw err;
+          }
+        }
+      }
 
       return {
         content: [
           {
             type: "text",
-            text: `Disconnected device ${index}: ${modelName}${labelStr}`,
+            text: `Disconnected device ${index}: ${modelName}${labelStr}${mcbNote}`,
           },
         ],
       };
