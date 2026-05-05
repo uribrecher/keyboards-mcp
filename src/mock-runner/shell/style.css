@@ -445,22 +445,25 @@ body {
 .console__sid {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
-  font-size: 10px;
+  gap: 7px;
+  font-size: 12px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   user-select: text;        /* the user might want to copy the id */
   cursor: default;
 }
 .console__sid-label {
-  color: var(--c-text-faint);
+  color: var(--c-text-dim);
   font-weight: 700;
 }
 .console__sid-value {
   font-family: var(--font-chat);
+  font-size: 13px;          /* slightly larger than the label so the
+                               readout — the part that actually carries
+                               information — leads the eye */
   letter-spacing: 0.04em;
   text-transform: lowercase;
-  color: var(--c-paper-faint);
+  color: var(--c-paper);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   /* Faint inset etch so the value reads like it's printed onto the
