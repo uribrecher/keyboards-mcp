@@ -50,7 +50,6 @@ export class MidiManager implements MidiConnection {
   private forwardOutput: any | null = null;
   private connectedForwardPortName: string | null = null;
   private mockWs: WebSocket | null = null;
-  private mockWsPort: string | null = null;
   private onCCCallback: ((msg: { controller: number; value: number; channel: number }) => void) | null = null;
   private onProgramChangeCallback: ((msg: { number: number; channel: number }) => void) | null = null;
   private onMockDisconnectCallback: (() => void) | null = null;
@@ -67,7 +66,7 @@ export class MidiManager implements MidiConnection {
     return listInputPorts();
   }
 
-  connect(portNameOrIndex: string | number): { success: boolean; portName: string } {
+  connect(portNameOrIndex: string | number, wsPort: number | null = null): { success: boolean; portName: string } {
     this.disconnect();
 
     const ports = listOutputPorts();
@@ -88,6 +87,7 @@ export class MidiManager implements MidiConnection {
 
     this.output = new midi.Output(targetPort.name);
     this.connectedPortName = targetPort.name;
+    if (wsPort !== null) this.connectMockWs(wsPort);
     return { success: true, portName: targetPort.name };
   }
 
@@ -308,7 +308,7 @@ export class MidiManager implements MidiConnection {
     return this.connectedInputPortName;
   }
 
-  connectForward(portNameOrIndex: string | number): { success: boolean; portName: string } {
+  connectForward(portNameOrIndex: string | number, wsPort: number | null = null): { success: boolean; portName: string } {
     this.disconnectForward();
 
     const ports = listOutputPorts();
@@ -329,19 +329,8 @@ export class MidiManager implements MidiConnection {
 
     this.forwardOutput = new midi.Output(targetPort.name);
     this.connectedForwardPortName = targetPort.name;
-    this.connectMockWs();
+    if (wsPort !== null) this.connectMockWs(wsPort);
     return { success: true, portName: targetPort.name };
-  }
-
-  autoConnectForward(): { success: boolean; portName: string } {
-    const ports = listOutputPorts();
-    const mockPort = ports.find((p) => p.name.toLowerCase().includes("mock"));
-    if (!mockPort) {
-      throw new Error(
-        `No Mock device port found. Available: ${ports.map((p) => p.name).join(", ") || "(none)"}`
-      );
-    }
-    return this.connectForward(mockPort.name);
   }
 
   disconnectForward(): void {
@@ -353,24 +342,9 @@ export class MidiManager implements MidiConnection {
     }
   }
 
-  /** Set this device's mock WebSocket port. Falls back to MOCK_WS_PORT env, then 3000. */
-  setMockWsPort(port: string | number): void {
-    this.mockWsPort = String(port);
-  }
-
-  /**
-   * Open the mock status WebSocket without setting up MIDI forwarding.
-   * Use when connecting directly to a mock port (no forward needed) but
-   * still wanting the mock's UI to show "MCP connected".
-   */
-  attachMockStatusWs(): void {
-    this.connectMockWs();
-  }
-
-  private connectMockWs(): void {
+  private connectMockWs(wsPort: number): void {
     this.disconnectMockWs();
     try {
-      const wsPort = this.mockWsPort ?? process.env.MOCK_WS_PORT ?? "3000";
       const ws = new WebSocket(`ws://localhost:${wsPort}?client=mcp`);
       let everOpened = false;
       let lastSeenLabel: string | null = null;
