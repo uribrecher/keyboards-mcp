@@ -174,4 +174,33 @@ describe("Nord Electro 5D disabled-section warnings", () => {
     const reverbWarnings = warnings.filter((w) => w.includes("Reverb is currently disabled"));
     assert.equal(reverbWarnings.length, 1, `expected exactly 1 Reverb warning, got: ${JSON.stringify(warnings)}`);
   });
+
+  it("does NOT warn for global, parts, or amp parameters even when every gated section is disabled", () => {
+    const state = freshState();
+    // Disable everything that has an enable flag.
+    state.set("effect1_enable", 0);
+    state.set("effect2_enable", 0);
+    state.set("reverb_enable", 0);
+    state.set("delay_enable", 0);
+    state.set("eq_enable", 0);
+    state.set("spkr_comp_enable", 0);
+    // Engines: leave both parts on Organ.
+    state.set("part_lower_engine_select", 0);
+    state.set("part_upper_engine_select", 0);
+
+    const warnings = validateParameterBatch(
+      [
+        { key: "master_volume", value: 100 },        // section: global
+        { key: "part_mix", value: 64 },              // section: parts
+      ],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    assert.ok(
+      !warnings.some((w) => /is currently disabled/.test(w)),
+      `expected no disabled-section warnings, got: ${JSON.stringify(warnings)}`,
+    );
+  });
 });
