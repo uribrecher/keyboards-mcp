@@ -136,13 +136,14 @@ describe("Nord Electro 5D disabled-section warnings", () => {
     assert.ok(pianoWarning, `expected a Piano-engine warning, got: ${JSON.stringify(warnings)}`);
   });
 
-  it("does NOT warn when at least one part is on the Piano engine", () => {
+  it("does NOT warn when at least one part is on the Piano engine and that part is enabled", () => {
     const state = freshState();
     const engineParam = parameterMap.params["part_upper_engine_select"]!;
     const organMidi = parameterMap.resolveValue(engineParam, "Organ");
     const pianoMidi = parameterMap.resolveValue(engineParam, "Piano");
     state.set("part_lower_engine_select", organMidi); // Organ
     state.set("part_upper_engine_select", pianoMidi); // Piano
+    state.set("part_upper_enable", 1);
 
     const warnings = validateParameterBatch(
       [{ key: "piano_model", value: 0 }],
@@ -154,6 +155,50 @@ describe("Nord Electro 5D disabled-section warnings", () => {
     assert.ok(
       !warnings.some((w) => w.includes("Piano engine is currently disabled")),
       `expected no Piano-engine warning, got: ${JSON.stringify(warnings)}`,
+    );
+  });
+
+  it("warns when the engine is selected on a part but that part is disabled", () => {
+    const state = freshState();
+    const engineParam = parameterMap.params["part_upper_engine_select"]!;
+    const organMidi = parameterMap.resolveValue(engineParam, "Organ");
+    const pianoMidi = parameterMap.resolveValue(engineParam, "Piano");
+    // Lower is on Organ (irrelevant for piano-engine check), Upper has Piano selected but is disabled.
+    state.set("part_lower_engine_select", organMidi);
+    state.set("part_upper_engine_select", pianoMidi);
+    state.set("part_upper_enable", 0);
+
+    const warnings = validateParameterBatch(
+      [{ key: "piano_model", value: 0 }],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    const pianoWarning = warnings.find((w) => w.includes("Piano engine is currently disabled"));
+    assert.ok(pianoWarning, `expected Piano-engine warning when the only Piano part is disabled, got: ${JSON.stringify(warnings)}`);
+  });
+
+  it("does NOT warn when same batch enables the part holding the engine", () => {
+    const state = freshState();
+    const engineParam = parameterMap.params["part_upper_engine_select"]!;
+    const pianoMidi = parameterMap.resolveValue(engineParam, "Piano");
+    state.set("part_upper_engine_select", pianoMidi);
+    state.set("part_upper_enable", 0); // currently disabled
+
+    const warnings = validateParameterBatch(
+      [
+        { key: "piano_model", value: 0 },
+        { key: "part_upper_enable", value: 1 },
+      ],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    assert.ok(
+      !warnings.some((w) => w.includes("Piano engine is currently disabled")),
+      `expected no Piano-engine warning when batch enables the part, got: ${JSON.stringify(warnings)}`,
     );
   });
 

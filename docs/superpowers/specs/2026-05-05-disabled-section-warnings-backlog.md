@@ -24,9 +24,9 @@ The MVP only modifies the Nord Electro 5D's `validation.ts`. Juno-X and Prophet-
 
 Instead of (or in addition to) the warning, optionally enable the section automatically when a parameter inside it is set. Riskier — surprises the user — and not what the user asked for, so defer until we see whether the agent reliably notices and acts on the warnings.
 
-## Split-mode aware engine check
+## Target-part-aware engine check
 
-In split mode, Organ Preset 1 routes to Lower and Preset 2 to Upper. The MVP's engine-section rule only checks "is this engine selected on *any* part"; it doesn't check whether the engine is on the *targeted* part. Refining this requires modelling per-part engine state in the rule, which is more nuance than the MVP needs.
+The current rule says "engine is active iff at least one part has it selected AND that part is enabled". It does NOT check whether the engine is on the *part the parameter is targeting* (the `part` arg passed to `validateParameterBatch` / `set_parameters`). In split mode you can have Organ on Lower and Piano on Upper; setting a piano param with `part: "lower"` is currently silent, even though the audible result is determined by Lower's engine (Organ). Refining this requires modelling per-part engine state and per-part parameter routing (some Nord params are global, some per-part). Defer until we see real confusion from this in agent traces.
 
 ## Separate vibrato sub-rule
 

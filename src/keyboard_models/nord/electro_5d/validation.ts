@@ -151,8 +151,14 @@ export function validateParameterBatch(
     ]);
 
     // Post-batch view: start from current state, then overlay the batch.
+    // part_*_enable defaults to On (1) on hardware; treat undefined as enabled.
     const postBatch: Record<string, number | undefined> = {};
-    for (const k of [...Object.values(ENABLE_KEY), "part_lower_engine_select", "part_upper_engine_select"]) {
+    const POST_BATCH_KEYS = [
+      ...Object.values(ENABLE_KEY),
+      "part_lower_engine_select", "part_upper_engine_select",
+      "part_lower_enable", "part_upper_enable",
+    ];
+    for (const k of POST_BATCH_KEYS) {
       postBatch[k] = state.get(k);
     }
     for (const { key, value } of parameters) {
@@ -178,11 +184,13 @@ export function validateParameterBatch(
     }
     const lower = postBatch["part_lower_engine_select"];
     const upper = postBatch["part_upper_engine_select"];
+    const lowerEnabled = postBatch["part_lower_enable"] !== 0;
+    const upperEnabled = postBatch["part_upper_enable"] !== 0;
     for (const eng of ["organ", "piano", "sample_synth"] as const) {
       const target = engineMidi[eng];
       if (target === undefined) continue;
-      const onLower = lower !== undefined && lower === target;
-      const onUpper = upper !== undefined && upper === target;
+      const onLower = lower !== undefined && lower === target && lowerEnabled;
+      const onUpper = upper !== undefined && upper === target && upperEnabled;
       if (!onLower && !onUpper) disabled.add(eng);
     }
 
@@ -204,9 +212,9 @@ export function validateParameterBatch(
       if (section === "organ" || section === "piano" || section === "sample_synth") {
         const engineName = section === "sample_synth" ? "Sample Synth"
           : section === "piano" ? "Piano" : "Organ";
-        hint = `select ${engineName} on a part`;
+        hint = `you select ${engineName} on a part AND that part is enabled (part_lower_enable/part_upper_enable)`;
       } else {
-        hint = `set ${ENABLE_KEY[section]} = on`;
+        hint = `you set ${ENABLE_KEY[section]} = on`;
       }
       warnings.push(
         `WARNING: ${display} is currently disabled. The parameter(s) you set will have no audible effect until ${hint}.`,

@@ -26,9 +26,9 @@ The model already has a `validateParameterBatch` function in `src/keyboard_model
   - `delay` → `delay_enable === 0`
   - `eq` → `eq_enable === 0`
   - `rotary` → `spkr_comp_enable === 0`
-  - `organ` → neither `part_lower_engine_select` nor `part_upper_engine_select` resolves to the Organ engine value (the rule does NOT also gate on `part_*_enable`; that refinement is deferred)
-  - `piano` → neither part is set to the Piano engine
-  - `sample_synth` → neither part is set to the Sample Synth engine
+  - `organ` → no part has `part_*_engine_select == Organ` AND that part's `part_*_enable != 0` (treating undefined enable as on, matching hardware default)
+  - `piano` → same shape, with Piano
+  - `sample_synth` → same shape, with Sample Synth
 - Engine-section "no part has this engine" check uses the **post-batch** state — i.e., if the batch itself selects an engine, the warning is suppressed for that engine's parameters in the same call. (Same pattern as the existing same-engine check in `validateParameterBatch`.)
 - The parameter being set is exempt from triggering its own warning when it IS the section's enable flag or engine select (`effect1_enable`, `reverb_enable`, `part_lower_engine_select`, etc.). Setting the enable flag itself never warns about its section being disabled.
 - Sections **always considered active** (no warning ever): `global`, `parts`, `amp`. The `vibrato_enable` parameter in section `organ` is treated as part of the organ section — the engine-active rule applies (no separate vibrato section).
