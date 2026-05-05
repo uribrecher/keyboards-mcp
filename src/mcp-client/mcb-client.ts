@@ -68,6 +68,11 @@ export async function listMyDevices(): Promise<Manifest[]> {
   return all.filter((m) => m.ownerSessionId === sessionId);
 }
 
+/** List ALL leases across sessions (read-open). Does not require a session. */
+export async function listAllDevices(): Promise<Manifest[]> {
+  return (await call("GET", "/v1/devices")) as Manifest[];
+}
+
 /** Reset the cached session — primarily for tests. */
 export function resetSession(): void { cachedSessionId = null; }
 
