@@ -43,4 +43,38 @@ describe("Nord Electro 5D disabled-section warnings", () => {
       `expected no Reverb-disabled warning, got: ${JSON.stringify(warnings)}`,
     );
   });
+
+  it("does NOT warn when the parameter being set IS the section's enable flag", () => {
+    const state = freshState();
+    state.set("reverb_enable", 0); // section currently disabled
+
+    const warnings = validateParameterBatch(
+      [{ key: "reverb_enable", value: 0 }],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    assert.ok(
+      !warnings.some((w) => w.includes("Reverb is currently disabled")),
+      `expected no self-warning when toggling reverb_enable, got: ${JSON.stringify(warnings)}`,
+    );
+  });
+
+  it("does NOT warn when the parameter being set IS an engine select", () => {
+    const state = freshState();
+    // No engine set yet → all engines disabled per the rule.
+
+    const warnings = validateParameterBatch(
+      [{ key: "part_upper_engine_select", value: "Piano" }],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    assert.ok(
+      !warnings.some((w) => /engine is currently disabled/i.test(w)),
+      `expected no self-warning when picking an engine, got: ${JSON.stringify(warnings)}`,
+    );
+  });
 });
