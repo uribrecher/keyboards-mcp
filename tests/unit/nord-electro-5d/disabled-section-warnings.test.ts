@@ -117,4 +117,43 @@ describe("Nord Electro 5D disabled-section warnings", () => {
       `expected no Piano-engine warning when batch selects it, got: ${JSON.stringify(warnings)}`,
     );
   });
+
+  it("warns when setting a piano param while no part is on the Piano engine", () => {
+    const state = freshState();
+    const engineParam = parameterMap.params["part_upper_engine_select"]!;
+    const organMidi = parameterMap.resolveValue(engineParam, "Organ");
+    state.set("part_lower_engine_select", organMidi); // Organ
+    state.set("part_upper_engine_select", organMidi); // Organ
+
+    const warnings = validateParameterBatch(
+      [{ key: "piano_model", value: 0 }],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    const pianoWarning = warnings.find((w) => w.includes("Piano engine is currently disabled"));
+    assert.ok(pianoWarning, `expected a Piano-engine warning, got: ${JSON.stringify(warnings)}`);
+  });
+
+  it("does NOT warn when at least one part is on the Piano engine", () => {
+    const state = freshState();
+    const engineParam = parameterMap.params["part_upper_engine_select"]!;
+    const organMidi = parameterMap.resolveValue(engineParam, "Organ");
+    const pianoMidi = parameterMap.resolveValue(engineParam, "Piano");
+    state.set("part_lower_engine_select", organMidi); // Organ
+    state.set("part_upper_engine_select", pianoMidi); // Piano
+
+    const warnings = validateParameterBatch(
+      [{ key: "piano_model", value: 0 }],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    assert.ok(
+      !warnings.some((w) => w.includes("Piano engine is currently disabled")),
+      `expected no Piano-engine warning, got: ${JSON.stringify(warnings)}`,
+    );
+  });
 });
