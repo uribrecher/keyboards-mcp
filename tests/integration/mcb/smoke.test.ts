@@ -13,22 +13,37 @@ let socketPath: string;
 before(async () => {
   socketDir = mkdtempSync(join(tmpdir(), "mcb-itest-"));
   socketPath = join(socketDir, "sock");
-  proc = spawn("npx", ["tsx", "src/mcb/index.ts"], {
+  // Spawn the built artifact when present — avoids `npx tsx` cold-start in slow CI containers.
+  // Falls back to tsx for dev runs where dist/ may be stale.
+  const builtPath = join(process.cwd(), "dist/mcb/index.js");
+  const useBuilt = existsSync(builtPath);
+  proc = spawn(useBuilt ? "node" : "npx", useBuilt ? [builtPath] : ["tsx", "src/mcb/index.ts"], {
     env: { ...process.env, MCB_SOCKET: socketPath },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  // Wait for the socket to come up.
-  const deadline = Date.now() + 5000;
+  // Wait up to 15s for the socket to come up + respond to /v1/health.
+  const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (existsSync(socketPath) && (await ping())) break;
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 100));
   }
-  if (!existsSync(socketPath)) throw new Error("MCB failed to start");
+  if (!(existsSync(socketPath) && (await ping()))) {
+    proc.kill("SIGKILL");
+    throw new Error("MCB failed to start within 15s");
+  }
 });
 
 after(async () => {
   proc.kill("SIGTERM");
-  await new Promise<void>((r) => proc.once("exit", () => r()));
+  // Wait briefly for clean exit, then force-kill so a hung child cannot block CI.
+  const exited = await Promise.race([
+    new Promise<boolean>((r) => proc.once("exit", () => r(true))),
+    new Promise<boolean>((r) => setTimeout(() => r(false), 2000)),
+  ]);
+  if (!exited) {
+    proc.kill("SIGKILL");
+    await new Promise<void>((r) => setTimeout(r, 200));
+  }
   rmSync(socketDir, { recursive: true, force: true });
 });
 
