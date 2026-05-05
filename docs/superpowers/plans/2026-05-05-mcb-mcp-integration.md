@@ -17,9 +17,11 @@
 The backlog Phase 2 description is broad. Trims for this MVP cut, **deferred to follow-ups**:
 
 - **Session attach (`POST /v1/sessions/:id/attach`)** — MCB MVP doesn't implement attach yet. We just create a fresh session per MCP startup; if the MCP restarts, it gets a new session id. Reattach is a separate item.
-- **`is_connected` and `list_midi_devices` reading from MCB** — they keep using MCP-internal state today. MCB cross-session visibility is a follow-up. The MCP's own pool is still the source of truth for devices the local agent has connected.
+- **`list_midi_devices` reading from MCB** — kept on MCP-internal state for now. The corresponding MCB endpoint (`GET /v1/midi/ports`) was deferred from MCB MVP, so there's nothing to query yet. Backlog item: switch this tool once MCB exposes the port-listing endpoint.
 - **`auto_input` removal** — kept. The arg was about pairing input/output MIDI ports inside MCP; not related to the MCB integration. Dropping it later if it becomes a real maintenance burden.
 - **WS transport mode (`MOCK_WS_URL`)** — preserved. The CI docker-compose path doesn't use MCB; it short-circuits to `WsMidiConnection`. Phase 2 leaves this branch alone.
+
+`is_connected` **is** included (Task 4) — querying MCB for canonical state instead of reading MCP-local pool, so MCB stays the single source of truth.
 
 What **is** in scope:
 - Drop `forward_port` / `auto_forward` / `mock_ws_port` from `connect_to_keyboard`.
@@ -385,7 +387,82 @@ git commit -m "refactor(mcp): connect_to_keyboard claims lease via MCB"
 
 ---
 
-## Task 4: Refactor `disconnect_from_keyboard`
+## Task 4: Refactor `is_connected` to query MCB
+
+**Files:**
+- Modify: `src/mcp-client/mcb-client.ts` — add `listMyDevices()`.
+- Modify: `src/tools/is-connected.ts` (or wherever the tool lives — `grep -rn "is_connected" src/tools` to find).
+
+The local pool keeps providing the 1-based index ↔ `mcbDeviceId` mapping. MCB provides the canonical metadata (model, label, ports, shadow) for each lease. `is_connected` joins them. If MCB has GC'd a lease the pool still references (e.g., MCB restart), surface that explicitly rather than silently lying.
+
+- [ ] **Step 1: Extend `mcb-client.ts` with `listMyDevices()`**
+
+```ts
+export async function listMyDevices(): Promise<Manifest[]> {
+  const sessionId = await ensureSession();
+  const all = (await call("GET", "/v1/devices")) as Manifest[];
+  return all.filter((m) => m.ownerSessionId === sessionId);
+}
+
+export async function getDevice(deviceId: string): Promise<Manifest | null> {
+  try {
+    return (await call("GET", `/v1/devices/${deviceId}`)) as Manifest;
+  } catch (err) {
+    if (err instanceof MCBError && err.statusCode === 404) return null;
+    throw err;
+  }
+}
+```
+
+- [ ] **Step 2: Refactor `is_connected` tool**
+
+The new shape (skeleton — adapt to the actual file):
+
+```ts
+import { listMyDevices, MCBError } from "../mcp-client/mcb-client.js";
+
+// inside the handler:
+let mcbDevices: Manifest[];
+try {
+  mcbDevices = await listMyDevices();
+} catch (err) {
+  if (err instanceof MCBError) {
+    return { content: [{ type: "text", text: `Cannot reach MCB (${err.code}: ${err.message})` }], isError: true };
+  }
+  throw err;
+}
+const mcbById = new Map(mcbDevices.map((m) => [m.deviceId, m]));
+
+const lines = pool.listEntries().map(([idx, entry]) => {
+  const id = entry.metadata?.mcbDeviceId;
+  if (!id) return `device ${idx}: <local-only, no MCB lease> ${entry.label ?? ""}`;
+  const m = mcbById.get(id);
+  if (!m) return `device ${idx}: ⚠ stale — MCB no longer has lease ${id}`;
+  const shadow = m.shadow ? `, shadows: ${m.shadow.portName}` : "";
+  return `device ${idx}: ${m.model} "${m.label}"${shadow}`;
+});
+
+return { content: [{ type: "text", text: lines.length === 0 ? "Not connected." : lines.join("\n") }] };
+```
+
+> The `pool.listEntries()` method may need to be exposed (e.g., adding a `listEntries(): [number, PoolEntry][]` getter) — check `src/shared/device-pool.ts`. If a similar accessor already exists, use it.
+
+- [ ] **Step 3: Type-check + lint**
+
+Run: `npm run test:check && npm run lint`
+
+Expected: clean.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/mcp-client/mcb-client.ts src/tools/is-connected.ts src/shared/device-pool.ts
+git commit -m "refactor(mcp): is_connected queries MCB for canonical lease state"
+```
+
+---
+
+## Task 5: Refactor `disconnect_from_keyboard`
 
 **Files:**
 - Modify: `src/tools/disconnect.ts`
@@ -432,7 +509,7 @@ git commit -m "refactor(mcp): disconnect_from_keyboard releases lease via MCB"
 
 ---
 
-## Task 5: Update existing E2E tests for the new arg surface
+## Task 6: Update existing E2E tests for the new arg surface
 
 **Files:**
 - Modify: `tests/e2e/connect.test.ts`
@@ -546,7 +623,7 @@ git commit -m "test(e2e): use new connect args + spawn MCB fixture"
 
 ---
 
-## Task 6: Update sibling repo's system prompt
+## Task 7: Update sibling repo's system prompt
 
 **Files:**
 - Modify: `../sound-recreation-agent/<system-prompt-file>` (path TBD — grep for the description of `connect_to_keyboard` in that repo)
@@ -590,7 +667,7 @@ cd ../keyboards-mcp
 
 ---
 
-## Task 7: Final sweep + manual smoke
+## Task 8: Final sweep + manual smoke
 
 **Files:** none
 
