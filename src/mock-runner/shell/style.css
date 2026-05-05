@@ -28,6 +28,13 @@
   --c-red:          #e0383f;
   --c-red-glow:     rgba(224,56,63,0.50);
 
+  /* Fault accent — dusty oxblood, not stoplight red. Used for the
+   * "agent unreachable" meter state. Reads as a fault lamp on a piece
+   * of period equipment instead of a Web alert. */
+  --c-fault:        #b54a3a;
+  --c-fault-glow:   rgba(181,74,58,0.45);
+  --c-fault-deep:   #6e2418;
+
   /* Console (chat) palette — warmer shade of the chassis */
   --c-console:      #131114;
   --c-console-hi:   #1c1a20;
@@ -409,21 +416,24 @@ body {
     0 0 5px var(--c-amber-glow),
     inset 0 1px 0 rgba(255,255,255,0.5),
     inset 0 -1px 0 rgba(0,0,0,0.4);
+  transition: background .2s, box-shadow .2s;
 }
-
-.console__title {
-  color: var(--c-text-bright);
-  letter-spacing: 0.45em;
+/* When the agent is offline, the lamp goes cold — desaturated oxblood
+ * with the highlight pulled to almost nothing. The state lives on the
+ * header so all status-driven children can share one selector. */
+.console__header[data-state="lost"] .console__lamp {
+  background: var(--c-fault-deep);
+  box-shadow:
+    0 0 3px rgba(110,36,24,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    inset 0 -1px 0 rgba(0,0,0,0.5);
 }
-.console__title i {
-  font-style: italic;
-  font-family: var(--font-body);
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--c-amber);
-  font-size: 12px;
-  margin-left: 2px;
+.console__header[data-state="unknown"] .console__lamp {
+  /* Cold/unprobed — same treatment as lost but without the fault hue. */
+  background: var(--c-text-faint);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    inset 0 -1px 0 rgba(0,0,0,0.5);
 }
 
 /* VU meter — five segments, off-state first */
@@ -459,8 +469,23 @@ body {
 .console__meter[data-state="busy"] span:nth-child(4) { animation-delay: .3s; }
 .console__meter[data-state="busy"] span:nth-child(5) { animation-delay: .4s; }
 
+/* Lost state — agent unreachable. Single dim oxblood bar on the
+ * leftmost segment with a slow pulse. Reads as a fault indicator on
+ * a piece of rack equipment, not a stoplight alert. The four other
+ * bars stay dark so the asymmetry itself signals "something's wrong". */
+.console__meter[data-state="lost"] span:nth-child(1) {
+  background: var(--c-fault);
+  box-shadow: 0 0 4px var(--c-fault-glow);
+  border-color: var(--c-fault-deep);
+  animation: meter-fault 1.6s ease-in-out infinite;
+}
+
 @keyframes meter-pulse {
   0%, 100% { opacity: 0.25; }
+  50%      { opacity: 1; }
+}
+@keyframes meter-fault {
+  0%, 100% { opacity: 0.45; }
   50%      { opacity: 1; }
 }
 
@@ -688,6 +713,16 @@ body {
 .chat-row--tool.is-error .chat-line {
   color: var(--c-red);
 }
+/* System rows flagged as errors (e.g. gateway 402 surfaced as a
+ * mid-stream `error` SSE chunk). Keep the system-row layout but
+ * paint the line in the fault hue and add a left-rule so the eye
+ * lands on it even when scrolling past chunky markdown above. */
+.chat-row--system.is-error .chat-line {
+  color: var(--c-fault);
+  border-left: 2px solid var(--c-fault);
+  padding-left: 8px;
+  margin-left: -8px;
+}
 .chat-row--tool .chat-line::before {
   content: "▸ ";
   color: var(--c-amber);
@@ -756,6 +791,29 @@ body {
 }
 .composer__input::placeholder {
   color: var(--c-paper-faint);
+}
+/* Disabled — covers both "chat in flight" (mid-stream) and "agent
+ * offline" (lost state). Pull the surface, border, and caret so the
+ * input reads as cold/inert; the placeholder set by JS carries the
+ * specific reason ("agent offline — start agent on :2999"). */
+.composer__input:disabled {
+  background: rgba(0,0,0,0.5);
+  border-color: var(--c-text-faint);
+  color: var(--c-paper-dim);
+  cursor: not-allowed;
+  caret-color: transparent;
+}
+.composer__input:disabled::placeholder {
+  color: var(--c-fault);
+  opacity: 0.7;
+}
+/* When the whole console is in the lost state, dim the prompt glyph
+ * too so peripheral vision picks up the fault even before the user
+ * looks at the meter. The header is an earlier sibling of the
+ * composer inside .console, so the general-sibling combinator works. */
+.console__header[data-state="lost"] ~ .composer .composer__prompt {
+  color: var(--c-fault);
+  opacity: 0.55;
 }
 
 /* ═════════════ Backup picker modal ═════════════ */
