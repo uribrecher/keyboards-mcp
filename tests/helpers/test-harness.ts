@@ -74,6 +74,10 @@ export class TestHarness {
   }
 
   async stop(): Promise<void> {
+    // Best-effort: release any MCB lease before killing the MCP, so subsequent
+    // tests can claim the same port. MCB doesn't yet auto-GC sessions on
+    // PID death (deferred from MCB MVP), so explicit release matters.
+    try { await this.callTool("disconnect_from_keyboard"); } catch { /* no device or MCB unreachable */ }
     // Kill MCP child immediately — transport.close() hangs waiting for graceful exit
     const pid = this.transport.pid;
     if (pid) {

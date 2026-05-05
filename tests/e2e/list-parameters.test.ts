@@ -14,7 +14,7 @@ describe("E2E: list_parameters", { concurrency: 1 }, () => {
   });
 
   it("lists all parameters for Nord", async () => {
-    await h.callTool("connect_to_keyboard", { port: "Nord Electro 5D Mock" });
+    await h.callTool("connect_to_keyboard", { port: "Nord Electro 5D Mock", model: "nord-electro-5d" });
 
     const result = await h.callTool("list_parameters");
     const text = result.content[0].text;
@@ -25,7 +25,7 @@ describe("E2E: list_parameters", { concurrency: 1 }, () => {
   });
 
   it("lists parameters filtered by section", async () => {
-    await h.callTool("connect_to_keyboard", { port: "Nord Electro 5D Mock" });
+    await h.callTool("connect_to_keyboard", { port: "Nord Electro 5D Mock", model: "nord-electro-5d" });
 
     const result = await h.callTool("list_parameters", { section: "organ" });
     const text = result.content[0].text;

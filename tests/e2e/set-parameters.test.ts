@@ -14,7 +14,7 @@ describe("E2E: set_parameters", { concurrency: 1 }, () => {
   });
 
   it("sets Nord drawbar via MCP and gets valid response", async () => {
-    const conn = await h.callTool("connect_to_keyboard", { port: "Nord Electro 5D Mock" });
+    const conn = await h.callTool("connect_to_keyboard", { port: "Nord Electro 5D Mock", model: "nord-electro-5d" });
     assert.ok(!conn.isError, `connect failed: ${conn.content[0].text}`);
     await new Promise((r) => setTimeout(r, 500));
 
@@ -33,7 +33,7 @@ describe("E2E: set_parameters", { concurrency: 1 }, () => {
 
     const h2 = await TestHarness.start({ model: "sequential-prophet-6", wsPort: 5201 });
     try {
-      const conn = await h2.callTool("connect_to_keyboard", { port: "Prophet-6 Mock" });
+      const conn = await h2.callTool("connect_to_keyboard", { port: "Prophet-6 Mock", model: "sequential-prophet-6" });
       assert.ok(!conn.isError, `connect failed: ${conn.content[0].text}`);
       await new Promise((r) => setTimeout(r, 500));
 

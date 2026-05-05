@@ -12,6 +12,8 @@ export interface PoolPorts {
   output?: string;
   input?: string;
   forward?: string;
+  /** Lease id from MCB. Used by disconnect to release the lease. */
+  mcbDeviceId?: string;
 }
 
 export interface PoolEntry {

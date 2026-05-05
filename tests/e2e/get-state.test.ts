@@ -14,7 +14,7 @@ describe("E2E: get_current_state", { concurrency: 1 }, () => {
   });
 
   it("returns state after setting params", async () => {
-    const conn = await h.callTool("connect_to_keyboard", { port: "Nord Electro 5D Mock" });
+    const conn = await h.callTool("connect_to_keyboard", { port: "Nord Electro 5D Mock", model: "nord-electro-5d" });
     assert.ok(!conn.isError, `connect failed: ${conn.content[0].text}`);
     await new Promise((r) => setTimeout(r, 500));
 
