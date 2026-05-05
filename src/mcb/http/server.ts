@@ -7,6 +7,8 @@ import type { SessionManager } from "../session-manager.js";
 import type { PortListReader, MockRegistryReader } from "../types.js";
 import { formatError } from "./errors.js";
 import { makeHealthHandler } from "./health.js";
+import { makeSessionsHandlers } from "./sessions.js";
+import { makeDevicesHandlers } from "./devices.js";
 
 export interface ServerDeps {
   socketPath: string;
@@ -96,6 +98,16 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
-function registerRoutes(_routes: Route[], _deps: ServerDeps): void {
-  // Filled in by Task 7.
+function registerRoutes(routes: Route[], deps: ServerDeps): void {
+  const sess = makeSessionsHandlers({ sessions: deps.sessions });
+  const dev = makeDevicesHandlers({
+    sessions: deps.sessions, leases: deps.leases, bridges: deps.bridges,
+    portList: deps.portList, mockRegistry: deps.mockRegistry,
+  });
+  routes.push(
+    { method: "POST",   pattern: /^\/v1\/sessions$/,                          handler: sess.create },
+    { method: "POST",   pattern: /^\/v1\/devices$/,                           handler: dev.create },
+    { method: "GET",    pattern: /^\/v1\/devices$/,                           handler: dev.list },
+    { method: "DELETE", pattern: /^\/v1\/devices\/(?<id>[a-f0-9-]+)$/,         handler: dev.delete },
+  );
 }
