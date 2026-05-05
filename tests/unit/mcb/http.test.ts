@@ -142,4 +142,26 @@ describe("MCB HTTP", () => {
     const right = await call("DELETE", `/v1/devices/${created.body.deviceId}`, undefined, { "x-session-id": a });
     assert.equal(right.statusCode, 204);
   });
+
+  it("port-is-shadow — cannot claim a port that is currently another device's shadow", async () => {
+    const a = await newSession(100);
+    const b = await newSession(200);
+    // A claims Port A as primary, with Port B as its shadow.
+    await call("POST", "/v1/devices", { port: "Port A", model: "m", with_shadow: "Port B" }, { "x-session-id": a });
+    // B tries to claim Port B as a primary — should be rejected.
+    const r = await call("POST", "/v1/devices", { port: "Port B", model: "m" }, { "x-session-id": b });
+    assert.equal(r.statusCode, 409);
+    assert.equal(r.body.error, "port-is-shadow");
+  });
+
+  it("shadow-target-is-primary — cannot use another device's primary as a shadow", async () => {
+    const a = await newSession(100);
+    const b = await newSession(200);
+    // A claims Port A as primary.
+    await call("POST", "/v1/devices", { port: "Port A", model: "m" }, { "x-session-id": a });
+    // B tries to claim Port B with Port A as shadow — Port A is already a primary.
+    const r = await call("POST", "/v1/devices", { port: "Port B", model: "m", with_shadow: "Port A" }, { "x-session-id": b });
+    assert.equal(r.statusCode, 409);
+    assert.equal(r.body.error, "shadow-target-is-primary");
+  });
 });

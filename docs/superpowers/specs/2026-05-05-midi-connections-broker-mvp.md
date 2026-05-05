@@ -11,7 +11,7 @@ architectural_reference: ./2026-05-05-midi-connections-broker-design.md
 
 ## What this slice is
 
-A standalone `midi-connections-broker` binary (shorthand: **MCB**) in `src/mcb/` that listens on a Unix domain socket, speaks HTTP, and implements the broker's full control plane: sessions (create/attach/delete with PID-liveness GC), a lease registry, a bridge registry, strict port resolution, R1 + T1 lock semantics, and SSE topology events.
+A standalone `midi-connections-broker` binary (shorthand: **MCB**) in `src/mcb/` that listens on a Unix domain socket, speaks HTTP, and implements the broker's minimum viable control plane: session creation, a lease registry, a bridge registry, strict port resolution, and R1 + T1 lock semantics. Phase 2 adds session attach/delete, PID-liveness GC, SSE topology events, and the rest — see the plan and backlog for what was trimmed.
 
 MCB is **purely metadata + arbitration** by design — not by stub. It doesn't open MIDI ports, doesn't open WebSockets, doesn't hold `StateManager` instances, doesn't know per-model schemas. Phase 2 (separate plan) plumbs the MCP to call MCB before opening its own connections; Phase 1 is just MCB, validated end-to-end via HTTP/UDS tests.
 
@@ -38,11 +38,13 @@ Validate the architecture before integrating. If the lock semantics, lease lifec
 
 ### Sessions
 
-- `POST /v1/sessions` — body `{ processName?: string }`. Returns `{ sessionId, ownerPid }`. MCB reads peer PID via `SO_PEERCRED` (Linux) / `LOCAL_PEERPID` (macOS).
-- `POST /v1/sessions/:id/attach` — re-claim. Verifies peer PID matches; 403 on mismatch; 404 if unknown or hard-GCed past the reattach window. Practical use: same MCP process briefly drops its HTTP connection and reattaches under the same PID. MCP restart with a new PID does not match and must call `POST /v1/sessions` for a fresh session.
-- `DELETE /v1/sessions/:id` — explicit teardown. Header `X-Session-Id` must match the URL id; 403 otherwise. Releases all session-owned leases and bridges. Emits SSE.
-- `GET /v1/sessions/:id/devices` — read-open. Returns this session's leases in connection-time order.
-- **PID-liveness watcher**: 1Hz `kill(pid, 0)` polling per active session. Ten consecutive misses → mark dead; emit `session-released`; release all owned leases. Reattach window: 30s after marked-dead before hard GC.
+- `POST /v1/sessions` — body `{ pid: number, processName?: string }`. Returns `{ sessionId, ownerPid }`. **Pragmatic deviation:** the client supplies its own PID in the request body rather than the daemon reading peer credentials via `SO_PEERCRED`/`LOCAL_PEERPID`, because Node has no built-in for those syscalls. Trust gate: UDS perms `0600`. Real syscall lookup is a backlog item.
+
+**Deferred to Phase 2 (NOT in MVP):**
+- `POST /v1/sessions/:id/attach` — reattach across transient drops.
+- `DELETE /v1/sessions/:id` — explicit teardown.
+- `GET /v1/sessions/:id/devices` — per-session listing.
+- PID-liveness watcher — sessions in MVP live until daemon restart.
 
 ### Leases (devices)
 

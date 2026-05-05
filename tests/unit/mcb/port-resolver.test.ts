@@ -45,4 +45,16 @@ describe("PortResolver", () => {
       { message: /port-not-found/i },
     );
   });
+
+  it("rejects ambiguous match when label and OS port literal point to different ports", () => {
+    // Label "shared" → mock at "Mock A". OS exact "shared" → matches OS port "shared".
+    // Two distinct portNames in the candidate set → ambiguous.
+    const entries: MockRegistryEntry[] = [
+      { midiPort: "Mock A", wsPort: 4001, label: "shared", pid: 1 },
+    ];
+    assert.throws(
+      () => resolvePort("shared", "output", ports(["Mock A", "shared"]), reg(entries)),
+      { message: /ambiguous-port/i },
+    );
+  });
 });

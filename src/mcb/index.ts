@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { startServer } from "./http/server.js";
 import { LeaseRegistry } from "./lease-registry.js";
 import { BridgeRegistry } from "./bridge-registry.js";
@@ -6,7 +8,7 @@ import { SessionManager } from "./session-manager.js";
 import { findByMidiPort, readActive } from "../shared/mock-registry.js";
 import type { MockRegistryReader, PortListReader } from "./types.js";
 
-const SOCKET_PATH = process.env.MCB_SOCKET ?? `${process.env.HOME}/.mcb/sock`;
+const SOCKET_PATH = process.env.MCB_SOCKET ?? join(homedir(), ".mcb", "sock");
 
 // Lazy easymidi loading. When MIDI_TRANSPORT=ws (CI / containers without ALSA),
 // easymidi is never imported; OS port lists are empty.

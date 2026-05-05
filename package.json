@@ -4,9 +4,6 @@
   "description": "MCP server for controlling MIDI keyboards (Nord Electro 5D and more)",
   "type": "module",
   "main": "dist/index.js",
-  "bin": {
-    "midi-connections-broker": "./dist/mcb/index.js"
-  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",

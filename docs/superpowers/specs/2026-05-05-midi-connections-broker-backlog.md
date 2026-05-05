@@ -107,3 +107,7 @@ Pre-design item for Phase 3: per-mock Electron window vs. shared global window v
 ### Body size limits & rate limiting
 
 The MVP has no body-size cap. Add a sane default (~1MB). Rate limiting is probably overkill for a personal-rig tool but worth flagging if multi-tenant scenarios ever appear.
+
+### Typed errors instead of `formatError` substring matching
+
+`src/mcb/http/errors.ts` currently classifies registry errors (port-already-owned, self-shadow, bridge-already-exists, shadow-conflict, etc.) by substring-matching `err.message`. This is brittle — changing the human-readable message wording silently changes the HTTP status code. Refactor: give `BridgeRegistry` and `LeaseRegistry` typed error classes with stable `code` fields (the way `PortResolutionError` already does), and have `formatError` switch on `instanceof` + `err.code` instead of substring. Touches a few files but no behavior change.
