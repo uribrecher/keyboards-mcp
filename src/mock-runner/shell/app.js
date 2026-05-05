@@ -283,12 +283,34 @@ const chatInput     = document.getElementById("chat-input");
 const chatReset     = document.getElementById("chat-reset");
 const chatExtract   = document.getElementById("chat-extract");
 const meterEl       = document.getElementById("agent-status");
+const consoleHeader = document.getElementById("console-header");
 
 let chatBusy = false;
-let agentReachable = null; // tri-state: null=unknown, true, false
 
-function setMeter(state) {
-  meterEl.dataset.state = state;
+// Four-state agent liveness:
+//   "unknown" — page just loaded, no probe yet
+//   "live"    — last probe or chat turn succeeded
+//   "busy"    — chat in flight (overlays live/lost while sending)
+//   "lost"    — probe or chat fetch failed (TypeError) — agent unreachable
+// `lastConfirmed` is the underlying state ignoring "busy", so we know
+// what to fall back to when a chat ends.
+let agentState = "unknown";
+let lastConfirmed = "unknown";
+const PLACEHOLDER_LOST = "agent offline — start agent on :2999";
+
+function applyAgentState(next) {
+  agentState = next;
+  if (next !== "busy") lastConfirmed = next;
+  meterEl.dataset.state = next;
+  consoleHeader.dataset.state = next;
+  // Composer reflects reachability: disable the textarea when the
+  // agent is unreachable so the user can't type a message that has
+  // nowhere to go. Keep it enabled while the state is "unknown" — we
+  // haven't proven it's down yet, and the user's first attempt is the
+  // probe that flips us to "live".
+  const lost = next === "lost";
+  chatInput.disabled = chatBusy || lost;
+  chatInput.placeholder = lost ? PLACEHOLDER_LOST : "";
 }
 
 function appendRow(kind, text, opts = {}) {
@@ -407,9 +429,8 @@ async function sendChat() {
   if (!message || chatBusy) return;
 
   chatBusy = true;
-  chatInput.disabled = true;
   chatInput.value = "";
-  setMeter("busy");
+  applyAgentState("busy");
 
   appendRow("user", message);
 
@@ -482,11 +503,30 @@ async function sendChat() {
           }
           break;
         case "done":
-          // Successful turn completion — assistant message is already in
-          // agentClient.messages. Flip meter "on" (this is also the only
-          // signal the renderer has that the agent is reachable, since
-          // there's no /health endpoint on the server).
-          agentReachable = true;
+          // Successful turn completion. The /health probe also flips
+          // us to "live", but a `done` event is the strongest possible
+          // proof of life — reset the failure counter immediately so
+          // we don't sit on a stale lost-state until the next probe.
+          probeFailureCount = 0;
+          lastConfirmed = "live";
+          break;
+        case "error":
+          // Mid-stream failure surfaced by the SDK (gateway 402,
+          // model 5xx, tool exception, etc). The HTTP server itself
+          // is fine — leave `lastConfirmed` alone (the /health probe
+          // owns reachability). Tear down any in-progress assistant
+          // line so the next turn starts fresh, then surface the
+          // upstream message verbatim. Verbatim is the right call:
+          // these errors are usually actionable (insufficient funds,
+          // rate limit, malformed tool input) and translating them
+          // into chassis-voice would just hide the cause.
+          assistantLine = null;
+          assistantText = "";
+          if (currentToolRow) {
+            currentToolRow.textContent += " ✗";
+            currentToolRow = null;
+          }
+          appendRow("system", `agent error: ${event.message}`, { error: true });
           break;
       }
     }
@@ -495,21 +535,25 @@ async function sendChat() {
       // User clicked reset mid-stream. SDK rolled back the user
       // message; reset handler already wrote "Conversation reset."
       // No additional UI to render here.
+    } else if (err instanceof TypeError && /fetch/i.test(err.message ?? "")) {
+      // TypeError + "fetch" is the well-defined network-unreachable
+      // signal in the browser/Electron — distinct from HTTP 5xx (the
+      // server answered) or SSE-parser issues (we got a body). Treat
+      // it as definitive proof the agent is down and replace the
+      // verbatim message with the chassis-voice form.
+      lastConfirmed = "lost";
+      appendRow("system", PLACEHOLDER_LOST);
     } else {
-      // The error could be a network failure (agent really down) OR
-      // a bug in this renderer's event handler. Distinguishing them
-      // reliably is hard, so don't make a definitive claim about
-      // reachability — show the actual message and let the user
-      // judge. agentReachable is left as-is (the most recent `done`
-      // event is still authoritative for the meter state).
+      // HTTP 5xx, SSE parser error, etc. — server answered but the
+      // exchange failed. Don't claim agent is offline; surface the
+      // raw error and leave the liveness state to the probe loop.
       appendRow("system", `Chat error: ${err?.message ?? err}`);
     }
   } finally {
     inFlightAbort = null;
     chatBusy = false;
-    chatInput.disabled = false;
-    setMeter(agentReachable ? "on" : "off");
-    chatInput.focus();
+    applyAgentState(lastConfirmed);
+    if (!chatInput.disabled) chatInput.focus();
   }
 }
 
@@ -525,9 +569,67 @@ chatInput.addEventListener("keydown", (e) => {
   }
 });
 
-// No startup probe — the agent has no /health endpoint. Meter starts
-// "off" and flips to "on" after the first successful "done" event from
-// /chat (or "off" again if a send fails).
+// ── Agent heartbeat ──
+//
+// Poll GET /health to keep the meter honest about the agent's
+// reachability without waiting for the user to send a chat. 3s while
+// healthy; backs off to 8s once we've missed three in a row, so a
+// long server-down doesn't hammer the network tab. We never probe
+// while a chat is in flight — the in-flight POST is itself proof of
+// life and a duplicate fetch is racy.
+
+const PROBE_INTERVAL_OK   = 3000;
+const PROBE_INTERVAL_DOWN = 8000;
+const PROBE_FAILURES_BEFORE_BACKOFF = 3;
+let probeFailureCount = 0;
+
+async function probeAgent() {
+  if (chatBusy) return; // skip — chat in flight is its own heartbeat
+  let ok = false;
+  try {
+    const res = await fetch(`${AGENT_URL}/health`, {
+      method: "GET",
+      // 2.5s budget — local roundtrip should be <50ms; anything past
+      // 2.5s effectively means the server isn't listening.
+      signal: AbortSignal.timeout(2500),
+    });
+    // Any response below 500 proves the agent server is alive — even
+    // a 404 means "the process is up, it just doesn't know this
+    // route". This matters when the renderer ships before the
+    // companion `/health` change has reached the running agent: a
+    // strict `res.ok` check would treat a healthy older server as
+    // `lost` and lock the composer for no good reason. Real outage
+    // signals (connection refused, DNS, timeout) come through the
+    // catch block below and are correctly counted as failures.
+    ok = res.status < 500;
+  } catch {
+    ok = false;
+  }
+  if (ok) {
+    probeFailureCount = 0;
+    if (lastConfirmed !== "live" && agentState !== "busy") applyAgentState("live");
+  } else {
+    probeFailureCount++;
+    if (lastConfirmed !== "lost" && agentState !== "busy") applyAgentState("lost");
+  }
+}
+
+function scheduleNextProbe() {
+  const delay = probeFailureCount >= PROBE_FAILURES_BEFORE_BACKOFF
+    ? PROBE_INTERVAL_DOWN
+    : PROBE_INTERVAL_OK;
+  setTimeout(async () => {
+    await probeAgent();
+    scheduleNextProbe();
+  }, delay);
+}
+
+// Fire one probe immediately so the meter settles within ~50ms of
+// page load instead of waiting a full interval.
+void (async () => {
+  await probeAgent();
+  scheduleNextProbe();
+})();
 
 // ─────────────────────────────────────────────────────────────────
 // Backup picker modal
