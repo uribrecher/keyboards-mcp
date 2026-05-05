@@ -31,6 +31,8 @@ Refactor the MCP to consume MCB-managed leases for connection establishment. The
 
 A new view inside the mock-runner Electron shell that subscribes to MCB's `/v1/events` SSE stream and renders, live: all sessions (PID + processName), all leases (model + owner), all bridges (master → shadow). Useful as an operator dashboard when multiple agent sessions are active. Architectural shape (per-mock window vs. shared global window vs. browser-served HTML page) is its own brainstorm.
 
+**Minimal stepping-stone (sub-MVP):** in each existing per-mock window, augment the "MCP CONNECTED" boolean indicator with the owning session's `processName` + `pid`. Implementation: mock-runner adds an MCB client (SSE on `/v1/events`, or even just a poll of `GET /v1/devices` every few seconds) and finds the lease whose primary or shadow port matches its own midiPort. Cheaper than the full operator view; useful when you have multiple agent sessions and want to know which one is driving each mock.
+
 ## Cross-phase items (not phase-specific)
 
 ### OS service templates
