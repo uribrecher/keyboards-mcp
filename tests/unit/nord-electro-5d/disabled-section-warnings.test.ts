@@ -1,0 +1,29 @@
+import { describe, it } from "node:test";
+import { strict as assert } from "node:assert";
+import { createParameterMap } from "../../../src/keyboard_models/nord/electro_5d/midi-map.js";
+import { NordElectro5DState } from "../../../src/keyboard_models/nord/electro_5d/state-manager.js";
+import { validateParameterBatch } from "../../../src/keyboard_models/nord/electro_5d/validation.js";
+
+const parameterMap = createParameterMap();
+
+function freshState(): NordElectro5DState {
+  return new NordElectro5DState(parameterMap);
+}
+
+describe("Nord Electro 5D disabled-section warnings", () => {
+  it("warns when setting a reverb parameter while reverb is disabled", () => {
+    const state = freshState();
+    state.set("reverb_enable", 0);
+
+    const warnings = validateParameterBatch(
+      [{ key: "reverb_dry_wet", value: 64 }],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    const reverbWarning = warnings.find((w) => w.includes("Reverb"));
+    assert.ok(reverbWarning, `expected a Reverb warning, got: ${JSON.stringify(warnings)}`);
+    assert.match(reverbWarning, /disabled/i);
+  });
+});
