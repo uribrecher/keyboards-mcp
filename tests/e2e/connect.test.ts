@@ -16,6 +16,7 @@ describe("E2E: connect", { concurrency: 1 }, () => {
   it("connects to Nord mock via MCP and reports its assigned index", async () => {
     const result = await h.callTool("connect_to_keyboard", {
       port: "Nord Electro 5D Mock",
+      model: "nord-electro-5d",
     });
     const text = result.content[0].text;
     assert.ok(text.includes("Detected model: Nord Electro 5D"), `unexpected: ${text}`);
@@ -27,6 +28,7 @@ describe("E2E: connect", { concurrency: 1 }, () => {
   it("connect with label echoes the label back", async () => {
     const result = await h.callTool("connect_to_keyboard", {
       port: "Nord Electro 5D Mock",
+      model: "nord-electro-5d",
       label: "studio",
     });
     const text = result.content[0].text;
@@ -35,7 +37,7 @@ describe("E2E: connect", { concurrency: 1 }, () => {
   });
 
   it("is_connected reports status", async () => {
-    await h.callTool("connect_to_keyboard", { port: "Nord Electro 5D Mock" });
+    await h.callTool("connect_to_keyboard", { port: "Nord Electro 5D Mock", model: "nord-electro-5d" });
     const result = await h.callTool("is_connected");
     const text = result.content[0].text;
     assert.ok(text.includes("Connected") || text.includes("connected"), `unexpected: ${text}`);
