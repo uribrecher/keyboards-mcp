@@ -31,14 +31,35 @@ const mockRegistry: MockRegistryReader = {
   list: () => readActive(),
 };
 
+const LIVENESS_SWEEP_INTERVAL_MS = 1000;
+
 (async () => {
+  const leases = new LeaseRegistry();
+  const bridges = new BridgeRegistry();
+  const sessions = new SessionManager();
+
   const portList = await buildPortListReader();
   await startServer({
     socketPath: SOCKET_PATH,
-    leases: new LeaseRegistry(),
-    bridges: new BridgeRegistry(),
-    sessions: new SessionManager(),
+    leases, bridges, sessions,
     portList, mockRegistry,
   });
   console.log(`[mcb] listening on ${SOCKET_PATH}`);
+
+  // Periodic PID-liveness sweep. Hard-GCed sessions get their leases + bridges
+  // released so subsequent claims on the same port aren't blocked forever.
+  setInterval(() => {
+    const reaped = sessions.runLivenessSweep();
+    for (const session of reaped) {
+      for (const deviceId of session.ownedDeviceIds) {
+        if (bridges.shadowOf(deviceId)) bridges.remove(deviceId);
+        leases.remove(deviceId);
+      }
+      console.log(
+        `[mcb] reaped session ${session.sessionId} ` +
+        `(pid ${session.pid}${session.processName ? ` ${session.processName}` : ""}, ` +
+        `${session.ownedDeviceIds.size} lease(s) released)`,
+      );
+    }
+  }, LIVENESS_SWEEP_INTERVAL_MS).unref();
 })().catch((err) => { console.error(err); process.exit(1); });
