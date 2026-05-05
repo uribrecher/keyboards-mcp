@@ -13,7 +13,17 @@ export interface SessionManagerOptions {
 }
 
 const DEFAULT_LIVENESS = (pid: number): boolean => {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // ESRCH: no such process → actually dead.
+    // EPERM: process exists but caller lacks permission → alive (e.g., MCB running as a
+    // different user from the MCP). Treat as alive to avoid reaping live sessions.
+    // Anything else: best-effort treat as dead so we don't pin leases on truly broken state.
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "EPERM";
+  }
 };
 
 export class SessionManager {
