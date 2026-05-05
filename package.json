@@ -4,6 +4,9 @@
   "description": "MCP server for controlling MIDI keyboards (Nord Electro 5D and more)",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "midi-connections-broker": "./dist/mcb/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
@@ -14,6 +17,7 @@
     "mock:runner": "electron dist/mock-runner/main.js",
     "mock:runner:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 MOCK_RUNNER_DEVTOOLS=1 electron --inspect=5858 dist/mock-runner/main.js",
     "mock:headless": "tsx src/mock-runner/cli.ts",
+    "mcb": "tsx src/mcb/index.ts",
     "lint": "eslint src/ tests/",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "test:unit": "find tests/unit -name '*.test.ts' | xargs npx tsx --test",
