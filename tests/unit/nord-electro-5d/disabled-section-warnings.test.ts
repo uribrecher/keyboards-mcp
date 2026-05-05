@@ -156,4 +156,22 @@ describe("Nord Electro 5D disabled-section warnings", () => {
       `expected no Piano-engine warning, got: ${JSON.stringify(warnings)}`,
     );
   });
+
+  it("emits exactly one warning per disabled section, regardless of param count", () => {
+    const state = freshState();
+    state.set("reverb_enable", 0);
+
+    const warnings = validateParameterBatch(
+      [
+        { key: "reverb_dry_wet", value: 64 },
+        { key: "reverb_type", value: 1 },
+      ],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    const reverbWarnings = warnings.filter((w) => w.includes("Reverb is currently disabled"));
+    assert.equal(reverbWarnings.length, 1, `expected exactly 1 Reverb warning, got: ${JSON.stringify(warnings)}`);
+  });
 });
