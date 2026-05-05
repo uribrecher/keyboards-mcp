@@ -19,7 +19,7 @@ describe("E2E: multi-model regression", { concurrency: 1 }, () => {
     it(`${id}: connect + list_parameters + get_state`, async () => {
       const h = await TestHarness.start({ model: id, wsPort: port });
       try {
-        const connectResult = await h.callTool("connect_to_keyboard", { port: portPattern });
+        const connectResult = await h.callTool("connect_to_keyboard", { port: portPattern, model: id });
         assert.ok(!connectResult.isError, `connect failed: ${connectResult.content[0].text}`);
 
         const listResult = await h.callTool("list_parameters");

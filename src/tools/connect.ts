@@ -204,8 +204,8 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
         return {
           content: [{
             type: "text",
-            text: `Connected: ${model.info.displayName} on ${manifest.primary.portName}` +
-              ` (global ch ${midi.getChannel() + 1}, lower ${midi.getLowerChannel() + 1}, upper ${midi.getUpperChannel() + 1}${inputResult}${forwardResult})\n` +
+            text: `Detected model: ${model.info.displayName}\n` +
+              `Connected to: ${manifest.primary.portName} (global ch ${midi.getChannel() + 1}, lower ch ${midi.getLowerChannel() + 1}, upper ch ${midi.getUpperChannel() + 1}${inputResult}${forwardResult})\n` +
               `Assigned device ${index}${labelTag}. MCB lease: ${manifest.deviceId}.`,
           }],
         };
