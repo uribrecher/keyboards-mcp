@@ -4,6 +4,8 @@ export interface Session {
   processName?: string;
   ownedDeviceIds: Set<string>;
   createdAt: number;
+  /** Epoch ms when the liveness watcher first declared the PID dead, else null. */
+  markedDeadAt: number | null;
 }
 
 export interface ShadowEndpoint {
