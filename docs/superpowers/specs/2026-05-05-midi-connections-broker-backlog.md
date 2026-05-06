@@ -9,6 +9,22 @@ architectural_reference: ./2026-05-05-midi-connections-broker-design.md
 
 The MVP (Phase 1) ships a standalone control-plane MCB that brokers connection leases without touching MIDI or WebSockets. This backlog organizes the rest of the work into the phased migration toward the architecture in `2026-05-05-midi-connections-broker-design.md`. Each item is a stub — when picked up, run `superpowers:brainstorming` (or `mvp-brainstorm`) on it as a fresh topic.
 
+## ⭐ Next up — Bridge cycle walker
+
+**Priority: high. This is the next item to tackle.**
+
+`src/mcb/bridge-registry.ts` only enforces `self-shadow` (master ≠ shadow) and `shadow-conflict` (shadow port not already a shadow target). The lease-registry adds "shadow target can't also be a primary." Under the connect-only API that's enough — multi-hop chains can't form, so cycles are unreachable.
+
+That guarantee is fragile. The moment we add hot-swappable shadows (standalone `POST /v1/bridges` / `DELETE /v1/bridges/:masterDeviceId`), HW-shadows-HW chains, or any path where a port can transition between primary and shadow without going through a fresh `POST /v1/devices`, multi-hop bridge graphs become reachable and a malicious or buggy client can build a cycle (`A→B`, `B→C`, `C→A`) that fans MIDI traffic forever.
+
+Scope:
+- Add a recursive walker to `BridgeRegistry.add(masterDeviceId, masterPortName, shadowPortName)`: follow `shadowOf(...)` from the proposed shadow's owning master and reject if the walk reaches `masterPortName`.
+- Surface as `cycle-would-form` (the error code is already reserved in `formatError`) → 409 Conflict.
+- Unit tests in `tests/unit/mcb/bridge-registry.test.ts`: 2-hop, 3-hop, and N-hop cycle attempts; non-cycle multi-hop chains stay legal.
+- No HTTP-surface change; the walker fires inside the existing `add()` path, so it lights up automatically when the standalone bridge endpoints land later.
+
+Why now (before the endpoints that make it load-bearing): cheap, well-scoped, and locks in the invariant before any code path can violate it. Defense-in-depth.
+
 ## Phase 2 — MCP integration
 
 Core integration shipped in PR #31 (and PID-liveness reaper in #33). Remaining open follow-ups:
@@ -25,23 +41,13 @@ Settled and explicitly NOT open:
 
 ## Phase 3 — MCB-aware tab LEDs
 
-The mock-runner shell already gives each tab a small LED in the rail. Phase 3 makes that LED report each mock's MCB lease state at a glance, and removes the now-redundant "MCP CONNECTED" indicator inside each per-model iframe UI.
+Shipped in PRs #38 and #41. Mock-runner main process polls `GET /v1/devices`, renderer maps each tab's `wsPort` to lease `primary`/`shadow` and drives the rail LED (amber / blue / green); the per-iframe `<div id="mcp-status">` block is gone.
 
-Per-tab semantics:
-- **amber** — no active lease for this mock's port (disconnected; default).
-- **blue** — this mock is the *shadow* of an active lease (the master keyboard fans out CCs into this mock).
-- **green** — this mock is the *primary* of an active lease (the owning agent drives it directly).
+Open follow-ups:
 
-Implementation:
-- Bump the existing `.tab__led` size in the shell CSS so the color is legible at the rail's distance.
-- Add an MCB UDS-HTTP client in the mock-runner main process (renderer can't speak UDS directly). Poll `GET /v1/devices` on a short interval; surface the lease list to the renderer via the existing preload bridge.
-- Renderer matches each tab's `(midiPortName, wsPort)` against each lease's `primary` / `shadow` and sets the LED data-state. When MCB is unreachable (e.g. not running), all LEDs fall back to amber — the mock-runner must not be a hard dependent of MCB.
-- Remove the `<div id="mcp-status">` block (and its JS/CSS) from each model's `web/` UI: nord-electro-5d, juno-x, prophet-6.
-
-Explicitly out of scope (deferred — capture as separate items if/when needed):
-- A full operator dashboard listing every session/lease/bridge across the system. Original Phase 3 vision; can resurface as a Phase 4 if multi-agent rigs grow.
-- Surfacing session-level info (PID, processName, marked-dead state) on a per-tab basis. The LED is a state cue, not an identity readout.
-- An MCB SSE `/v1/events` stream. Polling `GET /v1/devices` is enough for this UI; SSE can land separately when something else needs it.
+- **Operator dashboard.** A full listing of every session/lease/bridge across the system. Resurface as Phase 4 if multi-agent rigs grow.
+- **Per-tab session-level info.** Surface PID / processName / marked-dead state on the tab itself (the LED is a state cue, not an identity readout).
+- **MCB SSE `/v1/events` stream.** Polling is enough for the LEDs; revisit when another consumer needs push semantics.
 
 ## Cross-phase items (not phase-specific)
 
@@ -86,7 +92,7 @@ MCB's lock is reclaimed only by PID-liveness GC. If a workflow emerges where a s
 
 ### Standalone bridge attach/detach endpoints
 
-The MVP creates bridges only at `POST /v1/devices` time. To add or change a shadow on a live lease, the user must release and re-claim. If hot-swappable shadows become necessary, design `POST /v1/bridges` and `DELETE /v1/bridges/:masterDeviceId`. Cycle detection becomes load-bearing here.
+The MVP creates bridges only at `POST /v1/devices` time. To add or change a shadow on a live lease, the user must release and re-claim. If hot-swappable shadows become necessary, design `POST /v1/bridges` and `DELETE /v1/bridges/:masterDeviceId`. The bridge cycle walker (see *Next up* at the top) is a hard prerequisite — these endpoints make multi-hop chains reachable, so the walker must land first.
 
 ### HW-shadows-HW workflows
 
