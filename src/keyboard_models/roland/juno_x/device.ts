@@ -18,6 +18,7 @@ import {
 } from "./engines/engine-types.js";
 import { JunoXState } from "./state-manager.js";
 import type { JunoXParameterMap } from "./midi-map.js";
+import { validateParameterBatch } from "./validation.js";
 
 export class JunoXDevice extends BaseKeyboardDevice {
   private junoMap: JunoXParameterMap;
@@ -113,7 +114,16 @@ export class JunoXDevice extends BaseKeyboardDevice {
       text += (text ? "\n\n" : "") + "Errors:\n" + errors.join("\n");
     }
 
-    return { content: [{ type: "text", text }] };
+    const result: ToolResult = { content: [{ type: "text", text }] };
+    if (warnings.length > 0) result.warnings = warnings;
+    return result;
+  }
+
+  protected override validateAfterSet(
+    resolvedKeys: Array<{ key: string; value: number | string }>,
+    part: string,
+  ): string[] {
+    return validateParameterBatch(resolvedKeys, this.state, part, this.parameterMap);
   }
 
   override listParameters(section?: string): ToolResult {
