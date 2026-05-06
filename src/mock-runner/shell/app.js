@@ -293,7 +293,7 @@ let chatBusy = false;
 // a short prefix (8 hex chars) in the console header where the
 // removed CLAUDE title used to live, full UUID stays in the title
 // attribute for hover.
-let agentInstanceId = null;
+let agentSessionId = null;
 
 // Four-state agent liveness:
 //   "unknown" — page just loaded, no probe yet
@@ -591,37 +591,37 @@ const PROBE_INTERVAL_DOWN = 8000;
 const PROBE_FAILURES_BEFORE_BACKOFF = 3;
 let probeFailureCount = 0;
 
-// Render the agent's instanceId (or absence of it) in the console
-// header SID slot. Shows the first 8 hex characters as a short
-// fingerprint; the full UUID lands in the title attribute for hover.
-// A change in id between probes means the agent restarted — drop a
-// system row so the user knows their conversation now talks to a
-// fresh process. Older agent builds that don't emit `instanceId`
-// fall back to "—" (the dash glyph from the initial HTML).
-function applyInstanceId(nextId) {
-  if (nextId === agentInstanceId) return;
-  const previousId = agentInstanceId;
-  agentInstanceId = nextId;
+// Render the agent's MCB-issued sessionId (or absence of it) in the
+// console header SID slot. Shows the first 8 hex characters as a
+// short fingerprint; the full UUID lands in the title attribute for
+// hover. A change in id between probes means the agent restarted —
+// drop a system row so the user knows their conversation now talks
+// to a fresh process. Agent builds that don't emit `sessionId` (or
+// emit only the legacy `instanceId`) fall back to "—".
+function applyAgentSessionId(nextId) {
+  if (nextId === agentSessionId) return;
+  const previousId = agentSessionId;
+  agentSessionId = nextId;
   if (typeof nextId === "string" && nextId.length > 0) {
     const short = nextId.replace(/-/g, "").slice(0, 8);
     sidValueEl.textContent = short;
-    sidEl.title = `Agent process id ${nextId} — changes if the agent restarts`;
+    sidEl.title = `Agent session id ${nextId} — changes if the agent restarts`;
   } else {
     sidValueEl.textContent = "—";
-    sidEl.title = "Agent process id — server didn't supply one";
+    sidEl.title = "Agent session id — server didn't supply one";
   }
   // Only annotate restarts (previous id existed AND changed). A
   // first-ever id (previousId === null) is just normal startup, no
   // need to spam the log on page load.
   if (previousId && nextId && previousId !== nextId) {
-    appendRow("system", "agent restarted — new process id");
+    appendRow("system", "agent restarted — new session id");
   }
 }
 
 async function probeAgent() {
   if (chatBusy) return; // skip — chat in flight is its own heartbeat
   let ok = false;
-  let parsedInstanceId = null;
+  let parsedSessionId = null;
   try {
     const res = await fetch(`${AGENT_URL}/health`, {
       method: "GET",
@@ -639,20 +639,24 @@ async function probeAgent() {
     // catch block below and are correctly counted as failures.
     ok = res.status < 500;
     if (ok) {
-      // Best-effort body parse — older agent builds may not return
-      // JSON or may not include `instanceId`. Either way, applyInstanceId
-      // handles missing values by falling back to "—".
+      // Best-effort body parse — agent emits `sessionId` (the MCB-
+      // issued id). Pre-rename builds emitted `instanceId`; accept
+      // that too so a renderer ahead of an old agent still shows
+      // the id. Either way, applyAgentSessionId handles missing
+      // values by falling back to "—".
       try {
         const body = await res.json();
-        if (body && typeof body.instanceId === "string") {
-          parsedInstanceId = body.instanceId;
+        if (body && typeof body.sessionId === "string") {
+          parsedSessionId = body.sessionId;
+        } else if (body && typeof body.instanceId === "string") {
+          parsedSessionId = body.instanceId;
         }
       } catch { /* ignore — body wasn't JSON */ }
     }
   } catch {
     ok = false;
   }
-  applyInstanceId(parsedInstanceId);
+  applyAgentSessionId(parsedSessionId);
   if (ok) {
     probeFailureCount = 0;
     if (lastConfirmed !== "live" && agentState !== "busy") applyAgentState("live");
