@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld("mockRunnerAPI", {
   openBackupDialog: () => ipcRenderer.invoke("open-backup-dialog"),
   extractBackup: (args) => ipcRenderer.invoke("extract-backup", args),
 
+  // Phase 3 — per-tab MCB lease state. Returns Record<tabId, "primary" | "shadow" | "none">.
+  getTabLeaseStates: () => ipcRenderer.invoke("get-tab-lease-states"),
+
   // Menu → renderer events (relayed by main.ts via webContents.send)
   onMenuNewTab: (cb) => ipcRenderer.on("menu:new-tab", cb),
   onMenuExtractBackup: (cb) => ipcRenderer.on("menu:extract-backup", cb),

@@ -25,14 +25,6 @@ h1 {
   letter-spacing: 1px;
 }
 
-#status {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 10px;
-}
-#status.connected { background: #1a3a1a; color: #4caf50; }
-#status.disconnected { background: #3a1a1a; color: #f44336; }
-
 main {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
