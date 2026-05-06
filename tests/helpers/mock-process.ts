@@ -11,6 +11,7 @@ export interface MockProcessOptions {
   wsPort?: number;
   lowerChannel?: number;
   upperChannel?: number;
+  label?: string;
 }
 
 export class MockProcess {
@@ -41,14 +42,16 @@ export class MockProcess {
 
   static async start(opts: MockProcessOptions): Promise<MockProcess> {
     const wsPort = opts.wsPort ?? 3456;
-    const proc = spawn("npx", [
+    const args = [
       "tsx",
       "src/mock-runner/cli.ts",
       "--model", opts.model,
       "--ws-port", String(wsPort),
       "--lower-channel", String(opts.lowerChannel ?? 0),
       "--upper-channel", String(opts.upperChannel ?? 1),
-    ], {
+    ];
+    if (opts.label) { args.push("--label", opts.label); }
+    const proc = spawn("npx", args, {
       cwd: process.cwd(),
       stdio: ["pipe", "pipe", "pipe"],
     });

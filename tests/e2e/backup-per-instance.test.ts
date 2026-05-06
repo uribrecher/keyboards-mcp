@@ -45,7 +45,7 @@ function seedCache(label: string, programs: Array<{ bank: number; slot: number; 
   writeFileSync(join(dir, "backup_cache.json"), JSON.stringify(cache), "utf-8");
 }
 
-describe("E2E: per-instance backup data", { concurrency: 1, skip: true /* phase-2 follow-up: legacy args + MCB fixture */ }, () => {
+describe("E2E: per-instance backup data", { concurrency: 1, skip: !!process.env.MOCK_WS_URL }, () => {
   before(async () => {
     tmpDataDir = mkdtempSync(join(tmpdir(), "backup-per-instance-"));
     originalDataDirEnv = process.env.KEYBOARDS_MCP_DATA_DIR;
@@ -54,10 +54,13 @@ describe("E2E: per-instance backup data", { concurrency: 1, skip: true /* phase-
     seedCache("studio", STUDIO_PROGRAMS);
     seedCache("gig", GIG_PROGRAMS);
 
+    // Two Nord mocks share a virtual MIDI port name, so disambiguate via
+    // distinct mock labels — connect_to_keyboard's port arg accepts a
+    // mock label as an exact identity.
     h = await MultiDeviceHarness.start({
       mocks: [
-        { model: "nord-electro-5d", wsPort: NORD_A_PORT },
-        { model: "nord-electro-5d", wsPort: NORD_B_PORT },
+        { model: "nord-electro-5d", wsPort: NORD_A_PORT, label: "studio" },
+        { model: "nord-electro-5d", wsPort: NORD_B_PORT, label: "gig" },
       ],
     });
   });
@@ -73,25 +76,17 @@ describe("E2E: per-instance backup data", { concurrency: 1, skip: true /* phase-
   });
 
   it("connect with label auto-loads that label's cached inventory", async () => {
-    // Connect device 1 with label="studio"
+    // Connect each Nord by its distinct mock label.
     const r1 = await h.callTool("connect_to_keyboard", {
-      port: "Nord Electro 5D Mock",
-      mock_ws_port: NORD_A_PORT,
-      auto_input: false,
-      auto_forward: false,
+      port: "studio",
+      model: "nord-electro-5d",
       label: "studio",
     });
     assert.ok(!r1.isError, `studio connect failed: ${r1.content[0].text}`);
 
-    // Connect device 2 with label="gig"
-    // Both Nord mocks share the same virtual MIDI port name, so we ask for the
-    // index 0 explicitly to keep this targeted on the same port; either mock
-    // will accept our CC traffic — we're only asserting backup data routing.
     const r2 = await h.callTool("connect_to_keyboard", {
-      port: 0,
-      mock_ws_port: NORD_B_PORT,
-      auto_input: false,
-      auto_forward: false,
+      port: "gig",
+      model: "nord-electro-5d",
       label: "gig",
     });
     assert.ok(!r2.isError, `gig connect failed: ${r2.content[0].text}`);
