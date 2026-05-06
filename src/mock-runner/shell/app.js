@@ -695,16 +695,27 @@ void (async () => {
 
 const MCB_POLL_INTERVAL_MS = 2000;
 
+// Single-flight guard — if a poll is still in flight when the next tick
+// fires (e.g. MCB stalled on the UDS read), skip rather than queue. Keeps
+// LED updates ordered and prevents handler pile-up.
+let mcbPollInFlight = false;
+
 async function pollMcbLeaseStates() {
-  let states;
-  try { states = await api.getTabLeaseStates(); }
-  catch { return; } // preload missing or main-process error — leave LEDs as-is
-  for (const tab of tabs) {
-    const led = tab.button?.querySelector(".tab__led");
-    if (!led) continue;
-    const state = states[tab.tabId];
-    if (state === "primary" || state === "shadow") led.dataset.state = state;
-    else delete led.dataset.state; // default amber
+  if (mcbPollInFlight) return;
+  mcbPollInFlight = true;
+  try {
+    let states;
+    try { states = await api.getTabLeaseStates(); }
+    catch { return; } // preload missing or main-process error — leave LEDs as-is
+    for (const tab of tabs) {
+      const led = tab.button?.querySelector(".tab__led");
+      if (!led) continue;
+      const state = states[tab.tabId];
+      if (state === "primary" || state === "shadow") led.dataset.state = state;
+      else delete led.dataset.state; // default amber
+    }
+  } finally {
+    mcbPollInFlight = false;
   }
 }
 

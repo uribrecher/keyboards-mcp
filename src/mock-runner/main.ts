@@ -676,20 +676,31 @@ ipcMain.handle("list-tabs", (): Array<{
 
 // Phase 3 — per-tab MCB lease state. Returns one of "primary" | "shadow" |
 // "none" per live tab so the renderer can color each tab's LED. MCB
-// unreachable (not running, stale socket, etc.) collapses to "none" for
-// every tab — the mock-runner is not a hard dependent of MCB.
+// unreachable (not running, stale socket, etc.) or stalled past the
+// timeout collapses to "none" for every tab — the mock-runner is not a
+// hard dependent of MCB.
 type TabLeaseState = "primary" | "shadow" | "none";
+const MCB_LIST_TIMEOUT_MS = 1500;
 ipcMain.handle("get-tab-lease-states", async (): Promise<Record<string, TabLeaseState>> => {
   const result: Record<string, TabLeaseState> = {};
   for (const t of tabs.values()) result[t.tabId] = "none";
 
-  let leases;
-  try { leases = await listAllDevices(); }
-  catch { return result; }
+  // Skip the UDS roundtrip when no tab has anything to match against.
+  const candidates = [...tabs.values()].filter((t) => t.model && t.wsPort !== null);
+  if (candidates.length === 0) return result;
 
-  for (const t of tabs.values()) {
-    if (!t.model || t.wsPort === null) continue;
-    const expectedPortName = `${t.model.info.displayName} Mock`;
+  let leases;
+  try {
+    leases = await Promise.race([
+      listAllDevices(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("mcb-list-timeout")), MCB_LIST_TIMEOUT_MS).unref(),
+      ),
+    ]);
+  } catch { return result; }
+
+  for (const t of candidates) {
+    const expectedPortName = `${t.model!.info.displayName} Mock`;
     for (const lease of leases) {
       if (lease.primary.portName === expectedPortName && lease.primary.wsPort === t.wsPort) {
         result[t.tabId] = "primary";
