@@ -96,6 +96,10 @@ The bridge metadata supports it (MCB doesn't care if the shadow is a mock or ano
 
 Currently rejected (avoid double-control of underlying state). If a workflow needs chains where every endpoint is independently addressable, design semantics for `set_parameters` when the same physical state is reachable via two devices.
 
+### Split `port` and `with_shadow` into explicit identity args
+
+`connect_to_keyboard`'s `port` arg accepts either an exact OS port name *or* a registered mock label, and the port-resolver tries each in turn. `with_shadow` has the same two-types-in-one-string shape. The resolution is strict (no substring/fuzzy match) and fails fast on ambiguity, but it's still a "smart" surface that violates the simple-deterministic-tools principle: tools should take unambiguous identity types and let the LLM pick which one to pass. Cleanup: replace each arg with two explicit args (e.g. `mock_label` *or* `os_port`, exactly one required), or take an `{ kind: "mock" | "os", value: string }` discriminated union. Defer until either (a) a real bug surfaces from the current ambiguity, or (b) we touch this code for another reason.
+
 ### Multi-host coordination (TCP frontend)
 
 UDS is local-only. If MCB ever needs to be addressed from another host, add a TCP listener on top of the same handlers. Concerns: authentication (UDS gets it free via FS perms; TCP needs tokens), TLS, network exposure. Defer until specifically requested.
