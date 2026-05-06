@@ -1,7 +1,7 @@
 ---
 mode: backlog
 parent_topic: midi-connections-broker
-mvp_spec: ./2026-05-05-midi-connections-broker-mvp.md
+mvp_spec: ./completed/2026-05-05-midi-connections-broker-mvp.md
 architectural_reference: ./2026-05-05-midi-connections-broker-design.md
 ---
 

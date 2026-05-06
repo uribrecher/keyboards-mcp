@@ -2,7 +2,7 @@
  * `.mockrack` v1 JSON schema — used by File → Save / Open in the
  * Electron mock-runner to round-trip a complete studio rack.
  *
- * Spec: docs/superpowers/specs/2026-05-04-file-menu-design.md
+ * Spec: docs/superpowers/specs/completed/2026-05-04-file-menu-design.md
  */
 
 import { writeFileSync, mkdirSync, renameSync } from "node:fs";

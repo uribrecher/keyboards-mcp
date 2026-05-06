@@ -1,7 +1,7 @@
 ---
 mode: backlog
 parent_topic: disabled-section-warnings
-mvp_spec: ./2026-05-05-disabled-section-warnings-mvp.md
+mvp_spec: ./completed/2026-05-05-disabled-section-warnings-mvp.md
 ---
 
 # Disabled-Section Warnings — Deferred Backlog
