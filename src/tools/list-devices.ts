@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { listOutputPorts, listInputPorts } from "../midi/midi-manager.js";
 import type { DevicePool } from "../shared/device-pool.js";
 import { readAllWithStaleFlag, type MockRegistryEntry } from "../shared/mock-registry.js";
-import { listAllDevices, MCBError, type Manifest } from "../mcp-client/mcb-client.js";
+import { listAllDevices, MCBError, type Manifest } from "../shared/mcb-client.js";
 
 const MockRegistrySchema = z.object({
   midiPort: z.string(),

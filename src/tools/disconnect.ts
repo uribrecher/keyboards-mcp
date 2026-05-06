@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { DevicePool } from "../shared/device-pool.js";
-import { releaseLease, MCBError } from "../mcp-client/mcb-client.js";
+import { releaseLease, MCBError } from "../shared/mcb-client.js";
 
 export function registerDisconnect(server: McpServer, pool: DevicePool): void {
   server.registerTool(

@@ -6,7 +6,7 @@ import { loadModelById } from "../shared/model-registry.js";
 import { WsMidiConnection } from "../midi/ws-midi-connection.js";
 import type { KeyboardModel, KeyboardDevice } from "../shared/keyboard-model.js";
 import { findByMidiPort } from "../shared/mock-registry.js";
-import { claimLease, MCBError } from "../mcp-client/mcb-client.js";
+import { claimLease, MCBError } from "../shared/mcb-client.js";
 
 /** Same sanitizer as the model-level backup-cache. */
 function sanitizeLabelForCache(label: string | undefined | null): string {
