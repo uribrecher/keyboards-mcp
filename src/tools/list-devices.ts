@@ -47,11 +47,6 @@ const InputPortSchema = z.object({
 const ListMidiDevicesOutputSchema = {
   outputs: z.array(OutputPortSchema),
   inputs: z.array(InputPortSchema),
-  mcb: z.object({
-    queried: z.boolean(),
-    reachable: z.boolean(),
-    error: z.string().optional(),
-  }),
 };
 
 export function registerListDevices(server: McpServer, pool: DevicePool): void {
@@ -63,27 +58,24 @@ export function registerListDevices(server: McpServer, pool: DevicePool): void {
         "Each output port carries optional `mock` (registry metadata for ports that belong to a running mock-runner mock, including stale flag), " +
         "`poolMarkers` (entries from this MCP's local pool that bind to the port), " +
         "and `lease` (annotation from MCB if any session currently holds a lease on that port as primary or shadow). " +
-        "The `mcb` object reports whether MCB was queried and reachable.",
+        "Fails fast when MCB is unreachable — there is no graceful-degradation path.",
       outputSchema: ListMidiDevicesOutputSchema,
     },
     async () => {
       // Source of truth: MCB's GET /v1/midi/ports — it owns OS port
       // enumeration, mock-registry annotation, and lease join. The MCP
       // only adds local pool markers (which MCB doesn't know about).
-      const mcbQueried = !process.env.MOCK_WS_URL;
-      let outputs: Array<{ name: string; mock?: z.infer<typeof MockRegistrySchema>; lease?: z.infer<typeof LeaseSchema> }> = [];
-      let inputs: Array<{ name: string }> = [];
-      let mcbReachable = mcbQueried;
-      let mcbError: string | undefined;
-      if (mcbQueried) {
-        try {
-          const ports = await listMidiPorts();
-          outputs = ports.outputs;
-          inputs = ports.inputs;
-        } catch (err) {
-          mcbReachable = false;
-          mcbError = err instanceof MCBError ? `${err.code}: ${err.message}` : String(err);
+      let ports;
+      try {
+        ports = await listMidiPorts();
+      } catch (err) {
+        if (err instanceof MCBError) {
+          return {
+            content: [{ type: "text", text: `list_midi_devices failed: ${err.code}: ${err.message}` }],
+            isError: true,
+          };
         }
+        throw err;
       }
 
       // MCP-local pool markers — keyed by port name, layered on top of MCB's view.
@@ -99,30 +91,29 @@ export function registerListDevices(server: McpServer, pool: DevicePool): void {
         map.set(port, arr);
       };
       for (const entry of pool.list()) {
-        const ports = entry.ports;
-        if (!ports) continue;
+        const eports = entry.ports;
+        if (!eports) continue;
         const baseMarker = { index: entry.index, model: entry.device.model.info.displayName, label: entry.device.label };
-        if (ports.output) pushMarker(outputMarkers, ports.output, { ...baseMarker, role: "output" });
-        if (ports.forward && ports.forward !== ports.output) {
-          pushMarker(outputMarkers, ports.forward, { ...baseMarker, role: "forward" });
+        if (eports.output) pushMarker(outputMarkers, eports.output, { ...baseMarker, role: "output" });
+        if (eports.forward && eports.forward !== eports.output) {
+          pushMarker(outputMarkers, eports.forward, { ...baseMarker, role: "forward" });
         }
-        if (ports.input) pushMarker(inputMarkers, ports.input, { ...baseMarker, role: "input" });
+        if (eports.input) pushMarker(inputMarkers, eports.input, { ...baseMarker, role: "input" });
       }
 
       const structuredContent = {
-        outputs: outputs.map((p, index) => ({
+        outputs: ports.outputs.map((p, index) => ({
           index,
           name: p.name,
           mock: p.mock,
           poolMarkers: outputMarkers.get(p.name) ?? [],
           lease: p.lease,
         })),
-        inputs: inputs.map((p, index) => ({
+        inputs: ports.inputs.map((p, index) => ({
           index,
           name: p.name,
           poolMarkers: inputMarkers.get(p.name) ?? [],
         })),
-        mcb: { queried: mcbQueried, reachable: mcbReachable, error: mcbError },
       };
 
       // SDK type requires `content`; structuredContent is the canonical payload.
