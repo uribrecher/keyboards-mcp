@@ -7,43 +7,11 @@ architectural_reference: ./2026-05-05-midi-connections-broker-design.md
 
 # midi-connections-broker (MCB) — Deferred Backlog
 
-The MVP (Phase 1) ships a standalone control-plane MCB that brokers connection leases without touching MIDI or WebSockets. This backlog organizes the rest of the work into the phased migration toward the architecture in `2026-05-05-midi-connections-broker-design.md`. Each item is a stub — when picked up, run `superpowers:brainstorming` (or `mvp-brainstorm`) on it as a fresh topic.
+The MVP (Phase 1) shipped a standalone control-plane MCB. Phase 2 (MCP integration) and Phase 3 (mock-runner tab LEDs) are also shipped; the bridge cycle walker, graceful shutdown, stale-socket probe, typed errors, e2e harness fixture, and session-attach recovery all landed in the top-5 sweep (PRs #42, #44, #45, #46, #47). What's left is below — every item here is genuinely open.
 
-## ⭐ Next up — Bridge cycle walker
+## Phase 3 — MCB-aware tab LEDs (open follow-ups)
 
-**Priority: high. This is the next item to tackle.**
-
-`src/mcb/bridge-registry.ts` only enforces `self-shadow` (master ≠ shadow) and `shadow-conflict` (shadow port not already a shadow target). The lease-registry adds "shadow target can't also be a primary." Under the connect-only API that's enough — multi-hop chains can't form, so cycles are unreachable.
-
-That guarantee is fragile. The moment we add hot-swappable shadows (standalone `POST /v1/bridges` / `DELETE /v1/bridges/:masterDeviceId`), HW-shadows-HW chains, or any path where a port can transition between primary and shadow without going through a fresh `POST /v1/devices`, multi-hop bridge graphs become reachable and a malicious or buggy client can build a cycle (`A→B`, `B→C`, `C→A`) that fans MIDI traffic forever.
-
-Scope:
-- Add a recursive walker to `BridgeRegistry.add(masterDeviceId, masterPortName, shadowPortName)`: follow `shadowOf(...)` from the proposed shadow's owning master and reject if the walk reaches `masterPortName`.
-- Surface as `cycle-would-form` (the error code is already reserved in `formatError`) → 409 Conflict.
-- Unit tests in `tests/unit/mcb/bridge-registry.test.ts`: 2-hop, 3-hop, and N-hop cycle attempts; non-cycle multi-hop chains stay legal.
-- No HTTP-surface change; the walker fires inside the existing `add()` path, so it lights up automatically when the standalone bridge endpoints land later.
-
-Why now (before the endpoints that make it load-bearing): cheap, well-scoped, and locks in the invariant before any code path can violate it. Defense-in-depth.
-
-## Phase 2 — MCP integration
-
-Core integration shipped in PR #31 (and PID-liveness reaper in #33). Remaining open follow-ups:
-
-- **Session attach + MCB-crash recovery.** `POST /v1/sessions/:id/attach` plus a re-claim path so MCPs survive an MCB restart/crash with their leases intact. Two layers: (a) MCPs detect MCB unreachable, retry, and re-claim using their cached `sessionId` + manifest (handles crash); (b) optional disk-persistence on graceful shutdown so MCB doesn't need re-claim on a clean restart. (a) is the load-bearing piece. Pairs with the cross-phase "PID-reuse guard on session attach" item below.
-- **E2E harness MCB fixture.** Four e2e blocks are tagged `skip: true /* phase-2 follow-up: legacy args + MCB fixture */`: `multi-device.test.ts`, `label-discovery.test.ts`, `backup-per-instance.test.ts`, and the three-concurrent-mocks block in `multi-model.test.ts`. To un-skip, `MultiDeviceHarness` (and its callers) need to spawn an MCB instance — UDS socket setup, lifecycle wiring, teardown. Strip the dead legacy args (`mock_ws_port`, `auto_input`, `auto_forward`) inside the test bodies in the same pass.
-
-Recently settled:
-- **`list_midi_devices` encapsulation.** `GET /v1/midi/ports` ships in `src/mcb/http/midi-ports.ts` (aggregates OS ports + mock-registry annotations + lease join MCB-side). `src/tools/list-devices.ts` is now a thin wrapper — calls `listMidiPorts()` on the shared client and only adds MCP-local pool markers. MCP no longer duplicates MCB's data sources.
-
-Settled and explicitly NOT open:
-- `connect_to_keyboard` arg surface — already cleaned (`auto_input`, `auto_forward`, `forward_port`, `mock_ws_port` all removed in #31). Explicit `input_port` stays — it's load-bearing for hw→shadow knob mirroring, no auto-pair sentinel planned.
-- `MOCK_WS_URL` (CI / docker-compose path) — preserved as the no-MCB transport. Not deferred work.
-
-## Phase 3 — MCB-aware tab LEDs
-
-Shipped in PRs #38 and #41. Mock-runner main process polls `GET /v1/devices`, renderer maps each tab's `wsPort` to lease `primary`/`shadow` and drives the rail LED (amber / blue / green); the per-iframe `<div id="mcp-status">` block is gone.
-
-Open follow-ups:
+The LED state machine itself shipped in PRs #38 and #41. Open follow-ups:
 
 - **Operator dashboard.** A full listing of every session/lease/bridge across the system. Resurface as Phase 4 if multi-agent rigs grow.
 - **Per-tab session-level info.** Surface PID / processName / marked-dead state on the tab itself (the LED is a state cue, not an identity readout).
@@ -89,13 +57,13 @@ Cross-repo consideration: this is a sibling-repo change in `../sound-recreation-
 
 A small standalone CLI that talks to MCB over the same UDS. Subcommands: `sessions list`, `devices list`, `events tail`, `kick <session-id>` (admin force-disconnect), `health`. Each subcommand is one HTTP call. Useful when no agent is around (debugging stuck state from a terminal).
 
-### Graceful shutdown
+### Graceful shutdown — drain in-flight work cleanly
 
-The MVP spec called for SIGTERM/SIGINT teardown but the shipped code in `src/mcb/index.ts` doesn't register either handler — on signal, the process exits with the UDS listener still bound and the socket file left behind. Baseline work: install handlers that close the UDS listener and unlink the socket. Follow-up upgrade: stop accepting new connections, complete in-flight requests, drain SSE streams cleanly with a final `session-released` event for live subscribers.
+Baseline shipped in PR #44 (SIGTERM/SIGINT handlers in `src/mcb/index.ts`, unlink before awaiting `server.stop()`). Follow-up upgrade still open: stop accepting new connections immediately, complete in-flight requests, drain SSE streams cleanly with a final `session-released` event for live subscribers. Pick up when SSE consumers actually exist (the LEDs poll today).
 
-### Stale UDS socket file probe-and-unlink at startup
+### Stale UDS socket startup probe — `LOCAL_PEERPID` upgrade
 
-Same gap: the MVP spec called for probe-and-unlink but the shipped MCB binds the UDS path unconditionally, so an ungraceful prior shutdown leaves a stale socket and the next `npm run mcb` fails with `EADDRINUSE` until manually `rm`'d. Baseline work: at startup, if the socket file exists, attempt `GET /v1/health` against it; on success exit with "another MCB is alive"; on connect refusal, unlink and bind. Follow-up upgrade: `LOCAL_PEERPID`-based liveness check (distinguishes "another MCB alive" from "stale state"), structured logging of which path was taken at startup.
+Baseline shipped in PR #44 (`src/mcb/socket-cleanup.ts` HTTP-probes `/v1/health` and unlinks on connect-refused, refuses to delete non-socket files via `lstat()`). Follow-up upgrade still open: `LOCAL_PEERPID`-based liveness check that distinguishes "another MCB alive" from "stale state" without paying the HTTP round-trip; structured logging of which path was taken at startup.
 
 ### Stale mock-registry entry purge on MCB startup
 
@@ -152,10 +120,6 @@ Pre-design item for Phase 3: per-mock Electron window vs. shared global window v
 ### Body size limits & rate limiting
 
 The MVP has no body-size cap. Add a sane default (~1MB). Rate limiting is probably overkill for a personal-rig tool but worth flagging if multi-tenant scenarios ever appear.
-
-### Typed errors instead of `formatError` substring matching
-
-`src/mcb/http/errors.ts` currently classifies registry errors (port-already-owned, self-shadow, bridge-already-exists, shadow-conflict, etc.) by substring-matching `err.message`. This is brittle — changing the human-readable message wording silently changes the HTTP status code. Refactor: give `BridgeRegistry` and `LeaseRegistry` typed error classes with stable `code` fields (the way `PortResolutionError` already does), and have `formatError` switch on `instanceof` + `err.code` instead of substring. Touches a few files but no behavior change.
 
 ### Mock-runner shows a black UI when MCB is down (suspected bug)
 
