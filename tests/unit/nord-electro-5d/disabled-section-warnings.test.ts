@@ -220,7 +220,7 @@ describe("Nord Electro 5D disabled-section warnings", () => {
     assert.equal(reverbWarnings.length, 1, `expected exactly 1 Reverb warning, got: ${JSON.stringify(warnings)}`);
   });
 
-  it("does NOT warn for global, parts, or amp parameters even when every gated section is disabled", () => {
+  it("does NOT warn for global or parts parameters even when every gated section is disabled", () => {
     const state = freshState();
     // Disable everything that has an enable flag.
     state.set("effect1_enable", 0);
@@ -246,6 +246,85 @@ describe("Nord Electro 5D disabled-section warnings", () => {
     assert.ok(
       !warnings.some((w) => /is currently disabled/.test(w)),
       `expected no disabled-section warnings, got: ${JSON.stringify(warnings)}`,
+    );
+  });
+
+  it("warns when setting an amp parameter while spkr_comp is disabled", () => {
+    const state = freshState();
+    state.set("spkr_comp_enable", 0);
+
+    const warnings = validateParameterBatch(
+      [{ key: "spkr_comp_drive", value: 64 }],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    const ampWarning = warnings.find((w) => w.includes("Amp/Speaker is currently disabled"));
+    assert.ok(ampWarning, `expected Amp/Speaker disabled warning, got: ${JSON.stringify(warnings)}`);
+  });
+
+  it("does NOT warn for amp params when spkr_comp_enable is on", () => {
+    const state = freshState();
+    state.set("spkr_comp_enable", 1);
+
+    const warnings = validateParameterBatch(
+      [{ key: "spkr_comp_drive", value: 64 }],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    assert.ok(
+      !warnings.some((w) => w.includes("Amp/Speaker is currently disabled")),
+      `expected no Amp/Speaker warning when enabled, got: ${JSON.stringify(warnings)}`,
+    );
+  });
+
+  it("warns when setting vibrato_type while vibrato_enable is off", () => {
+    const state = freshState();
+    // Put both parts on Organ so the organ-engine rule doesn't fire — we want
+    // to isolate the per-param vibrato sub-rule.
+    const engineParam = parameterMap.params["part_upper_engine_select"]!;
+    const organMidi = parameterMap.resolveValue(engineParam, "Organ");
+    state.set("part_lower_engine_select", organMidi);
+    state.set("part_upper_engine_select", organMidi);
+    state.set("part_upper_enable", 1);
+    state.set("vibrato_enable", 0);
+
+    const warnings = validateParameterBatch(
+      [{ key: "vibrato_type", value: 1 }],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    const vibWarning = warnings.find((w) => /vibrato.*disabled/i.test(w));
+    assert.ok(vibWarning, `expected vibrato-disabled warning, got: ${JSON.stringify(warnings)}`);
+  });
+
+  it("does NOT warn when vibrato_enable is being toggled on in the same batch as vibrato_type", () => {
+    const state = freshState();
+    const engineParam = parameterMap.params["part_upper_engine_select"]!;
+    const organMidi = parameterMap.resolveValue(engineParam, "Organ");
+    state.set("part_lower_engine_select", organMidi);
+    state.set("part_upper_engine_select", organMidi);
+    state.set("part_upper_enable", 1);
+    state.set("vibrato_enable", 0);
+
+    const warnings = validateParameterBatch(
+      [
+        { key: "vibrato_type", value: 1 },
+        { key: "vibrato_enable", value: 1 },
+      ],
+      state,
+      "upper",
+      parameterMap,
+    );
+
+    assert.ok(
+      !warnings.some((w) => /vibrato.*disabled/i.test(w)),
+      `expected no vibrato-disabled warning when batch enables it, got: ${JSON.stringify(warnings)}`,
     );
   });
 });
