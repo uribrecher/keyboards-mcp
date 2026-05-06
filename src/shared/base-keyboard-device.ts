@@ -186,7 +186,9 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       text += (text ? "\n\n" : "") + "Errors:\n" + errors.join("\n");
     }
 
-    return { content: [{ type: "text", text }] };
+    const result: ToolResult = { content: [{ type: "text", text }] };
+    if (warnings.length > 0) result.warnings = warnings;
+    return result;
   }
 
   /** Override for per-part state routing. Return undefined for global-only models. */

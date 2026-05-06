@@ -116,7 +116,7 @@ export function validateParameterBatch(
   // Warn when a parameter is set in a section that is currently disabled.
   // Uses post-batch state (so flipping the enable flag in the same batch suppresses the warning).
   {
-    const ALWAYS_ACTIVE = new Set(["global", "parts", "amp"]);
+    const ALWAYS_ACTIVE = new Set(["global", "parts"]);
 
     // Map: section key → ordered display name.
     const SECTION_DISPLAY: Record<string, string> = {
@@ -128,20 +128,25 @@ export function validateParameterBatch(
       reverb: "Reverb",
       delay: "Delay",
       eq: "EQ",
+      amp: "Amp/Speaker",
       rotary: "Rotary/Speaker",
     };
     const SECTION_ORDER = [
       "organ", "piano", "sample_synth",
-      "effect1", "effect2", "reverb", "delay", "eq", "rotary",
+      "effect1", "effect2", "reverb", "delay", "eq", "amp", "rotary",
     ];
 
-    // Effect-style sections gated by an `_enable` key.
+    // Effect-style sections gated by an `_enable` key. The amp section and
+    // the rotary section share `spkr_comp_enable` — when the speaker/comp
+    // block is off, neither the amp model nor the rotary speed has any
+    // audible effect.
     const ENABLE_KEY: Record<string, string> = {
       effect1: "effect1_enable",
       effect2: "effect2_enable",
       reverb: "reverb_enable",
       delay: "delay_enable",
       eq: "eq_enable",
+      amp: "spkr_comp_enable",
       rotary: "spkr_comp_enable",
     };
     const SELF_CONTROL_KEYS = new Set([
@@ -219,6 +224,28 @@ export function validateParameterBatch(
       warnings.push(
         `WARNING: ${display} is currently disabled. The parameter(s) you set will have no audible effect until ${hint}.`,
       );
+    }
+  }
+
+  // ── Per-parameter sub-rule: vibrato ──
+  // The organ section is a coarse gate (warns when no part has Organ selected).
+  // Vibrato has its own enable inside the organ; warn separately when a vibrato
+  // parameter is touched while vibrato_enable is off in post-batch state.
+  {
+    const VIBRATO_PARAMS = new Set(["vibrato_type"]);
+    let vibratoEnabled = state.get("vibrato_enable");
+    for (const { key, value } of parameters) {
+      if (key !== "vibrato_enable") continue;
+      const param = parameterMap.params[key];
+      if (param) vibratoEnabled = parameterMap.resolveValue(param, value);
+    }
+    if (vibratoEnabled === undefined || vibratoEnabled === 0) {
+      const touched = parameters.some(({ key }) => VIBRATO_PARAMS.has(key));
+      if (touched) {
+        warnings.push(
+          "WARNING: Vibrato is currently disabled. The vibrato parameter(s) you set will have no audible effect until you set vibrato_enable = on.",
+        );
+      }
     }
   }
 
