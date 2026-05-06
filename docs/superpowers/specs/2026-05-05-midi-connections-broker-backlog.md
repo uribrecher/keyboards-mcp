@@ -103,3 +103,7 @@ The MVP has no body-size cap. Add a sane default (~1MB). Rate limiting is probab
 ### Typed errors instead of `formatError` substring matching
 
 `src/mcb/http/errors.ts` currently classifies registry errors (port-already-owned, self-shadow, bridge-already-exists, shadow-conflict, etc.) by substring-matching `err.message`. This is brittle — changing the human-readable message wording silently changes the HTTP status code. Refactor: give `BridgeRegistry` and `LeaseRegistry` typed error classes with stable `code` fields (the way `PortResolutionError` already does), and have `formatError` switch on `instanceof` + `err.code` instead of substring. Touches a few files but no behavior change.
+
+### Mock-runner shows a black UI when MCB is down (suspected bug)
+
+Observed: starting `npm run mock:runner` while MCB is unreachable yields a black/empty UI instead of the model picker. The mock-runner shouldn't be a hard dependent of MCB — MCB brokers MCP↔keyboard leases, not mock-window rendering. Investigate the failure path (likely an unhandled promise rejection or a synchronous fetch in the renderer that aborts the page load) and either render normally with MCB-features degraded, or surface a clear "MCB unreachable" overlay with a retry. Repro before fixing.
