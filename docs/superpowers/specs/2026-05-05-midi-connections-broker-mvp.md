@@ -162,8 +162,8 @@ Two layers:
 
 - Manual run only in MVP: `npm run mcb` starts MCB in foreground; logs to stdout.
 - No launchd/systemd configs in MVP.
-- **Stale socket file probe-and-unlink** at startup: if the socket file exists, attempt a connect to `GET /v1/health`; on success, exit (another MCB is alive); on connect refusal, unlink and bind. Makes `npm run mcb` re-runnable without manual cleanup.
-- **Graceful shutdown** on SIGTERM/SIGINT: close all SSE streams, close UDS listener, unlink socket file, exit. Detail in plan.
+- **Stale socket file probe-and-unlink** at startup — *speced but not implemented in the shipped MVP*. The current code in `src/mcb/index.ts` binds the UDS without checking; an ungraceful prior shutdown leaves a stale socket that fails the next start with `EADDRINUSE` until manually `rm`'d. Tracked as the "Stale UDS socket file probe-and-unlink at startup" entry in the backlog (which has been rewritten to reflect that the basic version is the work, not just a production-grade upgrade).
+- **Graceful shutdown** on SIGTERM/SIGINT — *speced but not implemented in the shipped MVP*. No `process.on("SIGTERM" | "SIGINT", …)` handler exists in `src/mcb/`. Tracked as the "Graceful shutdown" entry in the backlog.
 
 ## Out of scope (see backlog)
 
