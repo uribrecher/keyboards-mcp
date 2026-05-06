@@ -51,6 +51,14 @@ Open follow-ups:
 
 ## Cross-phase items (not phase-specific)
 
+### `connect_to_keyboard` auto-adopt label is dropped on the lease
+
+`src/tools/connect.ts` resolves `effectiveLabel` from the running mock's registry entry (`mockEntry.label`) so the local pool device adopts the right label and the per-instance backup cache lines up. But `claimLease()` is called *before* the auto-adopt step, with the original (often `undefined`) `label` arg. MCB's `POST /v1/devices` then defaults the lease's label to `"default"` (`devices.ts: body.label ?? "default"`), so `is_connected` and `GET /v1/midi/ports` show the lease label as `"default"` even though the mock-registry says `"junio"` (or whatever) and the local pool entry shows the auto-adopted label. Two views disagree on the same device.
+
+Reproduces today: spawn a Roland JUNO-X mock with `--label junio`, run `connect_to_keyboard {port: "Roland JUNO-X Mock", model: "roland-juno-x"}` (no explicit label), then `list_midi_devices` — the `lease.label` field is `"default"` while the mock's registry label is `"junio"`.
+
+Fix: hoist the auto-adopt block above `claimLease`. Resolve `effectiveLabel` from `findByMidiPort(...)` first (the resolver already runs the same lookup), then pass it into the `claimLease({ label: effectiveLabel, ... })` call. The local `device.label` and the MCB lease label end up in lockstep without a second round-trip. Cheap, scoped to one file, no API change.
+
 ### OS service templates
 
 - macOS LaunchAgent plist (`~/Library/LaunchAgents/com.uribrecher.midi-connections-broker.plist`). User-scoped agent.
