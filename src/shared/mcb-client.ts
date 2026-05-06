@@ -44,11 +44,39 @@ function socketPath(): string {
 }
 
 let cachedSessionId: string | null = null;
+let attachedThisRun = false;
+
+/**
+ * Idempotently re-attach the cached sessionId to MCB. Used after an MCB
+ * restart so subsequent claims don't fail with `session-not-found`. Safe to
+ * call on every claim; the second call is a no-op for the lifetime of the
+ * MCB process (handler refreshes PID/clears miss state).
+ */
+export async function attachSession(sessionId: string): Promise<void> {
+  await call("POST", `/v1/sessions/${sessionId}/attach`, { pid: process.pid, processName: "keyboards-mcp" });
+}
 
 async function ensureSession(): Promise<string> {
-  if (cachedSessionId) return cachedSessionId;
+  if (cachedSessionId) {
+    // First claim after an MCB restart: tell MCB about our session before
+    // the claim. Cached locally so we don't pay the round-trip on every call.
+    if (!attachedThisRun) {
+      try {
+        await attachSession(cachedSessionId);
+        attachedThisRun = true;
+      } catch (err) {
+        // If MCB is unreachable, propagate; the claim will fail and the
+        // caller surfaces the user-facing error.
+        if (err instanceof MCBError && err.code === "mcb-unreachable") throw err;
+        // Any other failure (4xx/5xx) is non-fatal for the cached path —
+        // the claim itself will surface the real problem.
+      }
+    }
+    return cachedSessionId;
+  }
   const body = await call("POST", "/v1/sessions", { pid: process.pid, processName: "keyboards-mcp" });
   cachedSessionId = (body as { sessionId: string }).sessionId;
+  attachedThisRun = true;
   return cachedSessionId;
 }
 
@@ -109,7 +137,7 @@ export async function listMidiPorts(): Promise<MidiPortsResponse> {
 }
 
 /** Reset the cached session — primarily for tests. */
-export function resetSession(): void { cachedSessionId = null; }
+export function resetSession(): void { cachedSessionId = null; attachedThisRun = false; }
 
 function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<unknown> {
   const sock = socketPath();

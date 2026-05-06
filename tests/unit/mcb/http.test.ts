@@ -75,6 +75,32 @@ describe("MCB HTTP", () => {
     assert.equal(r.statusCode, 400);
   });
 
+  it("POST /v1/sessions/:id/attach creates an unknown session (post-restart recovery)", async () => {
+    const id = "abcd1234-abcd-1234-abcd-123456789012";
+    const r = await call("POST", `/v1/sessions/${id}/attach`, { pid: 555, processName: "client" });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.sessionId, id);
+    assert.equal(r.body.ownerPid, 555);
+
+    // The reclaimed sessionId is now usable as x-session-id for subsequent calls.
+    const claim = await call("POST", "/v1/devices", { port: "Port A", model: "m" }, { "x-session-id": id });
+    assert.equal(claim.statusCode, 200);
+  });
+
+  it("POST /v1/sessions/:id/attach is idempotent on a known session (refreshes pid)", async () => {
+    const sid = await newSession(100);
+    const r = await call("POST", `/v1/sessions/${sid}/attach`, { pid: 200 });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.sessionId, sid);
+    assert.equal(r.body.ownerPid, 200);
+  });
+
+  it("POST /v1/sessions/:id/attach rejects malformed UUID", async () => {
+    // Wrong-length hex matches the route regex but fails UUID_RE in the handler.
+    const r = await call("POST", "/v1/sessions/abc123/attach", { pid: 1 });
+    assert.equal(r.statusCode, 400);
+  });
+
   it("POST /v1/devices claims a lease and returns manifest", async () => {
     const sid = await newSession();
     const r = await call("POST", "/v1/devices", { port: "Port A", model: "m", label: "L" }, { "x-session-id": sid });

@@ -57,6 +57,39 @@ export class SessionManager {
     return session;
   }
 
+  /**
+   * Idempotent re-attach to a sessionId chosen by the client. Handles two
+   * cases that look the same to the caller:
+   *   - MCB still has the session (e.g., spurious client retry) → just
+   *     refresh PID/processName and clear miss state so the liveness sweep
+   *     doesn't reap mid-flight.
+   *   - MCB doesn't know the session (e.g., MCB restarted between the
+   *     client's create and reconnect) → create a record with the given id.
+   * Returns the canonical Session record either way.
+   */
+  attach(sessionId: string, input: { pid: number; processName?: string }): Session {
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      existing.pid = input.pid;
+      if (input.processName !== undefined) existing.processName = input.processName;
+      existing.markedDeadAt = null;
+      const ms = this.missState.get(sessionId);
+      if (ms) ms.firstMissAt = null;
+      return existing;
+    }
+    const session: Session = {
+      sessionId,
+      pid: input.pid,
+      processName: input.processName,
+      ownedDeviceIds: new Set(),
+      createdAt: this.nowMs(),
+      markedDeadAt: null,
+    };
+    this.sessions.set(sessionId, session);
+    this.missState.set(sessionId, { firstMissAt: null });
+    return session;
+  }
+
   get(sessionId: string): Session | undefined {
     return this.sessions.get(sessionId);
   }
