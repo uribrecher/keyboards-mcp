@@ -27,7 +27,6 @@ const LeaseSchema = z.object({
   sessionId: z.string(),
   deviceId: z.string(),
   model: z.string(),
-  label: z.string(),
 });
 
 const OutputPortSchema = z.object({
