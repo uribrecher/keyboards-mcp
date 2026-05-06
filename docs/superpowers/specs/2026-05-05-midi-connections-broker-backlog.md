@@ -21,11 +21,25 @@ Settled and explicitly NOT open:
 - `connect_to_keyboard` arg surface — already cleaned (`auto_input`, `auto_forward`, `forward_port`, `mock_ws_port` all removed in #31). Explicit `input_port` stays — it's load-bearing for hw→shadow knob mirroring, no auto-pair sentinel planned.
 - `MOCK_WS_URL` (CI / docker-compose path) — preserved as the no-MCB transport. Not deferred work.
 
-## Phase 3 — Mock-runner connection-viewer
+## Phase 3 — MCB-aware tab LEDs
 
-A new view inside the mock-runner Electron shell that subscribes to MCB's `/v1/events` SSE stream and renders, live: all sessions (PID + processName), all leases (model + owner), all bridges (master → shadow). Useful as an operator dashboard when multiple agent sessions are active. Architectural shape (per-mock window vs. shared global window vs. browser-served HTML page) is its own brainstorm.
+The mock-runner shell already gives each tab a small LED in the rail. Phase 3 makes that LED report each mock's MCB lease state at a glance, and removes the now-redundant "MCP CONNECTED" indicator inside each per-model iframe UI.
 
-**Minimal stepping-stone (sub-MVP):** in each existing per-mock window, augment the "MCP CONNECTED" boolean indicator with the owning session's `processName` + `pid`. Implementation: mock-runner adds an MCB client (SSE on `/v1/events`, or even just a poll of `GET /v1/devices` every few seconds) and finds the lease whose primary or shadow port matches its own midiPort. Cheaper than the full operator view; useful when you have multiple agent sessions and want to know which one is driving each mock.
+Per-tab semantics:
+- **amber** — no active lease for this mock's port (disconnected; default).
+- **blue** — this mock is the *shadow* of an active lease (the master keyboard fans out CCs into this mock).
+- **green** — this mock is the *primary* of an active lease (the owning agent drives it directly).
+
+Implementation:
+- Bump the existing `.tab__led` size in the shell CSS so the color is legible at the rail's distance.
+- Add an MCB UDS-HTTP client in the mock-runner main process (renderer can't speak UDS directly). Poll `GET /v1/devices` on a short interval; surface the lease list to the renderer via the existing preload bridge.
+- Renderer matches each tab's `(midiPortName, wsPort)` against each lease's `primary` / `shadow` and sets the LED data-state. When MCB is unreachable (e.g. not running), all LEDs fall back to amber — the mock-runner must not be a hard dependent of MCB.
+- Remove the `<div id="mcp-status">` block (and its JS/CSS) from each model's `web/` UI: nord-electro-5d, juno-x, prophet-6.
+
+Explicitly out of scope (deferred — capture as separate items if/when needed):
+- A full operator dashboard listing every session/lease/bridge across the system. Original Phase 3 vision; can resurface as a Phase 4 if multi-agent rigs grow.
+- Surfacing session-level info (PID, processName, marked-dead state) on a per-tab basis. The LED is a state cue, not an identity readout.
+- An MCB SSE `/v1/events` stream. Polling `GET /v1/devices` is enough for this UI; SSE can land separately when something else needs it.
 
 ## Cross-phase items (not phase-specific)
 

@@ -26,9 +26,6 @@ function connect() {
   };
 
   ws.onclose = () => {
-    const mcpEl = document.getElementById("mcp-status");
-    mcpEl.className = "status disconnected";
-    mcpEl.textContent = "MCP DISCONNECTED";
     reconnectTimer = setTimeout(connect, 2000);
   };
 
@@ -50,18 +47,6 @@ function connect() {
 // ── State handler ──
 
 function handleState(data) {
-  // MCP connection badge
-  if (data.mcpConnected !== undefined) {
-    const mcpEl = document.getElementById("mcp-status");
-    if (data.mcpConnected) {
-      mcpEl.className = "status connected";
-      mcpEl.textContent = "MCP CONNECTED";
-    } else {
-      mcpEl.className = "status disconnected";
-      mcpEl.textContent = "MCP DISCONNECTED";
-    }
-  }
-
   // Scene display
   if (data.scene !== undefined) {
     const num = data.scene.program !== undefined ? data.scene.program + 1 : 1;

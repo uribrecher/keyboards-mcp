@@ -153,16 +153,6 @@ body {
   text-transform: uppercase;
 }
 
-.status {
-  font-size: 10px;
-  letter-spacing: 1px;
-  padding: 3px 10px;
-  border-radius: 10px;
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-.status.connected { background: #1a3a1a; color: var(--led-on); }
-
 /* Sections */
 .section {
   background: var(--section-bg);
