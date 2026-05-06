@@ -680,6 +680,38 @@ void (async () => {
 })();
 
 // ─────────────────────────────────────────────────────────────────
+// MCB tab-LED poll (Phase 3)
+// ─────────────────────────────────────────────────────────────────
+//
+// Each tab's LED reflects MCB's lease state for that mock's port:
+//   primary → green   (an agent owns this mock directly)
+//   shadow  → blue    (this mock is the shadow of a hardware master)
+//   none    → amber   (no lease — the default visual)
+//
+// MCB unreachable collapses to "none" everywhere — by design; the mock-
+// runner is not a hard dependent of MCB. 2s cadence is enough: leases
+// change on connect/disconnect (rare events) and the user is staring at
+// a hardware-style rail, not a real-time scope.
+
+const MCB_POLL_INTERVAL_MS = 2000;
+
+async function pollMcbLeaseStates() {
+  let states;
+  try { states = await api.getTabLeaseStates(); }
+  catch { return; } // preload missing or main-process error — leave LEDs as-is
+  for (const tab of tabs) {
+    const led = tab.button?.querySelector(".tab__led");
+    if (!led) continue;
+    const state = states[tab.tabId];
+    if (state === "primary" || state === "shadow") led.dataset.state = state;
+    else delete led.dataset.state; // default amber
+  }
+}
+
+void pollMcbLeaseStates();
+setInterval(() => { void pollMcbLeaseStates(); }, MCB_POLL_INTERVAL_MS);
+
+// ─────────────────────────────────────────────────────────────────
 // Backup picker modal
 // ─────────────────────────────────────────────────────────────────
 

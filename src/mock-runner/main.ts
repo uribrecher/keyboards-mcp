@@ -15,6 +15,7 @@ import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
 import { MockEngine } from "./engine.js";
 import * as mockRegistry from "../shared/mock-registry.js";
+import { listAllDevices } from "../mcp-client/mcb-client.js";
 import {
   parseMockrack,
   writeMockrackAtomic,
@@ -671,6 +672,36 @@ ipcMain.handle("list-tabs", (): Array<{
     label: t.label,
     wsPort: t.wsPort,
   }));
+});
+
+// Phase 3 — per-tab MCB lease state. Returns one of "primary" | "shadow" |
+// "none" per live tab so the renderer can color each tab's LED. MCB
+// unreachable (not running, stale socket, etc.) collapses to "none" for
+// every tab — the mock-runner is not a hard dependent of MCB.
+type TabLeaseState = "primary" | "shadow" | "none";
+ipcMain.handle("get-tab-lease-states", async (): Promise<Record<string, TabLeaseState>> => {
+  const result: Record<string, TabLeaseState> = {};
+  for (const t of tabs.values()) result[t.tabId] = "none";
+
+  let leases;
+  try { leases = await listAllDevices(); }
+  catch { return result; }
+
+  for (const t of tabs.values()) {
+    if (!t.model || t.wsPort === null) continue;
+    const expectedPortName = `${t.model.info.displayName} Mock`;
+    for (const lease of leases) {
+      if (lease.primary.portName === expectedPortName && lease.primary.wsPort === t.wsPort) {
+        result[t.tabId] = "primary";
+        break;
+      }
+      if (lease.shadow?.portName === expectedPortName && lease.shadow.wsPort === t.wsPort) {
+        result[t.tabId] = "shadow";
+        break;
+      }
+    }
+  }
+  return result;
 });
 
 // Plan #9: renderer pushes the active tab id whenever it changes so main

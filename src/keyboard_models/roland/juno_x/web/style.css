@@ -136,26 +136,6 @@ body {
   text-transform: uppercase;
 }
 
-.status {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  padding: 3px 10px;
-  border-radius: 10px;
-}
-
-.status.connected {
-  background: #0a1f2e;
-  color: var(--display-text);
-  border: 1px solid #1a3a4a;
-}
-
-.status.disconnected {
-  background: #2a0808;
-  color: #ff5252;
-  border: 1px solid #4a1a1a;
-}
-
 /* ── Part / Engine Nav Bar ── */
 
 .part-bar {

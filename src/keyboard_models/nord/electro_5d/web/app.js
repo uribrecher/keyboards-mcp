@@ -96,10 +96,6 @@ function connect() {
   };
 
   ws.onclose = () => {
-    // Mark MCP as unknown when we lose our own connection
-    const mcpEl = document.getElementById("mcp-status");
-    mcpEl.className = "status disconnected";
-    mcpEl.textContent = "DISCONNECTED";
     reconnectTimer = setTimeout(connect, 2000);
   };
 
@@ -107,16 +103,6 @@ function connect() {
 
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    if (data.mcpConnected !== undefined) {
-      const mcpEl = document.getElementById("mcp-status");
-      if (data.mcpConnected) {
-        mcpEl.className = "status connected";
-        mcpEl.textContent = "MCP CONNECTED";
-      } else {
-        mcpEl.className = "status disconnected";
-        mcpEl.textContent = "MCP DISCONNECTED";
-      }
-    }
     updateInventoryData(data);
     initStaticUIFromState(data);
     updateProgram(data.program);
