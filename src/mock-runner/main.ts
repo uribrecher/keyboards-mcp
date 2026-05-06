@@ -15,7 +15,7 @@ import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
 import { MockEngine } from "./engine.js";
 import * as mockRegistry from "../shared/mock-registry.js";
-import { listAllDevices } from "../mcp-client/mcb-client.js";
+import { listAllDevices } from "../shared/mcb-client.js";
 import {
   parseMockrack,
   writeMockrackAtomic,
