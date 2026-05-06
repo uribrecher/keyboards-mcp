@@ -1,7 +1,8 @@
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, before, after } from "node:test";
 import { strict as assert } from "node:assert";
 import { createServer, type Server } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { probeExistingSocket, prepareSocketPath } from "../../../src/mcb/socket-cleanup.js";
@@ -11,17 +12,44 @@ let dir: string;
 before(() => { dir = mkdtempSync(join(tmpdir(), "mcb-cleanup-")); });
 after(() => { rmSync(dir, { recursive: true, force: true }); });
 
+/**
+ * Create a genuine orphan UDS file: a child process binds the path, then we
+ * SIGKILL it. Node's graceful close() removes the file, so we have to crash
+ * the child to leave a real socket inode behind (the failure mode this code
+ * defends against).
+ */
+async function makeOrphanSocketFile(path: string): Promise<void> {
+  const child = spawn(process.execPath, ["-e", `
+    const net = require("node:net");
+    const s = net.createServer();
+    s.listen(${JSON.stringify(path)}, () => process.stdout.write("ready\\n"));
+  `], { stdio: ["ignore", "pipe", "ignore"] });
+  await new Promise<void>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("orphan helper child failed to listen")), 5000);
+    child.stdout!.on("data", (b) => { if (String(b).includes("ready")) { clearTimeout(t); resolve(); } });
+    child.once("error", reject);
+  });
+  child.kill("SIGKILL");
+  await new Promise<void>((r) => child.once("exit", () => r()));
+  if (!existsSync(path) || !lstatSync(path).isSocket()) {
+    throw new Error(`orphan helper failed: path=${path} exists=${existsSync(path)}`);
+  }
+}
+
 describe("probeExistingSocket", () => {
   it("returns 'absent' when no socket file exists", async () => {
     const path = join(dir, "absent.sock");
     assert.equal(await probeExistingSocket(path), "absent");
   });
 
-  it("returns 'stale' when the file exists but nothing listens", async () => {
+  it("returns 'stale' for an orphan UDS file with no listener", async () => {
     const path = join(dir, "stale.sock");
-    writeFileSync(path, ""); // regular file at the path; connect refused
-    assert.equal(await probeExistingSocket(path), "stale");
-    rmSync(path);
+    await makeOrphanSocketFile(path);
+    try {
+      assert.equal(await probeExistingSocket(path), "stale");
+    } finally {
+      if (existsSync(path)) rmSync(path);
+    }
   });
 
   it("returns 'alive' when an HTTP listener responds at /v1/health", async () => {
@@ -38,19 +66,15 @@ describe("probeExistingSocket", () => {
 });
 
 describe("prepareSocketPath", () => {
-  beforeEach(() => {
-    // Each test owns its own filename to avoid cross-test contamination.
-  });
-
   it("no-ops when the path is absent", async () => {
     const path = join(dir, "prep-absent.sock");
     await prepareSocketPath(path);
     assert.equal(existsSync(path), false);
   });
 
-  it("unlinks a stale socket file", async () => {
+  it("unlinks an orphan socket file", async () => {
     const path = join(dir, "prep-stale.sock");
-    writeFileSync(path, "");
+    await makeOrphanSocketFile(path);
     await prepareSocketPath(path);
     assert.equal(existsSync(path), false);
   });
@@ -70,4 +94,19 @@ describe("prepareSocketPath", () => {
       if (existsSync(path)) rmSync(path);
     }
   });
+
+  it("refuses to unlink a non-socket file (misconfigured MCB_SOCKET safety)", async () => {
+    const path = join(dir, "prep-regular.sock");
+    writeFileSync(path, "important user data");
+    try {
+      await assert.rejects(
+        prepareSocketPath(path),
+        { message: /not-a-socket-file/i },
+      );
+      assert.equal(existsSync(path), true, "non-socket file must NOT be unlinked");
+    } finally {
+      if (existsSync(path)) rmSync(path);
+    }
+  });
+
 });

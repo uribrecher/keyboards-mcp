@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { spawn, type ChildProcess } from "node:child_process";
 import { request } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -69,13 +69,24 @@ describe("MCB lifecycle", () => {
     }
   });
 
-  it("starts cleanly even when a stale socket file is present from a prior crash", async () => {
+  it("starts cleanly when a SIGKILL'd predecessor left an orphan socket file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mcb-lifecycle-"));
     const path = join(dir, "sock");
-    writeFileSync(path, ""); // simulate stale leftover
+    // Simulate an ungraceful exit by spawning MCB and SIGKILLing it once it's
+    // healthy. Node's graceful close() removes the UDS file, so SIGKILL is
+    // required to produce the real "stale socket inode" failure mode.
+    const dead = spawnMcb(path);
+    try {
+      assert.equal(await waitForHealth(path), true, "predecessor MCB failed to come up");
+      dead.kill("SIGKILL");
+      await waitForExit(dead);
+      assert.equal(existsSync(path), true, "SIGKILL should leave the socket file behind");
+    } finally {
+      if (dead.exitCode === null && dead.signalCode === null) dead.kill("SIGKILL");
+    }
     const proc = spawnMcb(path);
     try {
-      assert.equal(await waitForHealth(path), true, "MCB failed to recover from stale socket file");
+      assert.equal(await waitForHealth(path), true, "successor MCB failed to recover from orphan socket file");
       proc.kill("SIGTERM");
       await waitForExit(proc);
     } finally {

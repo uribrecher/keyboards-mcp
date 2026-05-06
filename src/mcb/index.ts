@@ -77,10 +77,13 @@ function installShutdownHandlers(server: StartedServer, socketPath: string): voi
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[mcb] received ${signal}, shutting down`);
-    void server.stop().finally(() => {
-      try { if (existsSync(socketPath)) unlinkSync(socketPath); } catch { /* best-effort */ }
-      process.exit(0);
-    });
+    // Unlink BEFORE awaiting server.stop() so a successor MCB starting in the
+    // shutdown window doesn't have its fresh socket clobbered by our cleanup.
+    // The OS-level binding is held by the open server until close completes,
+    // so existing connections drain unaffected; new clients get ENOENT and can
+    // reach a successor's socket once it binds.
+    try { if (existsSync(socketPath)) unlinkSync(socketPath); } catch { /* best-effort */ }
+    void server.stop().finally(() => process.exit(0));
   };
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT",  () => shutdown("SIGINT"));
