@@ -679,6 +679,13 @@ ipcMain.handle("list-tabs", (): Array<{
 // unreachable (not running, stale socket, etc.) or stalled past the
 // timeout collapses to "none" for every tab — the mock-runner is not a
 // hard dependent of MCB.
+//
+// Match key: wsPort alone. wsPort is the mock-registry's primary key
+// and uniquely identifies a mock instance. Comparing portName is
+// unsafe because Core MIDI auto-suffixes duplicate virtual port names
+// (a second "Roland JUNO-X Mock" becomes "Roland JUNO-X Mock1"), and
+// the engine doesn't see that rename — only the lease's portName
+// (sourced from the OS) reflects it.
 type TabLeaseState = "primary" | "shadow" | "none";
 const MCB_LIST_TIMEOUT_MS = 1500;
 ipcMain.handle("get-tab-lease-states", async (): Promise<Record<string, TabLeaseState>> => {
@@ -700,13 +707,12 @@ ipcMain.handle("get-tab-lease-states", async (): Promise<Record<string, TabLease
   } catch { return result; }
 
   for (const t of candidates) {
-    const expectedPortName = `${t.model!.info.displayName} Mock`;
     for (const lease of leases) {
-      if (lease.primary.portName === expectedPortName && lease.primary.wsPort === t.wsPort) {
+      if (lease.primary.wsPort === t.wsPort) {
         result[t.tabId] = "primary";
         break;
       }
-      if (lease.shadow?.portName === expectedPortName && lease.shadow.wsPort === t.wsPort) {
+      if (lease.shadow?.wsPort === t.wsPort) {
         result[t.tabId] = "shadow";
         break;
       }
