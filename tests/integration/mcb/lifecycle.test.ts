@@ -13,11 +13,15 @@ const cmd = process.execPath;
 const args = [tsxCli, "src/mcb/index.ts"];
 
 function spawnMcb(socketPath: string): ChildProcess {
+  // Default stdio to "ignore". When the child is SIGKILL'd, "pipe" stdio
+  // leaves read-end FDs open in the parent until Node happens to drain them,
+  // which keeps node:test's event loop alive after the test passes.
+  const debug = !!process.env.MCB_TEST_DEBUG;
   const proc = spawn(cmd, args, {
     env: { ...process.env, MCB_SOCKET: socketPath },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: debug ? ["ignore", "pipe", "pipe"] : ["ignore", "ignore", "ignore"],
   });
-  if (process.env.MCB_TEST_DEBUG) {
+  if (debug) {
     proc.stdout?.on("data", (b) => process.stderr.write(`[mcb-out ${proc.pid}] ${b}`));
     proc.stderr?.on("data", (b) => process.stderr.write(`[mcb-err ${proc.pid}] ${b}`));
   }

@@ -19,6 +19,9 @@ after(() => { rmSync(dir, { recursive: true, force: true }); });
  * defends against).
  */
 async function makeOrphanSocketFile(path: string): Promise<void> {
+  // Helper child writes "ready" to a pipe on stdout, then we SIGKILL it.
+  // After the kill we drain stdout so the read-end FD doesn't leak into
+  // node:test's event loop and keep the process alive after the test passes.
   const child = spawn(process.execPath, ["-e", `
     const net = require("node:net");
     const s = net.createServer();
@@ -30,7 +33,7 @@ async function makeOrphanSocketFile(path: string): Promise<void> {
     child.once("error", reject);
   });
   child.kill("SIGKILL");
-  await new Promise<void>((r) => child.once("exit", () => r()));
+  await new Promise<void>((r) => child.once("close", () => r()));
   if (!existsSync(path) || !lstatSync(path).isSocket()) {
     throw new Error(`orphan helper failed: path=${path} exists=${existsSync(path)}`);
   }
