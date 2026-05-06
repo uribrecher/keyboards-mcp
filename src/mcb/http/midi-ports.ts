@@ -24,7 +24,6 @@ interface LeaseAnnotation {
   sessionId: string;
   deviceId: string;
   model: string;
-  label: string;
 }
 
 interface OutputPort {
@@ -65,7 +64,6 @@ export function makeMidiPortsHandler(deps: Deps) {
         sessionId: lease.ownerSessionId,
         deviceId: lease.deviceId,
         model: lease.model,
-        label: lease.label,
       });
       if (lease.shadow) {
         leaseByPort.set(lease.shadow.portName, {
@@ -73,7 +71,6 @@ export function makeMidiPortsHandler(deps: Deps) {
           sessionId: lease.ownerSessionId,
           deviceId: lease.deviceId,
           model: lease.model,
-          label: lease.label,
         });
       }
     }

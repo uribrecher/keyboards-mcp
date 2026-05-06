@@ -16,7 +16,6 @@ export interface Manifest {
   primary: { portName: string; wsPort: number | null };
   input?: { portName: string };
   shadow?: { portName: string; wsPort: number | null };
-  label: string;
   channel: number;
   lowerChannel?: number;
   upperChannel?: number;
@@ -27,7 +26,6 @@ export interface ClaimRequest {
   model: string;
   with_shadow?: string;
   input_port?: string;
-  label?: string;
   channel?: number;
   lower_channel?: number;
   upper_channel?: number;
@@ -126,7 +124,6 @@ export interface MidiPortsResponse {
       sessionId: string;
       deviceId: string;
       model: string;
-      label: string;
     };
   }>;
   inputs: Array<{ name: string }>;

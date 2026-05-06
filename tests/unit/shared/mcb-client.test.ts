@@ -39,10 +39,10 @@ afterEach(async () => {
 
 describe("mcb-client", () => {
   it("claims and releases a lease end-to-end", async () => {
-    const manifest = await claimLease({ port: "Port A", model: "test-model", label: "L" });
+    const manifest = await claimLease({ port: "Port A", model: "test-model" });
     assert.equal(manifest.primary.portName, "Port A");
+    assert.equal(manifest.model, "test-model");
     assert.match(manifest.deviceId, /^[a-f0-9-]{36}$/i);
-    assert.equal(manifest.label, "L");
     await releaseLease(manifest.deviceId);
   });
 

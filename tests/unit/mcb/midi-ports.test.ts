@@ -28,7 +28,6 @@ const lease = (overrides: Partial<Lease> = {}): Lease => ({
   ownerSessionId: "sess-1",
   model: "nord-electro-5d",
   primary: { portName: "Nord Mock", wsPort: 3000 },
-  label: "nordi",
   channel: 1,
   connectedAt: 0,
   ...overrides,

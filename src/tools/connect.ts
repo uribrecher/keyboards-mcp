@@ -117,7 +117,6 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
             model: modelId,
             with_shadow,
             input_port,
-            label,
             channel,
             lower_channel,
             upper_channel,
