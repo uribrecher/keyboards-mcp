@@ -103,11 +103,13 @@ describe("MCB HTTP", () => {
 
   it("POST /v1/devices claims a lease and returns manifest", async () => {
     const sid = await newSession();
-    const r = await call("POST", "/v1/devices", { port: "Port A", model: "m", label: "L" }, { "x-session-id": sid });
+    const r = await call("POST", "/v1/devices", { port: "Port A", model: "m" }, { "x-session-id": sid });
     assert.equal(r.statusCode, 200);
     assert.equal(r.body.ownerSessionId, sid);
     assert.deepEqual(r.body.primary, { portName: "Port A", wsPort: null });
-    assert.equal(r.body.label, "L");
+    assert.equal(r.body.model, "m");
+    // Lease no longer carries a label field — that data lives on the local pool device.
+    assert.equal(r.body.label, undefined);
   });
 
   it("POST /v1/devices fills wsPort for a mock primary", async () => {

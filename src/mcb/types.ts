@@ -24,7 +24,6 @@ export interface Lease {
   primary: PortInfo;
   input?: { portName: string };
   shadow?: PortInfo;
-  label: string;
   channel: number;
   lowerChannel?: number;
   upperChannel?: number;

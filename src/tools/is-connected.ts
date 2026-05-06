@@ -54,7 +54,7 @@ export function registerIsConnected(server: McpServer, pool: DevicePool): void {
         const m = mcbById.get(id);
         if (!m) return `  device ${entry.index}: ⚠ stale — MCB no longer has lease ${id}`;
         const shadow = m.shadow ? `, shadows: ${m.shadow.portName}` : "";
-        const labelStr = m.label ? ` "${m.label}"` : "";
+        const labelStr = entry.device.label ? ` "${entry.device.label}"` : "";
         return `  device ${entry.index}: ${m.model}${labelStr} on ${m.primary.portName}${shadow}`;
       });
 

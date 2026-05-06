@@ -25,7 +25,7 @@ export function makeDevicesHandlers(deps: Deps) {
 
       const body = (ctx.body ?? {}) as {
         port?: string; model?: string; with_shadow?: string; input_port?: string;
-        label?: string; channel?: number; lower_channel?: number; upper_channel?: number;
+        channel?: number; lower_channel?: number; upper_channel?: number;
       };
       if (typeof body.port !== "string" || typeof body.model !== "string") {
         throw new HttpError(400, "invalid-input", "Body must include string `port` and `model`");
@@ -60,7 +60,6 @@ export function makeDevicesHandlers(deps: Deps) {
       const lease: Lease = {
         deviceId, ownerSessionId: sessionId, model: body.model,
         primary, input, shadow,
-        label: body.label ?? "default",
         channel: body.channel ?? 1,
         lowerChannel: body.lower_channel,
         upperChannel: body.upper_channel,
