@@ -26,6 +26,7 @@ beforeEach(async () => {
       findByLabel: (l) => l === "mocky" ? { midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999 } : undefined,
       findByMidiPort: (p) => p === "Mock Port" ? { midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999 } : undefined,
       list: () => [{ midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999 }],
+      listAllWithStale: () => [],
     },
   });
 });

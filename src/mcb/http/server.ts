@@ -9,6 +9,7 @@ import { formatError } from "./errors.js";
 import { makeHealthHandler } from "./health.js";
 import { makeSessionsHandlers } from "./sessions.js";
 import { makeDevicesHandlers } from "./devices.js";
+import { makeMidiPortsHandler } from "./midi-ports.js";
 
 export interface ServerDeps {
   socketPath: string;
@@ -104,10 +105,14 @@ function registerRoutes(routes: Route[], deps: ServerDeps): void {
     sessions: deps.sessions, leases: deps.leases, bridges: deps.bridges,
     portList: deps.portList, mockRegistry: deps.mockRegistry,
   });
+  const midiPorts = makeMidiPortsHandler({
+    leases: deps.leases, portList: deps.portList, mockRegistry: deps.mockRegistry,
+  });
   routes.push(
     { method: "POST",   pattern: /^\/v1\/sessions$/,                          handler: sess.create },
     { method: "POST",   pattern: /^\/v1\/devices$/,                           handler: dev.create },
     { method: "GET",    pattern: /^\/v1\/devices$/,                           handler: dev.list },
     { method: "DELETE", pattern: /^\/v1\/devices\/(?<id>[a-f0-9-]+)$/,         handler: dev.delete },
+    { method: "GET",    pattern: /^\/v1\/midi\/ports$/,                       handler: midiPorts },
   );
 }

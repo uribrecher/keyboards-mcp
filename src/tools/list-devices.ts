@@ -1,9 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { listOutputPorts, listInputPorts } from "../midi/midi-manager.js";
 import type { DevicePool } from "../shared/device-pool.js";
-import { readAllWithStaleFlag, type MockRegistryEntry } from "../shared/mock-registry.js";
-import { listAllDevices, MCBError, type Manifest } from "../shared/mcb-client.js";
+import { listMidiPorts, MCBError } from "../shared/mcb-client.js";
 
 const MockRegistrySchema = z.object({
   midiPort: z.string(),
@@ -69,17 +67,33 @@ export function registerListDevices(server: McpServer, pool: DevicePool): void {
       outputSchema: ListMidiDevicesOutputSchema,
     },
     async () => {
-      const outputs = listOutputPorts();
-      const inputs = listInputPorts();
+      // Source of truth: MCB's GET /v1/midi/ports — it owns OS port
+      // enumeration, mock-registry annotation, and lease join. The MCP
+      // only adds local pool markers (which MCB doesn't know about).
+      const mcbQueried = !process.env.MOCK_WS_URL;
+      let outputs: Array<{ name: string; mock?: z.infer<typeof MockRegistrySchema>; lease?: z.infer<typeof LeaseSchema> }> = [];
+      let inputs: Array<{ name: string }> = [];
+      let mcbReachable = mcbQueried;
+      let mcbError: string | undefined;
+      if (mcbQueried) {
+        try {
+          const ports = await listMidiPorts();
+          outputs = ports.outputs;
+          inputs = ports.inputs;
+        } catch (err) {
+          mcbReachable = false;
+          mcbError = err instanceof MCBError ? `${err.code}: ${err.message}` : String(err);
+        }
+      }
 
-      // Mock-registry annotations.
-      const registryByPort = new Map<string, MockRegistryEntry & { stale: boolean }>();
-      for (const entry of readAllWithStaleFlag()) registryByPort.set(entry.midiPort, entry);
-
-      // MCP-local pool markers (per output / forward / input).
+      // MCP-local pool markers — keyed by port name, layered on top of MCB's view.
       const outputMarkers = new Map<string, Array<z.infer<typeof PoolMarkerSchema>>>();
       const inputMarkers = new Map<string, Array<z.infer<typeof PoolMarkerSchema>>>();
-      const pushMarker = (map: Map<string, Array<z.infer<typeof PoolMarkerSchema>>>, port: string, marker: z.infer<typeof PoolMarkerSchema>) => {
+      const pushMarker = (
+        map: Map<string, Array<z.infer<typeof PoolMarkerSchema>>>,
+        port: string,
+        marker: z.infer<typeof PoolMarkerSchema>,
+      ) => {
         const arr = map.get(port) ?? [];
         arr.push(marker);
         map.set(port, arr);
@@ -95,51 +109,16 @@ export function registerListDevices(server: McpServer, pool: DevicePool): void {
         if (ports.input) pushMarker(inputMarkers, ports.input, { ...baseMarker, role: "input" });
       }
 
-      // MCB lease annotations across ALL sessions. Graceful-degrade when MCB is unreachable.
-      const leaseByPort = new Map<string, z.infer<typeof LeaseSchema>>();
-      let mcbReachable = true;
-      let mcbError: string | undefined;
-      const mcbQueried = !process.env.MOCK_WS_URL;
-      if (mcbQueried) {
-        try {
-          const all: Manifest[] = await listAllDevices();
-          for (const m of all) {
-            leaseByPort.set(m.primary.portName, {
-              kind: "primary", sessionId: m.ownerSessionId, deviceId: m.deviceId, model: m.model, label: m.label,
-            });
-            if (m.shadow) {
-              leaseByPort.set(m.shadow.portName, {
-                kind: "shadow", sessionId: m.ownerSessionId, deviceId: m.deviceId, model: m.model, label: m.label,
-              });
-            }
-          }
-        } catch (err) {
-          mcbReachable = false;
-          mcbError = err instanceof MCBError ? `${err.code}: ${err.message}` : String(err);
-        }
-      } else {
-        mcbReachable = false;
-      }
-
       const structuredContent = {
-        outputs: outputs.map((p) => {
-          const reg = registryByPort.get(p.name);
-          return {
-            index: p.index,
-            name: p.name,
-            mock: reg ? {
-              midiPort: reg.midiPort, wsPort: reg.wsPort,
-              modelId: reg.modelId, displayName: reg.displayName,
-              label: reg.label, pid: reg.pid,
-              startedAt: reg.startedAt, lastTouched: reg.lastTouched,
-              stale: reg.stale,
-            } : undefined,
-            poolMarkers: outputMarkers.get(p.name) ?? [],
-            lease: leaseByPort.get(p.name),
-          };
-        }),
-        inputs: inputs.map((p) => ({
-          index: p.index,
+        outputs: outputs.map((p, index) => ({
+          index,
+          name: p.name,
+          mock: p.mock,
+          poolMarkers: outputMarkers.get(p.name) ?? [],
+          lease: p.lease,
+        })),
+        inputs: inputs.map((p, index) => ({
+          index,
           name: p.name,
           poolMarkers: inputMarkers.get(p.name) ?? [],
         })),

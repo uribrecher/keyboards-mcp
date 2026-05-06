@@ -73,6 +73,41 @@ export async function listAllDevices(): Promise<Manifest[]> {
   return (await call("GET", "/v1/devices")) as Manifest[];
 }
 
+/**
+ * Unified MIDI-port listing from MCB. Aggregates OS port enumeration,
+ * mock-registry annotations (incl. stale flag), and lease info into a
+ * single response — so MCP-side tools don't have to duplicate MCB's
+ * data sources.
+ */
+export interface MidiPortsResponse {
+  outputs: Array<{
+    name: string;
+    mock?: {
+      midiPort: string;
+      wsPort: number;
+      modelId: string;
+      displayName: string;
+      label: string;
+      pid: number;
+      startedAt: string;
+      lastTouched: string;
+      stale: boolean;
+    };
+    lease?: {
+      kind: "primary" | "shadow";
+      sessionId: string;
+      deviceId: string;
+      model: string;
+      label: string;
+    };
+  }>;
+  inputs: Array<{ name: string }>;
+}
+
+export async function listMidiPorts(): Promise<MidiPortsResponse> {
+  return (await call("GET", "/v1/midi/ports")) as MidiPortsResponse;
+}
+
 /** Reset the cached session — primarily for tests. */
 export function resetSession(): void { cachedSessionId = null; }
 
