@@ -7,17 +7,6 @@ architectural_reference: ./2026-05-05-midi-connections-broker-design.md
 
 # midi-connections-broker (MCB) — Deferred Backlog
 
-## Sound-recreation-agent uses an MCB-issued sessionId
-
-Sibling-repo change in `../sound-recreation-agent`. The agent currently generates its own UUID at startup (`randomUUID()` in `src/index.ts`) and surfaces it via `/health`. Replace with an MCB-issued sessionId so the UI, logs, and connection-viewer all show the same id for a given agent run.
-
-Scope:
-- At server boot, before `/health` is wired, call `POST /v1/sessions` against MCB (or `POST /v1/sessions/:id/attach` if a cached id exists from a previous run) and use the returned `sessionId` as the agent's process identity.
-- Drop the agent-side UUID generation. `/health` returns the MCB sessionId only.
-- The MCP child process the agent spawns continues to claim its own sessionId from MCB (separate process, separate session — peers under MCB).
-- If MCB is unreachable at startup, the agent should fail fast with a clear error.
-- Agent-repo tests: `/health` echoes a UUID matching MCB's `POST /v1/sessions` response shape; MCB-unreachable produces a startup error.
-
 ## Operator dashboard
 
 A full listing of every session/lease/bridge across the system. Resurface as Phase 4 if multi-agent rigs grow.
