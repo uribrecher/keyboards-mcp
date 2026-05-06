@@ -4,33 +4,6 @@
 
 ## Tasks
 
-### 9. File menu — Save / Save as… / Open… / Recent setups
-
-**Status:** Needs brainstorming — file format + scope of "studio state" need to be designed.
-
-Add a top-level **File** menu to the Electron mock-runner shell with:
-
-- **Save** — write the current studio state to the last-used setup file (or behave like *Save as…* if none).
-- **Save as…** — native save dialog; user picks the path. File format TBD (JSON is the obvious default).
-- **Open…** — native open dialog; load a setup file and restore the rack: re-create tabs in order, assign labels, pick the right model per tab, and recall each tab's internal mock state (params, program/song selection, etc.).
-- **Recent setups** — submenu of up to 5 most-recently-used setup paths. macOS conventionally calls this *Open Recent*; Electron's `app.addRecentDocument()` integrates with the Dock.
-
-Studio state to persist (initial scope):
-- Tab list with `{ modelId, label }` per tab.
-- Per-tab parameter state (the mock handler's current `getFullState()`-shaped snapshot, minus inventory).
-- Active tab index.
-
-Open / restore considerations:
-- Free WS ports differ between sessions, so don't persist them — re-allocate on load.
-- If a saved tab references a model that's no longer registered, skip it with a clear message in the chat console.
-- Should `Open` close existing tabs or merge? Probably close (with a "save current?" prompt if dirty).
-- Mock state is owned by the engine's `MockHandler` — likely needs a new `setFullState(snapshot)` interface so the handler can load the snapshot back in. This is a model-side contract change.
-
-Open questions for brainstorming:
-- Does saved state include the per-tab backup-cache *label*, or just the program/song selection? (The cache is keyed by label and lives on disk; arguably it should not be embedded in the setup file.)
-- Should the `_default` label be auto-renamed on first save (so saved setups always reference user-meaningful labels)?
-- Auto-save / unsaved-indicator UX in the title bar.
-
 ### 10. Bidirectional mock/MCP state reconciliation via RQ1 [BRAINSTORM]
 
 **Status:** Needs brainstorming — architectural design required before planning.
