@@ -5,7 +5,7 @@ import { startServer } from "./http/server.js";
 import { LeaseRegistry } from "./lease-registry.js";
 import { BridgeRegistry } from "./bridge-registry.js";
 import { SessionManager } from "./session-manager.js";
-import { findByMidiPort, readActive } from "../shared/mock-registry.js";
+import { findByMidiPort, readActive, readAllWithStaleFlag } from "../shared/mock-registry.js";
 import type { MockRegistryReader, PortListReader } from "./types.js";
 
 const SOCKET_PATH = process.env.MCB_SOCKET ?? join(homedir(), ".mcb", "sock");
@@ -29,6 +29,7 @@ const mockRegistry: MockRegistryReader = {
   findByLabel: (label) => readActive().find((e) => e.label === label),
   findByMidiPort: (midiPort) => findByMidiPort(midiPort),
   list: () => readActive(),
+  listAllWithStale: () => readAllWithStaleFlag(),
 };
 
 const LIVENESS_SWEEP_INTERVAL_MS = 1000;
