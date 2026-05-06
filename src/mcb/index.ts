@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { startServer } from "./http/server.js";
+import { existsSync, unlinkSync } from "node:fs";
+import { startServer, type StartedServer } from "./http/server.js";
 import { LeaseRegistry } from "./lease-registry.js";
 import { BridgeRegistry } from "./bridge-registry.js";
 import { SessionManager } from "./session-manager.js";
+import { prepareSocketPath } from "./socket-cleanup.js";
 import { findByMidiPort, readActive, readAllWithStaleFlag } from "../shared/mock-registry.js";
 import type { MockRegistryReader, PortListReader } from "./types.js";
 
@@ -35,17 +37,21 @@ const mockRegistry: MockRegistryReader = {
 const LIVENESS_SWEEP_INTERVAL_MS = 1000;
 
 (async () => {
+  await prepareSocketPath(SOCKET_PATH);
+
   const leases = new LeaseRegistry();
   const bridges = new BridgeRegistry();
   const sessions = new SessionManager();
 
   const portList = await buildPortListReader();
-  await startServer({
+  const server = await startServer({
     socketPath: SOCKET_PATH,
     leases, bridges, sessions,
     portList, mockRegistry,
   });
   console.log(`[mcb] listening on ${SOCKET_PATH}`);
+
+  installShutdownHandlers(server, SOCKET_PATH);
 
   // Periodic PID-liveness sweep. Hard-GCed sessions get their leases + bridges
   // released so subsequent claims on the same port aren't blocked forever.
@@ -64,3 +70,21 @@ const LIVENESS_SWEEP_INTERVAL_MS = 1000;
     }
   }, LIVENESS_SWEEP_INTERVAL_MS).unref();
 })().catch((err) => { console.error(err); process.exit(1); });
+
+function installShutdownHandlers(server: StartedServer, socketPath: string): void {
+  let shuttingDown = false;
+  const shutdown = (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[mcb] received ${signal}, shutting down`);
+    // Unlink BEFORE awaiting server.stop() so a successor MCB starting in the
+    // shutdown window doesn't have its fresh socket clobbered by our cleanup.
+    // The OS-level binding is held by the open server until close completes,
+    // so existing connections drain unaffected; new clients get ENOENT and can
+    // reach a successor's socket once it binds.
+    try { if (existsSync(socketPath)) unlinkSync(socketPath); } catch { /* best-effort */ }
+    void server.stop().finally(() => process.exit(0));
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT",  () => shutdown("SIGINT"));
+}
