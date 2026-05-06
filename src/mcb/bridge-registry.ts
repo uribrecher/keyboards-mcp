@@ -1,7 +1,10 @@
-import type { ShadowEndpoint } from "./types.js";
+interface BridgeRecord {
+  masterPortName: string;
+  shadowPortName: string;
+}
 
 export class BridgeRegistry {
-  private bridges = new Map<string, ShadowEndpoint>();
+  private bridges = new Map<string, BridgeRecord>();
   private shadowIndex = new Map<string, string>();
   private masterIndex = new Map<string, string>();
 
@@ -15,10 +18,13 @@ export class BridgeRegistry {
     if (this.shadowIndex.has(shadowPortName)) {
       throw new Error(`shadow-conflict: ${shadowPortName} is already a shadow target`);
     }
+    if (this.masterIndex.has(masterPortName)) {
+      throw new Error(`master-port-conflict: ${masterPortName} is already a master port`);
+    }
     if (this.wouldFormCycle(masterPortName, shadowPortName)) {
       throw new Error(`cycle-would-form: bridge ${masterPortName}→${shadowPortName} would close a chain`);
     }
-    this.bridges.set(masterDeviceId, { portName: shadowPortName });
+    this.bridges.set(masterDeviceId, { masterPortName, shadowPortName });
     this.shadowIndex.set(shadowPortName, masterDeviceId);
     this.masterIndex.set(masterPortName, masterDeviceId);
   }
@@ -26,18 +32,13 @@ export class BridgeRegistry {
   remove(masterDeviceId: string): void {
     const bridge = this.bridges.get(masterDeviceId);
     if (!bridge) return;
-    this.shadowIndex.delete(bridge.portName);
-    for (const [portName, devId] of this.masterIndex) {
-      if (devId === masterDeviceId) {
-        this.masterIndex.delete(portName);
-        break;
-      }
-    }
+    this.shadowIndex.delete(bridge.shadowPortName);
+    this.masterIndex.delete(bridge.masterPortName);
     this.bridges.delete(masterDeviceId);
   }
 
   shadowOf(masterDeviceId: string): string | undefined {
-    return this.bridges.get(masterDeviceId)?.portName;
+    return this.bridges.get(masterDeviceId)?.shadowPortName;
   }
 
   isShadowTarget(portName: string): { masterDeviceId: string } | undefined {
@@ -61,7 +62,7 @@ export class BridgeRegistry {
       seen.add(current);
       const nextMasterId = this.masterIndex.get(current);
       if (nextMasterId === undefined) return false;
-      current = this.bridges.get(nextMasterId)?.portName;
+      current = this.bridges.get(nextMasterId)?.shadowPortName;
     }
     return false;
   }

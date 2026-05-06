@@ -16,6 +16,7 @@ export function formatError(err: unknown): { statusCode: number; body: { error: 
     if (msg.includes("self-shadow"))        return { statusCode: 409, body: { error: "self-shadow", message: msg } };
     if (msg.includes("bridge-already-exists")) return { statusCode: 409, body: { error: "bridge-already-exists", message: msg } };
     if (msg.includes("shadow-conflict"))    return { statusCode: 409, body: { error: "shadow-conflict", message: msg } };
+    if (msg.includes("master-port-conflict")) return { statusCode: 409, body: { error: "master-port-conflict", message: msg } };
     if (msg.includes("cycle-would-form"))   return { statusCode: 409, body: { error: "cycle-would-form", message: msg } };
   }
   const errorId = Math.random().toString(36).slice(2, 10);

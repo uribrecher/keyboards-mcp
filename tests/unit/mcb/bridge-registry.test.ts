@@ -94,13 +94,20 @@ describe("BridgeRegistry", () => {
       assert.equal(registry.shadowOf("dev-C"), "port-A");
     });
 
-    it("after remove, the freed master port is no longer treated as a chain hop", () => {
+    it("rejects a second bridge that reuses an existing master port", () => {
       registry.add("dev-A", "port-A", "port-B");
-      registry.add("dev-B", "port-B", "port-C");
-      registry.remove("dev-B");
-      // Without masterIndex cleanup on remove, the walker would still see port-B as
-      // a master and follow to its old shadow port-C, which would falsely reject A→C.
-      registry.add("dev-A2", "port-A2", "port-C");
+      assert.throws(
+        () => registry.add("dev-A2", "port-A", "port-C"),
+        { message: /master-port-conflict/i },
+      );
+    });
+
+    it("after remove, the freed master port is reusable for a new bridge", () => {
+      registry.add("dev-A", "port-A", "port-B");
+      registry.remove("dev-A");
+      // Without masterIndex cleanup on remove, this would falsely reject as
+      // master-port-conflict because masterIndex would still hold port-A → dev-A.
+      registry.add("dev-A2", "port-A", "port-C");
       assert.equal(registry.shadowOf("dev-A2"), "port-C");
     });
   });
