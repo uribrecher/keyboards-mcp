@@ -6,24 +6,29 @@ Currently supported: **Nord Electro 5D**, **Roland JUNO-X**, **Prophet-6**
 
 ## What it does
 
-- **Connect** to a keyboard over USB MIDI (auto-detects the device model)
+- **Connect** to a keyboard over USB MIDI by port name and model id, with an optional mock-UI shadow port
 - **Read and change parameters** — piano type/model, organ drawbars, effects, EQ, reverb, delay, and more
 - **Load programs** by bank and slot number
 - **Load set list songs** by bank, slot, and part
 - **Browse inventory** — list programs and songs from extracted backups with name and bank filtering
 - **Extract backup files** into a structured inventory of all sounds, programs, and set lists
 - **Mock device** with a model-specific web UI for development and testing without hardware
+
 ## Architecture
 
 **Model-delegated design.** MCP tools are thin wrappers — keyboard models own all business logic.
 
 ```
 AI Agent  <──MCP──>  MCP Server  <──MIDI──>  Keyboard (or Mock)
-                            │
+                          │
+                          ├──HTTP/UDS──> MCB (midi-connections-broker)
+                          │              claims port leases so concurrent
+                          │              agent sessions don't collide
+                          │
                      tools/ (thin delegates)
-                            │
+                          │
                      DevicePool → KeyboardDevice (1..N)
-                            │
+                          │
                keyboard_models/<mfr>/<model>/
 ```
 
@@ -31,15 +36,18 @@ A **KeyboardModel** is a type of keyboard (e.g., "Nord Electro 5D"). It owns sha
 
 A **KeyboardDevice** is a specific physical unit or mock instance. Each device has its own MIDI connection, state, and backup data. Multiple devices of the same model can coexist.
 
+The **midi-connections-broker (MCB)** is a separate long-running process that owns MIDI port leases. The MCP server claims a lease via MCB on `connect_to_keyboard` and releases it on `disconnect_from_keyboard`, so multiple agent sessions can share a host without stepping on each other's ports. MCB also exposes the canonical port list and reaps leases held by dead processes.
+
 ### Key directories
 
 | Path | Description |
 |------|-------------|
 | `src/index.ts` | MCP server entry point |
 | `src/tools/` | MCP tool registrations (thin wrappers that delegate to device methods) |
-| `src/shared/` | Shared interfaces: KeyboardModel, KeyboardDevice, MidiConnection, MockHandler |
+| `src/shared/` | Shared interfaces: KeyboardModel, KeyboardDevice, MidiConnection, MockHandler, mcb-client |
 | `src/keyboard_models/` | Pluggable keyboard models (`<manufacturer>/<model>/`) |
 | `src/midi/` | MIDI I/O manager (implements MidiConnection) |
+| `src/mcb/` | midi-connections-broker — lease registry, session manager, HTTP-over-UDS API |
 | `src/mock-runner/` | Thin Electron mock engine — delegates all logic to model's MockHandler |
 | `docs/plans/` | Implementation plans (numbered by execution order) |
 
@@ -69,6 +77,16 @@ npm install
 npm run build
 ```
 
+### Run the connections broker
+
+`connect_to_keyboard` claims a port lease from MCB before opening MIDI, so MCB must be running:
+
+```bash
+npm run mcb
+```
+
+MCB listens on a Unix domain socket at `~/.mcb/sock` (override with `MCB_SOCKET`). Leave it running in its own terminal alongside the MCP server. CI runs that set `MIDI_TRANSPORT=ws` (docker-compose, headless tests) bypass MCB.
+
 ### Configure in your MCP client
 
 Add to your MCP settings (e.g. `.claude/settings.json` for Claude Code):
@@ -93,7 +111,7 @@ Once connected, the following tools are available:
 | Tool | Description |
 |------|-------------|
 | `list_midi_devices` | List available MIDI ports |
-| `connect_to_keyboard` | Connect to the keyboard (auto-detects model) |
+| `connect_to_keyboard` | Claim an MCB lease and connect to the keyboard (`port` + `model` required, optional `with_shadow` mock label) |
 | `disconnect_from_keyboard` | Disconnect from the keyboard |
 | `is_connected` | Check connection status |
 | `set_parameters` | Change one or more parameters by name and value |
