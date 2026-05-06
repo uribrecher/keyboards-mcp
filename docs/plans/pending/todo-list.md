@@ -58,3 +58,29 @@ Implement a new keyboard model emulating the famous PPG Wave synthesizer. The PP
 
 Implement a new keyboard model emulating the Yamaha DX7, the iconic FM (frequency modulation) synthesizer. The DX7 defined the sound of the 1980s with its electric pianos, bells, bass, and brass patches. Requires designing the FM synthesis parameter map (6 operators, algorithms 1-32, operator levels/ratios/envelopes, feedback, LFO), mock handler with FM engine behavior, and web UI. The operator/algorithm architecture is fundamentally different from subtractive synthesis, so the parameter system and UI will need a distinct approach. Should follow the same model architecture pattern as the JUNO-X.
 
+### 18. Mock-runner Event Log panel — separate non-chat events from the chat console
+
+**Status:** Needs brainstorming — UI surface design required before planning.
+
+The chat console in the mock-runner shell currently absorbs *everything* that comes through `menu:console-note`: agent dialog (the actual reason it exists) plus a stream of unrelated lifecycle / status / "not yet implemented" notes from the per-tab MockHandlers and from File-menu actions. After loading a multi-tab `.mockrack`, the chat is flooded with lines like:
+
+```
+Roland JUNO-X ("junio"): full state restore not yet implemented — knobs reset to defaults.
+Roland JUNO-X ("jino"): full state restore not yet implemented — knobs reset to defaults.
+Prophet-6 ("pro_fat"): full state restore not yet implemented — knobs reset to defaults.
+```
+
+These belong in their own pane.
+
+Design questions for brainstorming:
+
+- **Layout**: separate tab next to the chat? Collapsible drawer at the bottom? Side-by-side panes? Whatever shape it takes, the chat must stay focused on the agent dialog.
+- **Routing**: today the renderer subscribes to `menu:console-note` from `src/mock-runner/main.ts`. Need a second IPC channel (e.g. `menu:event-log`) and a clear rule for which messages go where. First-pass split: anything emitted in response to user agent input → chat; anything emitted by File-menu actions, tab lifecycle, MockHandler init/restore, MCB lease changes → event log.
+- **Persistence + scrollback**: chat already has scrollback inside a session. Event log should match, plus probably a clear-all and timestamp on each line.
+- **Filtering / severity**: tab lifecycle notes are info-level; "not yet implemented" is warn; MCB-unreachable would be error. Worth color-coding from day one.
+- **Source attribution**: include the originating tab/model where applicable (the existing notes already prefix with `${model.info.displayName} ("${label}")` — keep that).
+
+Emitter sites to migrate (search `mainWindow?.webContents.send("menu:console-note"` in `src/mock-runner/main.ts`): tab create/close/select-model, setup load/save, full-state restore notices, MCB-aware tab LED status changes if any are surfaced. Audit the full list in the planning pass.
+
+Out of scope for the MVP: a unified backend event-log that aggregates across MCB / mock-runner / MCP servers — the *Operator dashboard* item in the MCB backlog covers that broader ambition. This task is just the mock-runner shell: pull the noise out of the chat box.
+
