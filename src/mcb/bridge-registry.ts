@@ -3,6 +3,7 @@ import type { ShadowEndpoint } from "./types.js";
 export class BridgeRegistry {
   private bridges = new Map<string, ShadowEndpoint>();
   private shadowIndex = new Map<string, string>();
+  private masterIndex = new Map<string, string>();
 
   add(masterDeviceId: string, masterPortName: string, shadowPortName: string): void {
     if (masterPortName === shadowPortName) {
@@ -14,14 +15,24 @@ export class BridgeRegistry {
     if (this.shadowIndex.has(shadowPortName)) {
       throw new Error(`shadow-conflict: ${shadowPortName} is already a shadow target`);
     }
+    if (this.wouldFormCycle(masterPortName, shadowPortName)) {
+      throw new Error(`cycle-would-form: bridge ${masterPortName}→${shadowPortName} would close a chain`);
+    }
     this.bridges.set(masterDeviceId, { portName: shadowPortName });
     this.shadowIndex.set(shadowPortName, masterDeviceId);
+    this.masterIndex.set(masterPortName, masterDeviceId);
   }
 
   remove(masterDeviceId: string): void {
     const bridge = this.bridges.get(masterDeviceId);
     if (!bridge) return;
     this.shadowIndex.delete(bridge.portName);
+    for (const [portName, devId] of this.masterIndex) {
+      if (devId === masterDeviceId) {
+        this.masterIndex.delete(portName);
+        break;
+      }
+    }
     this.bridges.delete(masterDeviceId);
   }
 
@@ -32,5 +43,26 @@ export class BridgeRegistry {
   isShadowTarget(portName: string): { masterDeviceId: string } | undefined {
     const masterDeviceId = this.shadowIndex.get(portName);
     return masterDeviceId ? { masterDeviceId } : undefined;
+  }
+
+  /**
+   * Walk the existing bridge graph from `shadowPortName` along the chain of
+   * (master-port → shadow-port) edges. If the walk reaches `masterPortName`,
+   * adding the proposed edge would close a cycle. The seen-set guards against
+   * a degenerate pre-existing cycle in the graph (shouldn't happen, but the
+   * walker must always terminate).
+   */
+  private wouldFormCycle(masterPortName: string, shadowPortName: string): boolean {
+    let current: string | undefined = shadowPortName;
+    const seen = new Set<string>();
+    while (current !== undefined) {
+      if (current === masterPortName) return true;
+      if (seen.has(current)) return false;
+      seen.add(current);
+      const nextMasterId = this.masterIndex.get(current);
+      if (nextMasterId === undefined) return false;
+      current = this.bridges.get(nextMasterId)?.portName;
+    }
+    return false;
   }
 }
