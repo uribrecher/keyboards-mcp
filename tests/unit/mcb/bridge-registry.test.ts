@@ -42,4 +42,73 @@ describe("BridgeRegistry", () => {
     assert.equal(registry.shadowOf("dev-A"), undefined);
     assert.equal(registry.isShadowTarget("Shadow Port"), undefined);
   });
+
+  describe("cycle detection", () => {
+    it("rejects a 2-hop cycle (A→B then B→A)", () => {
+      registry.add("dev-A", "port-A", "port-B");
+      assert.throws(
+        () => registry.add("dev-B", "port-B", "port-A"),
+        { message: /cycle-would-form/i },
+      );
+    });
+
+    it("rejects a 3-hop cycle (A→B, B→C, then C→A)", () => {
+      registry.add("dev-A", "port-A", "port-B");
+      registry.add("dev-B", "port-B", "port-C");
+      assert.throws(
+        () => registry.add("dev-C", "port-C", "port-A"),
+        { message: /cycle-would-form/i },
+      );
+    });
+
+    it("rejects an N-hop cycle (4 hops)", () => {
+      registry.add("dev-A", "port-A", "port-B");
+      registry.add("dev-B", "port-B", "port-C");
+      registry.add("dev-C", "port-C", "port-D");
+      assert.throws(
+        () => registry.add("dev-D", "port-D", "port-A"),
+        { message: /cycle-would-form/i },
+      );
+    });
+
+    it("allows a multi-hop chain that does not close (A→B then B→C)", () => {
+      registry.add("dev-A", "port-A", "port-B");
+      registry.add("dev-B", "port-B", "port-C");
+      assert.equal(registry.shadowOf("dev-A"), "port-B");
+      assert.equal(registry.shadowOf("dev-B"), "port-C");
+    });
+
+    it("allows independent bridges that share no ports", () => {
+      registry.add("dev-X", "port-X", "port-Y");
+      registry.add("dev-A", "port-A", "port-B");
+      assert.equal(registry.shadowOf("dev-X"), "port-Y");
+      assert.equal(registry.shadowOf("dev-A"), "port-B");
+    });
+
+    it("allows extending a chain after a remove that broke the cycle path", () => {
+      registry.add("dev-A", "port-A", "port-B");
+      registry.add("dev-B", "port-B", "port-C");
+      registry.remove("dev-A");
+      // C→A is now legal — no chain from A back to C.
+      registry.add("dev-C", "port-C", "port-A");
+      assert.equal(registry.shadowOf("dev-C"), "port-A");
+    });
+
+    it("rejects a second bridge that reuses an existing master port", () => {
+      registry.add("dev-A", "port-A", "port-B");
+      assert.throws(
+        () => registry.add("dev-A2", "port-A", "port-C"),
+        { message: /master-port-conflict/i },
+      );
+    });
+
+    it("after remove, the freed master port is reusable for a new bridge", () => {
+      registry.add("dev-A", "port-A", "port-B");
+      registry.remove("dev-A");
+      // Without masterIndex cleanup on remove, this would falsely reject as
+      // master-port-conflict because masterIndex would still hold port-A → dev-A.
+      registry.add("dev-A2", "port-A", "port-C");
+      assert.equal(registry.shadowOf("dev-A2"), "port-C");
+    });
+  });
 });
