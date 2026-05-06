@@ -7,18 +7,6 @@ architectural_reference: ./2026-05-05-midi-connections-broker-design.md
 
 # midi-connections-broker (MCB) — Deferred Backlog
 
-## Drop `lease.label`
-
-The `Lease` type carries a `label: string` field with no real consumer. Today the connect tool calls `claimLease` before the auto-adopt step that resolves the real label from the mock-registry, so MCB always stores `"default"` while the local pool device shows the auto-adopted name — confusing without delivering value.
-
-Scope:
-- Remove `label` from the `Lease` type (`src/mcb/types.ts`).
-- Drop the `label` field from `POST /v1/devices` request body and from the manifest response (`src/mcb/http/devices.ts`, `Manifest` in `src/shared/mcb-client.ts`).
-- Drop `lease.label` from `GET /v1/midi/ports` (`src/mcb/http/midi-ports.ts`) and from the `MidiPortsResponse` shape.
-- `is_connected` falls back to `m.model + portName` for leases this MCP doesn't own, and continues to use `entry.device.label` for leases it does own.
-- Update tests to drop label assertions on the MCB side; keep them on the local-pool side (`entry.device.label`).
-- `connect_to_keyboard`'s `label` arg stays — it's the local pool device's label, which is load-bearing for the per-instance backup-cache path.
-
 ## Sound-recreation-agent uses an MCB-issued sessionId
 
 Sibling-repo change in `../sound-recreation-agent`. The agent currently generates its own UUID at startup (`randomUUID()` in `src/index.ts`) and surfaces it via `/health`. Replace with an MCB-issued sessionId so the UI, logs, and connection-viewer all show the same id for a given agent run.

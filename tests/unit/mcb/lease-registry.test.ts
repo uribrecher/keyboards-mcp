@@ -9,7 +9,7 @@ function fixture(o: Partial<Lease> = {}): Lease {
   return {
     deviceId: "dev-1", ownerSessionId: "sess-1", model: "m",
     primary: { portName: "Port A", wsPort: null },
-    label: "default", channel: 1, connectedAt: Date.now(), ...o,
+    channel: 1, connectedAt: Date.now(), ...o,
   };
 }
 
