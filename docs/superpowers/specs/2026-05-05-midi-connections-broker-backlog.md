@@ -51,6 +51,33 @@ Open follow-ups:
 
 ## Cross-phase items (not phase-specific)
 
+### Drop `lease.label`
+
+The `Lease` type carries a `label: string` field that has only one consumer left worth listing: rendering a human-readable name in `is_connected` and `list_midi_devices` for leases held by other MCP sessions. Today the field defaults to `"default"` (because `connect_to_keyboard` calls `claimLease` before the auto-adopt step that resolves the real label from the mock-registry). The result is two views disagreeing: the local pool device shows the auto-adopted label (e.g. `"junio"`) while MCB shows `"default"` — confusing without delivering value.
+
+Decision: drop the field for the MVP. The lease's `deviceId` is already a stable identifier; cross-session displays can fall back to `model + portName` (and `entry.device.label` when the local MCP owns the lease). If a later use case ever needs cross-session human-readable identity, reintroduce it with the auto-adopt fix already in place.
+
+Scope:
+- Remove `label` from the `Lease` type (`src/mcb/types.ts`).
+- Drop the `label` field from `POST /v1/devices` request body and from the manifest response (`src/mcb/http/devices.ts`, `Manifest` in `src/shared/mcb-client.ts`).
+- Drop `lease.label` from `GET /v1/midi/ports` (`src/mcb/http/midi-ports.ts`) and from the `MidiPortsResponse` shape.
+- `is_connected` falls back to `m.model + portName` for leases this MCP doesn't own, and continues to use `entry.device.label` for the ones it does.
+- Update tests to drop label assertions on the MCB side; keep them on the local-pool side (`entry.device.label`).
+- `connect_to_keyboard`'s `label` arg stays — it's the local pool device's label, which is still load-bearing for the per-instance backup-cache path.
+
+### Sound-recreation-agent uses an MCB-issued sessionId
+
+`sound-recreation-agent` currently generates its own UUID at startup (used for log correlation, surfaced via `/health` to the agent UI). It's a parallel identity to the MCB sessionId the MCP claims later, and the two never align. Replace the self-generated UUID with the MCB-issued sessionId so the UI, logs, MCB, and connection-viewer all show the same id for a given agent run.
+
+Scope (in `sound-recreation-agent`):
+- At server boot, before `/health` is wired, call `POST /v1/sessions` against MCB (or `POST /v1/sessions/:id/attach` if a cached id exists from a previous run) and use the returned `sessionId` as the agent's process identity.
+- Drop the agent-side UUID generation. `/health` returns the MCB sessionId only.
+- The MCP child process the agent spawns continues to claim its own sessionId from MCB (separate process, separate session). No coupling between the two — they're peers under MCB.
+- If MCB is unreachable at startup, the agent should fail fast with a clear error (`/health` is the wrong place to surface a partial state).
+- Tests in the agent repo: assert `/health` echoes a UUID matching MCB's `POST /v1/sessions` response shape; assert MCB-unreachable produces a startup error.
+
+Cross-repo consideration: this is a sibling-repo change in `../sound-recreation-agent`, but it depends on MCB's existing `POST /v1/sessions` (already shipped) and `POST /v1/sessions/:id/attach` (shipped in PR #47). No MCB-side changes needed.
+
 ### OS service templates
 
 - macOS LaunchAgent plist (`~/Library/LaunchAgents/com.uribrecher.midi-connections-broker.plist`). User-scoped agent.
