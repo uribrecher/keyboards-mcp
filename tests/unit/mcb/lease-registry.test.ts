@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { LeaseRegistry } from "../../../src/mcb/lease-registry.js";
+import { LeaseRegistry, LeaseRegistryError } from "../../../src/mcb/lease-registry.js";
 import type { Lease } from "../../../src/mcb/types.js";
 
 let r: LeaseRegistry;
@@ -43,5 +43,16 @@ describe("LeaseRegistry", () => {
     r.remove("dev-1");
     assert.equal(r.listAll().length, 1);
     assert.equal(r.get("dev-1"), undefined);
+  });
+
+  it("port-already-owned is a typed error with stable code field", () => {
+    r.add(fixture({ deviceId: "dev-1", primary: { portName: "X", wsPort: null } }));
+    try {
+      r.add(fixture({ deviceId: "dev-2", primary: { portName: "X", wsPort: null } }));
+      assert.fail("expected throw");
+    } catch (err) {
+      assert.ok(err instanceof LeaseRegistryError, `expected LeaseRegistryError, got ${err}`);
+      assert.equal(err.code, "port-already-owned");
+    }
   });
 });

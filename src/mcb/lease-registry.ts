@@ -1,12 +1,21 @@
 import type { Lease } from "./types.js";
 
+export type LeaseRegistryErrorCode = "port-already-owned";
+
+export class LeaseRegistryError extends Error {
+  constructor(public readonly code: LeaseRegistryErrorCode, message: string) {
+    super(`${code}: ${message}`);
+    this.name = "LeaseRegistryError";
+  }
+}
+
 export class LeaseRegistry {
   private byDeviceId = new Map<string, Lease>();
   private primaryIndex = new Map<string, string>();
 
   add(lease: Lease): void {
     if (this.primaryIndex.has(lease.primary.portName)) {
-      throw new Error(`port-already-owned: ${lease.primary.portName}`);
+      throw new LeaseRegistryError("port-already-owned", lease.primary.portName);
     }
     this.byDeviceId.set(lease.deviceId, lease);
     this.primaryIndex.set(lease.primary.portName, lease.deviceId);

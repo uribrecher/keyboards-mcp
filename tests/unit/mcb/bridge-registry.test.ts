@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { BridgeRegistry } from "../../../src/mcb/bridge-registry.js";
+import { BridgeRegistry, BridgeRegistryError } from "../../../src/mcb/bridge-registry.js";
 
 let registry: BridgeRegistry;
 
@@ -41,6 +41,24 @@ describe("BridgeRegistry", () => {
     registry.remove("dev-A");
     assert.equal(registry.shadowOf("dev-A"), undefined);
     assert.equal(registry.isShadowTarget("Shadow Port"), undefined);
+  });
+
+  it("errors are typed instances with stable code fields", () => {
+    try {
+      registry.add("dev-A", "Same Port", "Same Port");
+      assert.fail("expected throw");
+    } catch (err) {
+      assert.ok(err instanceof BridgeRegistryError, `expected BridgeRegistryError, got ${err}`);
+      assert.equal(err.code, "self-shadow");
+    }
+    registry.add("dev-A", "Master Port", "Shadow Port");
+    try {
+      registry.add("dev-B", "Master Port 2", "Shadow Port");
+      assert.fail("expected throw");
+    } catch (err) {
+      assert.ok(err instanceof BridgeRegistryError);
+      assert.equal(err.code, "shadow-conflict");
+    }
   });
 
   describe("cycle detection", () => {
