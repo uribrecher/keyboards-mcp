@@ -11,21 +11,15 @@ The MVP (Phase 1) ships a standalone control-plane MCB that brokers connection l
 
 ## Phase 2 — MCP integration
 
-Refactor the MCP to consume MCB-managed leases for connection establishment. The MCP's existing internal machinery (`MidiManager`, `StateManager`, `KeyboardDevice`, per-model schemas, validation, `validateParameterBatch`) stays in place — only the connection-establishment path changes.
+Core integration shipped in PR #31 (and PID-liveness reaper in #33). Remaining open follow-ups:
 
-- **Session bootstrap on MCP startup.** Before the first tool call, MCP `POST /v1/sessions`. Cache `sessionId` for the process lifetime. On reattach scenarios (transient HTTP drop on the same PID), `POST /v1/sessions/:id/attach`.
-- **MCB HTTP/UDS client in MCP.** New module `src/mcp-client/mcb-client.ts` (or similar — exact location decided in plan). Wraps `http` requests against the MCB socket; surfaces structured errors.
-- **Refactor `connect_to_keyboard`.**
-  - Drop existing args: `forward_port`, `auto_forward`, `auto_input`, `mock_ws_port`.
-  - Add: `with_shadow`, require `model`.
-  - Flow: tool layer collects user args → claim lease via `POST /v1/devices` → consume returned manifest → existing `MidiManager` opens MIDI/WS using the manifest → existing `KeyboardDevice` instantiation continues as today.
-  - The bug fix lands here: `MidiManager` opens its mock-status WebSocket against the wsPort MCB hands back, eliminating the wrong-port default.
-- **`MidiManager` reads from manifest.** Drop the `mockWsPort`/`MOCK_WS_PORT` env fallback. Remove `setMockWsPort`, `attachMockStatusWs`, the `connectMockWs` side-effect inside `connectForward`. The manifest is the single source of truth for what to open.
-- **Refactor `disconnect_from_keyboard`.** Tool calls `DELETE /v1/devices/:id` after closing local resources — or MCB's PID-liveness GC handles it if MCP exits without an explicit disconnect.
-- **Refactor `is_connected` and `list_midi_devices`.** Read from MCB (`GET /v1/devices`, `GET /v1/midi/ports`) rather than from MCP-internal state. The MCP's local pool stays for ergonomic 1-based addressing of its own devices.
-- **`set_parameters`, `get_current_state`, `list_parameters`, `extract_backup`, `load_program`, `load_song`, etc. — unchanged.** They continue operating on the MCP's local `KeyboardDevice` and `StateManager`. MCB never sees them.
-- **Update sibling repo.** `sound-recreation-agent`'s system prompt + README updated for the new tool surface (no more `forward_port`, `auto_forward`, etc.).
-- **E2E tests.** Synced-pair workflow via the new `with_shadow` arg. Coverage parity verified against the deleted-args tests.
+- **`list_midi_devices` reading from MCB.** Today the tool reads MCP-internal pool only. Needs a new MCB endpoint `GET /v1/midi/ports` (enumerate node-midi ports + cross-reference active leases) before MCP can flip. Without it, MCP-local state hides leases held by other agent sessions.
+- **Session attach + MCB-crash recovery.** `POST /v1/sessions/:id/attach` plus a re-claim path so MCPs survive an MCB restart/crash with their leases intact. Two layers: (a) MCPs detect MCB unreachable, retry, and re-claim using their cached `sessionId` + manifest (handles crash); (b) optional disk-persistence on graceful shutdown so MCB doesn't need re-claim on a clean restart. (a) is the load-bearing piece. Pairs with the cross-phase "PID-reuse guard on session attach" item below.
+- **E2E harness MCB fixture.** Four e2e blocks are tagged `skip: true /* phase-2 follow-up: legacy args + MCB fixture */`: `multi-device.test.ts`, `label-discovery.test.ts`, `backup-per-instance.test.ts`, and the three-concurrent-mocks block in `multi-model.test.ts`. To un-skip, `MultiDeviceHarness` (and its callers) need to spawn an MCB instance — UDS socket setup, lifecycle wiring, teardown. Strip the dead legacy args (`mock_ws_port`, `auto_input`, `auto_forward`) inside the test bodies in the same pass.
+
+Settled and explicitly NOT open:
+- `connect_to_keyboard` arg surface — already cleaned (`auto_input`, `auto_forward`, `forward_port`, `mock_ws_port` all removed in #31). Explicit `input_port` stays — it's load-bearing for hw→shadow knob mirroring, no auto-pair sentinel planned.
+- `MOCK_WS_URL` (CI / docker-compose path) — preserved as the no-MCB transport. Not deferred work.
 
 ## Phase 3 — Mock-runner connection-viewer
 
@@ -89,10 +83,6 @@ Currently rejected (avoid double-control of underlying state). If a workflow nee
 ### Multi-host coordination (TCP frontend)
 
 UDS is local-only. If MCB ever needs to be addressed from another host, add a TCP listener on top of the same handlers. Concerns: authentication (UDS gets it free via FS perms; TCP needs tokens), TLS, network exposure. Defer until specifically requested.
-
-### Per-port "smart pair" input resolution
-
-Strict resolution requires `input_port` to be passed explicitly. A common convention pairs output `Foo MIDI Input` with input `Foo MIDI Output`. A deterministic helper `derivePairedInputPort(outputPortName)` could fill this in when exactly one paired candidate exists. Defer; do NOT introduce as auto-detection — keep it as opt-in `input_port: "auto-pair"`.
 
 ### Concurrent disconnect race
 
