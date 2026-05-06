@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { DevicePool } from "../shared/device-pool.js";
-import { listMyDevices, MCBError, type Manifest } from "../mcp-client/mcb-client.js";
+import { listMyDevices, MCBError, type Manifest } from "../shared/mcb-client.js";
 
 export function registerIsConnected(server: McpServer, pool: DevicePool): void {
   server.registerTool(

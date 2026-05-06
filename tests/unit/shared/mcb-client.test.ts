@@ -7,7 +7,7 @@ import { startServer, type StartedServer } from "../../../src/mcb/http/server.js
 import { LeaseRegistry } from "../../../src/mcb/lease-registry.js";
 import { BridgeRegistry } from "../../../src/mcb/bridge-registry.js";
 import { SessionManager } from "../../../src/mcb/session-manager.js";
-import { claimLease, releaseLease, listMyDevices, resetSession, MCBError } from "../../../src/mcp-client/mcb-client.js";
+import { claimLease, releaseLease, listMyDevices, resetSession, MCBError } from "../../../src/shared/mcb-client.js";
 
 let server: StartedServer;
 let socketDir: string;
