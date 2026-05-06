@@ -42,11 +42,11 @@ A small standalone CLI that talks to MCB over the same UDS. Subcommands: `sessio
 
 ### Graceful shutdown
 
-The MVP does basic teardown on SIGTERM/SIGINT. Upgrade to: stop accepting new connections, complete in-flight requests, drain SSE streams cleanly with a final `session-released` event for live subscribers, unlink socket file, exit.
+The MVP spec called for SIGTERM/SIGINT teardown but the shipped code in `src/mcb/index.ts` doesn't register either handler — on signal, the process exits with the UDS listener still bound and the socket file left behind. Baseline work: install handlers that close the UDS listener and unlink the socket. Follow-up upgrade: stop accepting new connections, complete in-flight requests, drain SSE streams cleanly with a final `session-released` event for live subscribers.
 
-### Stale UDS socket file probe-and-unlink at startup (production-grade)
+### Stale UDS socket file probe-and-unlink at startup
 
-The MVP includes basic probe-and-unlink. Improve to: `LOCAL_PEERPID`-based liveness check on the existing socket if reachable (distinguishes "another MCB alive" from "stale state"), structured logging of which path was taken at startup.
+Same gap: the MVP spec called for probe-and-unlink but the shipped MCB binds the UDS path unconditionally, so an ungraceful prior shutdown leaves a stale socket and the next `npm run mcb` fails with `EADDRINUSE` until manually `rm`'d. Baseline work: at startup, if the socket file exists, attempt `GET /v1/health` against it; on success exit with "another MCB is alive"; on connect refusal, unlink and bind. Follow-up upgrade: `LOCAL_PEERPID`-based liveness check (distinguishes "another MCB alive" from "stale state"), structured logging of which path was taken at startup.
 
 ### Stale mock-registry entry purge on MCB startup
 
