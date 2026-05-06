@@ -1,162 +1,110 @@
 ---
 mode: backlog
 parent_topic: midi-connections-broker
-mvp_spec: ./2026-05-05-midi-connections-broker-mvp.md
+mvp_spec: ./completed/2026-05-05-midi-connections-broker-mvp.md
 architectural_reference: ./2026-05-05-midi-connections-broker-design.md
 ---
 
 # midi-connections-broker (MCB) — Deferred Backlog
 
-The MVP (Phase 1) ships a standalone control-plane MCB that brokers connection leases without touching MIDI or WebSockets. This backlog organizes the rest of the work into the phased migration toward the architecture in `2026-05-05-midi-connections-broker-design.md`. Each item is a stub — when picked up, run `superpowers:brainstorming` (or `mvp-brainstorm`) on it as a fresh topic.
+## Drop `lease.label`
 
-## ⭐ Next up — Bridge cycle walker
-
-**Priority: high. This is the next item to tackle.**
-
-`src/mcb/bridge-registry.ts` only enforces `self-shadow` (master ≠ shadow) and `shadow-conflict` (shadow port not already a shadow target). The lease-registry adds "shadow target can't also be a primary." Under the connect-only API that's enough — multi-hop chains can't form, so cycles are unreachable.
-
-That guarantee is fragile. The moment we add hot-swappable shadows (standalone `POST /v1/bridges` / `DELETE /v1/bridges/:masterDeviceId`), HW-shadows-HW chains, or any path where a port can transition between primary and shadow without going through a fresh `POST /v1/devices`, multi-hop bridge graphs become reachable and a malicious or buggy client can build a cycle (`A→B`, `B→C`, `C→A`) that fans MIDI traffic forever.
-
-Scope:
-- Add a recursive walker to `BridgeRegistry.add(masterDeviceId, masterPortName, shadowPortName)`: follow `shadowOf(...)` from the proposed shadow's owning master and reject if the walk reaches `masterPortName`.
-- Surface as `cycle-would-form` (the error code is already reserved in `formatError`) → 409 Conflict.
-- Unit tests in `tests/unit/mcb/bridge-registry.test.ts`: 2-hop, 3-hop, and N-hop cycle attempts; non-cycle multi-hop chains stay legal.
-- No HTTP-surface change; the walker fires inside the existing `add()` path, so it lights up automatically when the standalone bridge endpoints land later.
-
-Why now (before the endpoints that make it load-bearing): cheap, well-scoped, and locks in the invariant before any code path can violate it. Defense-in-depth.
-
-## Phase 2 — MCP integration
-
-Core integration shipped in PR #31 (and PID-liveness reaper in #33). Remaining open follow-ups:
-
-- **Session attach + MCB-crash recovery.** `POST /v1/sessions/:id/attach` plus a re-claim path so MCPs survive an MCB restart/crash with their leases intact. Two layers: (a) MCPs detect MCB unreachable, retry, and re-claim using their cached `sessionId` + manifest (handles crash); (b) optional disk-persistence on graceful shutdown so MCB doesn't need re-claim on a clean restart. (a) is the load-bearing piece. Pairs with the cross-phase "PID-reuse guard on session attach" item below.
-- **E2E harness MCB fixture.** Four e2e blocks are tagged `skip: true /* phase-2 follow-up: legacy args + MCB fixture */`: `multi-device.test.ts`, `label-discovery.test.ts`, `backup-per-instance.test.ts`, and the three-concurrent-mocks block in `multi-model.test.ts`. To un-skip, `MultiDeviceHarness` (and its callers) need to spawn an MCB instance — UDS socket setup, lifecycle wiring, teardown. Strip the dead legacy args (`mock_ws_port`, `auto_input`, `auto_forward`) inside the test bodies in the same pass.
-
-Recently settled:
-- **`list_midi_devices` encapsulation.** `GET /v1/midi/ports` ships in `src/mcb/http/midi-ports.ts` (aggregates OS ports + mock-registry annotations + lease join MCB-side). `src/tools/list-devices.ts` is now a thin wrapper — calls `listMidiPorts()` on the shared client and only adds MCP-local pool markers. MCP no longer duplicates MCB's data sources.
-
-Settled and explicitly NOT open:
-- `connect_to_keyboard` arg surface — already cleaned (`auto_input`, `auto_forward`, `forward_port`, `mock_ws_port` all removed in #31). Explicit `input_port` stays — it's load-bearing for hw→shadow knob mirroring, no auto-pair sentinel planned.
-- `MOCK_WS_URL` (CI / docker-compose path) — preserved as the no-MCB transport. Not deferred work.
-
-## Phase 3 — MCB-aware tab LEDs
-
-Shipped in PRs #38 and #41. Mock-runner main process polls `GET /v1/devices`, renderer maps each tab's `wsPort` to lease `primary`/`shadow` and drives the rail LED (amber / blue / green); the per-iframe `<div id="mcp-status">` block is gone.
-
-Open follow-ups:
-
-- **Operator dashboard.** A full listing of every session/lease/bridge across the system. Resurface as Phase 4 if multi-agent rigs grow.
-- **Per-tab session-level info.** Surface PID / processName / marked-dead state on the tab itself (the LED is a state cue, not an identity readout).
-- **MCB SSE `/v1/events` stream.** Polling is enough for the LEDs; revisit when another consumer needs push semantics.
-
-## Cross-phase items (not phase-specific)
-
-### Drop `lease.label`
-
-The `Lease` type carries a `label: string` field that has only one consumer left worth listing: rendering a human-readable name in `is_connected` and `list_midi_devices` for leases held by other MCP sessions. Today the field defaults to `"default"` (because `connect_to_keyboard` calls `claimLease` before the auto-adopt step that resolves the real label from the mock-registry). The result is two views disagreeing: the local pool device shows the auto-adopted label (e.g. `"junio"`) while MCB shows `"default"` — confusing without delivering value.
-
-Decision: drop the field for the MVP. The lease's `deviceId` is already a stable identifier; cross-session displays can fall back to `model + portName` (and `entry.device.label` when the local MCP owns the lease). If a later use case ever needs cross-session human-readable identity, reintroduce it with the auto-adopt fix already in place.
+The `Lease` type carries a `label: string` field with no real consumer. Today the connect tool calls `claimLease` before the auto-adopt step that resolves the real label from the mock-registry, so MCB always stores `"default"` while the local pool device shows the auto-adopted name — confusing without delivering value.
 
 Scope:
 - Remove `label` from the `Lease` type (`src/mcb/types.ts`).
 - Drop the `label` field from `POST /v1/devices` request body and from the manifest response (`src/mcb/http/devices.ts`, `Manifest` in `src/shared/mcb-client.ts`).
 - Drop `lease.label` from `GET /v1/midi/ports` (`src/mcb/http/midi-ports.ts`) and from the `MidiPortsResponse` shape.
-- `is_connected` falls back to `m.model + portName` for leases this MCP doesn't own, and continues to use `entry.device.label` for the ones it does.
+- `is_connected` falls back to `m.model + portName` for leases this MCP doesn't own, and continues to use `entry.device.label` for leases it does own.
 - Update tests to drop label assertions on the MCB side; keep them on the local-pool side (`entry.device.label`).
-- `connect_to_keyboard`'s `label` arg stays — it's the local pool device's label, which is still load-bearing for the per-instance backup-cache path.
+- `connect_to_keyboard`'s `label` arg stays — it's the local pool device's label, which is load-bearing for the per-instance backup-cache path.
 
-### Sound-recreation-agent uses an MCB-issued sessionId
+## Sound-recreation-agent uses an MCB-issued sessionId
 
-`sound-recreation-agent` currently generates its own UUID at startup (used for log correlation, surfaced via `/health` to the agent UI). It's a parallel identity to the MCB sessionId the MCP claims later, and the two never align. Replace the self-generated UUID with the MCB-issued sessionId so the UI, logs, MCB, and connection-viewer all show the same id for a given agent run.
+Sibling-repo change in `../sound-recreation-agent`. The agent currently generates its own UUID at startup (`randomUUID()` in `src/index.ts`) and surfaces it via `/health`. Replace with an MCB-issued sessionId so the UI, logs, and connection-viewer all show the same id for a given agent run.
 
-Scope (in `sound-recreation-agent`):
+Scope:
 - At server boot, before `/health` is wired, call `POST /v1/sessions` against MCB (or `POST /v1/sessions/:id/attach` if a cached id exists from a previous run) and use the returned `sessionId` as the agent's process identity.
 - Drop the agent-side UUID generation. `/health` returns the MCB sessionId only.
-- The MCP child process the agent spawns continues to claim its own sessionId from MCB (separate process, separate session). No coupling between the two — they're peers under MCB.
-- If MCB is unreachable at startup, the agent should fail fast with a clear error (`/health` is the wrong place to surface a partial state).
-- Tests in the agent repo: assert `/health` echoes a UUID matching MCB's `POST /v1/sessions` response shape; assert MCB-unreachable produces a startup error.
+- The MCP child process the agent spawns continues to claim its own sessionId from MCB (separate process, separate session — peers under MCB).
+- If MCB is unreachable at startup, the agent should fail fast with a clear error.
+- Agent-repo tests: `/health` echoes a UUID matching MCB's `POST /v1/sessions` response shape; MCB-unreachable produces a startup error.
 
-Cross-repo consideration: this is a sibling-repo change in `../sound-recreation-agent`, but it depends on MCB's existing `POST /v1/sessions` (already shipped) and `POST /v1/sessions/:id/attach` (shipped in PR #47). No MCB-side changes needed.
+## Operator dashboard
 
-### OS service templates
+A full listing of every session/lease/bridge across the system. Resurface as Phase 4 if multi-agent rigs grow.
+
+## Per-tab session-level info
+
+Surface PID / processName / marked-dead state on the mock-runner tab itself. The LED is a state cue; this would add identity readout for the user.
+
+## MCB SSE `/v1/events` stream
+
+Push-based event stream for lease/session/bridge changes. The mock-runner LED poll covers the present need on a 2s cadence; build SSE when a second consumer needs push semantics or sub-second updates.
+
+## SSE keepalive and resumability
+
+Once SSE exists: heartbeat lines (`:keepalive\n\n` every ~30s) so proxies/clients don't drop long-lived connections, plus `Last-Event-Id` resumability so subscribers can recover events missed during a brief disconnect.
+
+## OS service templates
 
 - macOS LaunchAgent plist (`~/Library/LaunchAgents/com.uribrecher.midi-connections-broker.plist`). User-scoped agent.
 - Linux systemd user unit (`~/.config/systemd/user/midi-connections-broker.service`).
 - docker-compose example for CI: MCB container + headless mock-runner container, shared volume for the UDS socket.
 - README addition documenting setup steps.
 
-### MCB CLI tool (`mcb-cli`)
+## MCB CLI tool (`mcb-cli`)
 
-A small standalone CLI that talks to MCB over the same UDS. Subcommands: `sessions list`, `devices list`, `events tail`, `kick <session-id>` (admin force-disconnect), `health`. Each subcommand is one HTTP call. Useful when no agent is around (debugging stuck state from a terminal).
+Standalone CLI that talks to MCB over the same UDS. Subcommands: `sessions list`, `devices list`, `events tail`, `kick <session-id>` (admin force-disconnect), `health`. Each subcommand is one HTTP call. Useful when no agent is around (debugging stuck state from a terminal).
 
-### Graceful shutdown
+## `LOCAL_PEERPID` for stale-socket probe
 
-The MVP spec called for SIGTERM/SIGINT teardown but the shipped code in `src/mcb/index.ts` doesn't register either handler — on signal, the process exits with the UDS listener still bound and the socket file left behind. Baseline work: install handlers that close the UDS listener and unlink the socket. Follow-up upgrade: stop accepting new connections, complete in-flight requests, drain SSE streams cleanly with a final `session-released` event for live subscribers.
+Replace the HTTP `/v1/health` round-trip in `src/mcb/socket-cleanup.ts` with a `LOCAL_PEERPID`-based liveness check that distinguishes "another MCB alive" from "stale state" without paying the request. Plus structured logging of which path the startup probe took.
 
-### Stale UDS socket file probe-and-unlink at startup
+## Stale mock-registry entry purge on MCB startup
 
-Same gap: the MVP spec called for probe-and-unlink but the shipped MCB binds the UDS path unconditionally, so an ungraceful prior shutdown leaves a stale socket and the next `npm run mcb` fails with `EADDRINUSE` until manually `rm`'d. Baseline work: at startup, if the socket file exists, attempt `GET /v1/health` against it; on success exit with "another MCB is alive"; on connect refusal, unlink and bind. Follow-up upgrade: `LOCAL_PEERPID`-based liveness check (distinguishes "another MCB alive" from "stale state"), structured logging of which path was taken at startup.
+Mock-runner is responsible for `purgeStale()` at its own startup. If mock-runner is offline and a mock crashed, the registry has ghost entries that MCB would surface. Add a defensive purge or a defensive filter on listing in `src/mcb/index.ts` / `src/mcb/http/midi-ports.ts`.
 
-### Stale mock-registry entry purge on MCB startup
+## PID-reuse guard on session attach
 
-Mock-runner is responsible for `purgeStale()` at its own startup. If mock-runner is offline and a mock crashed, the registry has ghost entries that MCB would surface. Add a defensive purge or a defensive filter on listing.
+Record process start time alongside PID at session creation in `SessionManager`. On reattach via `POST /v1/sessions/:id/attach`, verify both PID *and* start time match — defends against the rare case where the original PID is reused by an unrelated process within the reattach window.
 
-### SSE keepalive and resumability
+## State persistence across MCB restarts
 
-Long-lived SSE connections need heartbeat lines (`:keepalive\n\n` every ~30s) or proxies/clients drop them. Add `Last-Event-Id` resumability so connection-viewer (or any subscriber) can recover events missed during a brief disconnect.
+Persist sessions/leases to disk on graceful shutdown and reload on start. Subtle: leases are of OS resources held by MCPs; on MCB restart, MCPs would normally re-establish leases anyway via the existing attach path. Defer until long-lived sessions become real and reconnect overhead bites.
 
-### PID-reuse guard on session attach
+## Force-takeover (T2)
 
-Record process start time alongside PID at session creation. On reattach, verify both PID *and* start time match — defends against the rare case where the original PID is reused by an unrelated process within the reattach window.
+`force: true` flag on `POST /v1/devices` (or a separate endpoint) that revokes another session's leases. Today's PID watcher handles the dead-session case; T2 covers the live-but-misbehaving case.
 
-### State persistence across MCB restarts
+## Standalone bridge attach/detach endpoints
 
-An MCB restart loses session and lease state. If long-lived sessions become real and reconnect overhead bites, persist to disk on graceful shutdown and reload on start. Subtle: the leases were of OS resources held by MCPs; on MCB restart, MCPs would re-establish leases (since they have lost their lease grants). Defer until the failure mode bites.
+`POST /v1/bridges` and `DELETE /v1/bridges/:masterDeviceId`, so a shadow can be added or changed on a live lease without a release-and-reclaim cycle. The `BridgeRegistry` already enforces `self-shadow`, `shadow-conflict`, `master-port-conflict`, and `cycle-would-form` invariants, so the endpoints just expose the existing safety.
 
-### Force-takeover (T2)
+## HW-shadows-HW workflows
 
-MCB's lock is reclaimed only by PID-liveness GC. If a workflow emerges where a stuck session needs immediate eviction, add `force: true` flag on `POST /v1/devices` (or a separate endpoint) that revokes another session's leases. Today's PID watcher handles the dead-session case; T2 covers the live-but-misbehaving case.
+Bridge metadata supports it (MCB doesn't care if the shadow is a mock or another physical keyboard). No E2E coverage and no validated UX yet. Pick this up when there's a real workflow asking for it.
 
-### Standalone bridge attach/detach endpoints
-
-The MVP creates bridges only at `POST /v1/devices` time. To add or change a shadow on a live lease, the user must release and re-claim. If hot-swappable shadows become necessary, design `POST /v1/bridges` and `DELETE /v1/bridges/:masterDeviceId`. The bridge cycle walker (see *Next up* at the top) is a hard prerequisite — these endpoints make multi-hop chains reachable, so the walker must land first.
-
-### HW-shadows-HW workflows
-
-The bridge metadata supports it (MCB doesn't care if the shadow is a mock or another physical keyboard). No E2E coverage and no validated UX yet. Pick this up when there's a real workflow asking for it.
-
-### `with_shadow` pointing at a connected pool entry
+## `with_shadow` pointing at a connected pool entry
 
 Currently rejected (avoid double-control of underlying state). If a workflow needs chains where every endpoint is independently addressable, design semantics for `set_parameters` when the same physical state is reachable via two devices.
 
-### Split `port` and `with_shadow` into explicit identity args
+## Split `port` and `with_shadow` into explicit identity args
 
-`connect_to_keyboard`'s `port` arg accepts either an exact OS port name *or* a registered mock label, and the port-resolver tries each in turn. `with_shadow` has the same two-types-in-one-string shape. The resolution is strict (no substring/fuzzy match) and fails fast on ambiguity, but it's still a "smart" surface that violates the simple-deterministic-tools principle: tools should take unambiguous identity types and let the LLM pick which one to pass. Cleanup: replace each arg with two explicit args (e.g. `mock_label` *or* `os_port`, exactly one required), or take an `{ kind: "mock" | "os", value: string }` discriminated union. Defer until either (a) a real bug surfaces from the current ambiguity, or (b) we touch this code for another reason.
+`connect_to_keyboard`'s `port` arg accepts either an exact OS port name *or* a registered mock label, and the port-resolver tries each in turn. `with_shadow` has the same two-types-in-one-string shape. Tools should take unambiguous identity types and let the LLM pick which one to pass. Cleanup: replace each arg with two explicit args (e.g. `mock_label` *or* `os_port`, exactly one required), or take an `{ kind: "mock" | "os", value: string }` discriminated union. Defer until either (a) a real bug surfaces from the current ambiguity, or (b) we touch this code for another reason.
 
-### Multi-host coordination (TCP frontend)
+## Multi-host coordination (TCP frontend)
 
 UDS is local-only. If MCB ever needs to be addressed from another host, add a TCP listener on top of the same handlers. Concerns: authentication (UDS gets it free via FS perms; TCP needs tokens), TLS, network exposure. Defer until specifically requested.
 
-### Concurrent disconnect race
+## Concurrent disconnect race
 
-If the owning session's PID dies while it's mid-`DELETE /v1/devices/:id`, two cleanup paths run concurrently. Make disconnect idempotent and re-entrant; lock around per-lease cleanup.
+If the owning session's PID dies while it's mid-`DELETE /v1/devices/:id`, the PID-liveness reaper and the explicit DELETE handler run concurrently against the same lease. Make disconnect idempotent and re-entrant; lock around per-lease cleanup.
 
-### Production-grade `500` handling
+## Production-grade `500` handling
 
-The MVP returns generic 500s with a generated error id. Add: log correlation, request-id header echoed in every response, optional structured-log JSON output toggle.
+`formatError` in `src/mcb/http/errors.ts` returns generic 500s with a generated error id. Add: log correlation, request-id header echoed in every response, optional structured-log JSON output toggle.
 
-### Connection-viewer architectural shape
+## Body size limits & rate limiting
 
-Pre-design item for Phase 3: per-mock Electron window vs. shared global window vs. browser-served HTML. Resolve before implementing.
-
-### Body size limits & rate limiting
-
-The MVP has no body-size cap. Add a sane default (~1MB). Rate limiting is probably overkill for a personal-rig tool but worth flagging if multi-tenant scenarios ever appear.
-
-### Typed errors instead of `formatError` substring matching
-
-`src/mcb/http/errors.ts` currently classifies registry errors (port-already-owned, self-shadow, bridge-already-exists, shadow-conflict, etc.) by substring-matching `err.message`. This is brittle — changing the human-readable message wording silently changes the HTTP status code. Refactor: give `BridgeRegistry` and `LeaseRegistry` typed error classes with stable `code` fields (the way `PortResolutionError` already does), and have `formatError` switch on `instanceof` + `err.code` instead of substring. Touches a few files but no behavior change.
-
-### Mock-runner shows a black UI when MCB is down (suspected bug)
-
-Observed: starting `npm run mock:runner` while MCB is unreachable yields a black/empty UI instead of the model picker. The mock-runner shouldn't be a hard dependent of MCB — MCB brokers MCP↔keyboard leases, not mock-window rendering. Investigate the failure path (likely an unhandled promise rejection or a synchronous fetch in the renderer that aborts the page load) and either render normally with MCB-features degraded, or surface a clear "MCB unreachable" overlay with a retry. Repro before fixing.
+`src/mcb/http/server.ts` reads the full request body without a cap. Add a sane default (~1 MB). Rate limiting is probably overkill for a personal-rig tool but worth flagging if multi-tenant scenarios ever appear.
