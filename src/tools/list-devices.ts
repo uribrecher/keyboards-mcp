@@ -1,9 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { listOutputPorts, listInputPorts } from "../midi/midi-manager.js";
 import type { DevicePool } from "../shared/device-pool.js";
-import { readAllWithStaleFlag, type MockRegistryEntry } from "../shared/mock-registry.js";
-import { listAllDevices, MCBError, type Manifest } from "../shared/mcb-client.js";
+import { listMidiPorts, MCBError } from "../shared/mcb-client.js";
 
 const MockRegistrySchema = z.object({
   midiPort: z.string(),
@@ -49,11 +47,6 @@ const InputPortSchema = z.object({
 const ListMidiDevicesOutputSchema = {
   outputs: z.array(OutputPortSchema),
   inputs: z.array(InputPortSchema),
-  mcb: z.object({
-    queried: z.boolean(),
-    reachable: z.boolean(),
-    error: z.string().optional(),
-  }),
 };
 
 export function registerListDevices(server: McpServer, pool: DevicePool): void {
@@ -65,85 +58,62 @@ export function registerListDevices(server: McpServer, pool: DevicePool): void {
         "Each output port carries optional `mock` (registry metadata for ports that belong to a running mock-runner mock, including stale flag), " +
         "`poolMarkers` (entries from this MCP's local pool that bind to the port), " +
         "and `lease` (annotation from MCB if any session currently holds a lease on that port as primary or shadow). " +
-        "The `mcb` object reports whether MCB was queried and reachable.",
+        "Fails fast when MCB is unreachable — there is no graceful-degradation path.",
       outputSchema: ListMidiDevicesOutputSchema,
     },
     async () => {
-      const outputs = listOutputPorts();
-      const inputs = listInputPorts();
+      // Source of truth: MCB's GET /v1/midi/ports — it owns OS port
+      // enumeration, mock-registry annotation, and lease join. The MCP
+      // only adds local pool markers (which MCB doesn't know about).
+      let ports;
+      try {
+        ports = await listMidiPorts();
+      } catch (err) {
+        if (err instanceof MCBError) {
+          return {
+            content: [{ type: "text", text: `list_midi_devices failed: ${err.code}: ${err.message}` }],
+            isError: true,
+          };
+        }
+        throw err;
+      }
 
-      // Mock-registry annotations.
-      const registryByPort = new Map<string, MockRegistryEntry & { stale: boolean }>();
-      for (const entry of readAllWithStaleFlag()) registryByPort.set(entry.midiPort, entry);
-
-      // MCP-local pool markers (per output / forward / input).
+      // MCP-local pool markers — keyed by port name, layered on top of MCB's view.
       const outputMarkers = new Map<string, Array<z.infer<typeof PoolMarkerSchema>>>();
       const inputMarkers = new Map<string, Array<z.infer<typeof PoolMarkerSchema>>>();
-      const pushMarker = (map: Map<string, Array<z.infer<typeof PoolMarkerSchema>>>, port: string, marker: z.infer<typeof PoolMarkerSchema>) => {
+      const pushMarker = (
+        map: Map<string, Array<z.infer<typeof PoolMarkerSchema>>>,
+        port: string,
+        marker: z.infer<typeof PoolMarkerSchema>,
+      ) => {
         const arr = map.get(port) ?? [];
         arr.push(marker);
         map.set(port, arr);
       };
       for (const entry of pool.list()) {
-        const ports = entry.ports;
-        if (!ports) continue;
+        const eports = entry.ports;
+        if (!eports) continue;
         const baseMarker = { index: entry.index, model: entry.device.model.info.displayName, label: entry.device.label };
-        if (ports.output) pushMarker(outputMarkers, ports.output, { ...baseMarker, role: "output" });
-        if (ports.forward && ports.forward !== ports.output) {
-          pushMarker(outputMarkers, ports.forward, { ...baseMarker, role: "forward" });
+        if (eports.output) pushMarker(outputMarkers, eports.output, { ...baseMarker, role: "output" });
+        if (eports.forward && eports.forward !== eports.output) {
+          pushMarker(outputMarkers, eports.forward, { ...baseMarker, role: "forward" });
         }
-        if (ports.input) pushMarker(inputMarkers, ports.input, { ...baseMarker, role: "input" });
-      }
-
-      // MCB lease annotations across ALL sessions. Graceful-degrade when MCB is unreachable.
-      const leaseByPort = new Map<string, z.infer<typeof LeaseSchema>>();
-      let mcbReachable = true;
-      let mcbError: string | undefined;
-      const mcbQueried = !process.env.MOCK_WS_URL;
-      if (mcbQueried) {
-        try {
-          const all: Manifest[] = await listAllDevices();
-          for (const m of all) {
-            leaseByPort.set(m.primary.portName, {
-              kind: "primary", sessionId: m.ownerSessionId, deviceId: m.deviceId, model: m.model, label: m.label,
-            });
-            if (m.shadow) {
-              leaseByPort.set(m.shadow.portName, {
-                kind: "shadow", sessionId: m.ownerSessionId, deviceId: m.deviceId, model: m.model, label: m.label,
-              });
-            }
-          }
-        } catch (err) {
-          mcbReachable = false;
-          mcbError = err instanceof MCBError ? `${err.code}: ${err.message}` : String(err);
-        }
-      } else {
-        mcbReachable = false;
+        if (eports.input) pushMarker(inputMarkers, eports.input, { ...baseMarker, role: "input" });
       }
 
       const structuredContent = {
-        outputs: outputs.map((p) => {
-          const reg = registryByPort.get(p.name);
-          return {
-            index: p.index,
-            name: p.name,
-            mock: reg ? {
-              midiPort: reg.midiPort, wsPort: reg.wsPort,
-              modelId: reg.modelId, displayName: reg.displayName,
-              label: reg.label, pid: reg.pid,
-              startedAt: reg.startedAt, lastTouched: reg.lastTouched,
-              stale: reg.stale,
-            } : undefined,
-            poolMarkers: outputMarkers.get(p.name) ?? [],
-            lease: leaseByPort.get(p.name),
-          };
-        }),
-        inputs: inputs.map((p) => ({
-          index: p.index,
+        outputs: ports.outputs.map((p, index) => ({
+          index,
+          name: p.name,
+          mock: p.mock,
+          poolMarkers: outputMarkers.get(p.name) ?? [],
+          lease: p.lease,
+        })),
+        inputs: ports.inputs.map((p, index) => ({
+          index,
           name: p.name,
           poolMarkers: inputMarkers.get(p.name) ?? [],
         })),
-        mcb: { queried: mcbQueried, reachable: mcbReachable, error: mcbError },
       };
 
       // SDK type requires `content`; structuredContent is the canonical payload.

@@ -26,7 +26,7 @@ beforeEach(async () => {
     bridges: new BridgeRegistry(),
     sessions: new SessionManager(),
     portList: { listOutputs: () => ["Port A", "Port B"], listInputs: () => [] },
-    mockRegistry: { findByLabel: () => undefined, findByMidiPort: () => undefined, list: () => [] },
+    mockRegistry: { findByLabel: () => undefined, findByMidiPort: () => undefined, list: () => [], listAllWithStale: () => [] },
   });
 });
 

@@ -10,6 +10,7 @@ const reg = (entries: MockRegistryEntry[]): MockRegistryReader => ({
   findByLabel: (l) => entries.find((e) => e.label === l),
   findByMidiPort: (p) => entries.find((e) => e.midiPort === p),
   list: () => entries,
+  listAllWithStale: () => [],
 });
 
 const mockEntry: MockRegistryEntry = { midiPort: "Nord Mock", wsPort: 3002, label: "nordi", pid: 999 };
