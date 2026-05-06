@@ -9,7 +9,7 @@ let h: MultiDeviceHarness;
 const NORD_WS = 5700;
 const PROPHET_WS = 5701;
 
-describe("E2E: multi-device", { concurrency: 1, skip: true /* phase-2 follow-up: legacy args + MCB fixture */ }, () => {
+describe("E2E: multi-device", { concurrency: 1, skip: !!process.env.MOCK_WS_URL }, () => {
   before(async () => {
     h = await MultiDeviceHarness.start({
       mocks: [
@@ -26,7 +26,7 @@ describe("E2E: multi-device", { concurrency: 1, skip: true /* phase-2 follow-up:
   it("connect both devices and is_connected reports both with correct indices", async () => {
     const r1 = await h.callTool("connect_to_keyboard", {
       port: "Nord Electro 5D Mock",
-      mock_ws_port: NORD_WS,
+      model: "nord-electro-5d",
       label: "studio nord",
     });
     assert.ok(!r1.isError, `nord connect failed: ${r1.content[0].text}`);
@@ -35,15 +35,15 @@ describe("E2E: multi-device", { concurrency: 1, skip: true /* phase-2 follow-up:
 
     const r2 = await h.callTool("connect_to_keyboard", {
       port: "Prophet-6 Mock",
-      mock_ws_port: PROPHET_WS,
+      model: "sequential-prophet-6",
     });
     assert.ok(!r2.isError, `prophet connect failed: ${r2.content[0].text}`);
     assert.match(r2.content[0].text, /device 2/, `expected 'device 2' in: ${r2.content[0].text}`);
 
     const status = await h.callTool("is_connected");
     const text = status.content[0].text;
-    assert.match(text, /device 1: Nord Electro 5D/, `unexpected: ${text}`);
-    assert.match(text, /device 2: Prophet-6/, `unexpected: ${text}`);
+    assert.match(text, /device 1: nord-electro-5d/, `unexpected: ${text}`);
+    assert.match(text, /device 2: sequential-prophet-6/, `unexpected: ${text}`);
     assert.match(text, /studio nord/);
   });
 
@@ -100,7 +100,7 @@ describe("E2E: multi-device", { concurrency: 1, skip: true /* phase-2 follow-up:
 
     const status = await h.callTool("is_connected");
     const text = status.content[0].text;
-    assert.match(text, /device 2: Prophet-6/);
+    assert.match(text, /device 2: sequential-prophet-6/);
     assert.doesNotMatch(text, /device 1:/);
 
     // Tools targeting the gone device error out

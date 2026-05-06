@@ -46,7 +46,7 @@ const N3_JUNO = 5551;
 const N3_PROPHET = 5552;
 let trio: MultiDeviceHarness | null = null;
 
-describe("E2E: three concurrent mocks (plan #6)", { concurrency: 1, skip: true /* phase-2 follow-up: legacy args + MCB fixture */ }, () => {
+describe("E2E: three concurrent mocks (plan #6)", { concurrency: 1, skip: !!process.env.MOCK_WS_URL }, () => {
   before(async () => {
     trio = await MultiDeviceHarness.start({
       mocks: [
@@ -63,30 +63,33 @@ describe("E2E: three concurrent mocks (plan #6)", { concurrency: 1, skip: true /
     if (!trio) throw new Error("harness missing");
 
     const r1 = await trio.callTool("connect_to_keyboard", {
-      port: "Nord Electro 5D Mock", mock_ws_port: N3_NORD,
-      auto_input: false, auto_forward: false, label: "rack-nord",
+      port: "Nord Electro 5D Mock",
+      model: "nord-electro-5d",
+      label: "rack-nord",
     });
     assert.ok(!r1.isError, `Nord connect: ${r1.content[0].text}`);
     assert.match(r1.content[0].text, /device 1/);
 
     const r2 = await trio.callTool("connect_to_keyboard", {
-      port: "Roland JUNO-X Mock", mock_ws_port: N3_JUNO,
-      auto_input: false, auto_forward: false, label: "rack-juno",
+      port: "Roland JUNO-X Mock",
+      model: "roland-juno-x",
+      label: "rack-juno",
     });
     assert.ok(!r2.isError, `JUNO-X connect: ${r2.content[0].text}`);
     assert.match(r2.content[0].text, /device 2/);
 
     const r3 = await trio.callTool("connect_to_keyboard", {
-      port: "Prophet-6 Mock", mock_ws_port: N3_PROPHET,
-      auto_input: false, auto_forward: false, label: "rack-prophet",
+      port: "Prophet-6 Mock",
+      model: "sequential-prophet-6",
+      label: "rack-prophet",
     });
     assert.ok(!r3.isError, `Prophet-6 connect: ${r3.content[0].text}`);
     assert.match(r3.content[0].text, /device 3/);
 
     const status = await trio.callTool("is_connected");
-    assert.match(status.content[0].text, /device 1: Nord Electro 5D/);
-    assert.match(status.content[0].text, /device 2: Roland JUNO-X/);
-    assert.match(status.content[0].text, /device 3: Prophet-6/);
+    assert.match(status.content[0].text, /device 1: nord-electro-5d/);
+    assert.match(status.content[0].text, /device 2: roland-juno-x/);
+    assert.match(status.content[0].text, /device 3: sequential-prophet-6/);
   });
 
   it("targeted set_parameters never leaks across devices", async () => {
@@ -112,8 +115,8 @@ describe("E2E: three concurrent mocks (plan #6)", { concurrency: 1, skip: true /
     assert.ok(!dr.isError);
 
     const status = await trio.callTool("is_connected");
-    assert.match(status.content[0].text, /device 1: Nord Electro 5D/);
-    assert.match(status.content[0].text, /device 3: Prophet-6/);
+    assert.match(status.content[0].text, /device 1: nord-electro-5d/);
+    assert.match(status.content[0].text, /device 3: sequential-prophet-6/);
     assert.doesNotMatch(status.content[0].text, /device 2:/);
 
     // Devices 1 and 3 still respond
