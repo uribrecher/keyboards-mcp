@@ -3,6 +3,20 @@ interface BridgeRecord {
   shadowPortName: string;
 }
 
+export type BridgeRegistryErrorCode =
+  | "self-shadow"
+  | "bridge-already-exists"
+  | "shadow-conflict"
+  | "master-port-conflict"
+  | "cycle-would-form";
+
+export class BridgeRegistryError extends Error {
+  constructor(public readonly code: BridgeRegistryErrorCode, message: string) {
+    super(`${code}: ${message}`);
+    this.name = "BridgeRegistryError";
+  }
+}
+
 export class BridgeRegistry {
   private bridges = new Map<string, BridgeRecord>();
   private shadowIndex = new Map<string, string>();
@@ -10,19 +24,19 @@ export class BridgeRegistry {
 
   add(masterDeviceId: string, masterPortName: string, shadowPortName: string): void {
     if (masterPortName === shadowPortName) {
-      throw new Error("self-shadow: master and shadow ports must differ");
+      throw new BridgeRegistryError("self-shadow", "master and shadow ports must differ");
     }
     if (this.bridges.has(masterDeviceId)) {
-      throw new Error(`bridge-already-exists for master ${masterDeviceId}`);
+      throw new BridgeRegistryError("bridge-already-exists", `master ${masterDeviceId} already has a bridge`);
     }
     if (this.shadowIndex.has(shadowPortName)) {
-      throw new Error(`shadow-conflict: ${shadowPortName} is already a shadow target`);
+      throw new BridgeRegistryError("shadow-conflict", `${shadowPortName} is already a shadow target`);
     }
     if (this.masterIndex.has(masterPortName)) {
-      throw new Error(`master-port-conflict: ${masterPortName} is already a master port`);
+      throw new BridgeRegistryError("master-port-conflict", `${masterPortName} is already a master port`);
     }
     if (this.wouldFormCycle(masterPortName, shadowPortName)) {
-      throw new Error(`cycle-would-form: bridge ${masterPortName}→${shadowPortName} would close a chain`);
+      throw new BridgeRegistryError("cycle-would-form", `bridge ${masterPortName}→${shadowPortName} would close a chain`);
     }
     this.bridges.set(masterDeviceId, { masterPortName, shadowPortName });
     this.shadowIndex.set(shadowPortName, masterDeviceId);
