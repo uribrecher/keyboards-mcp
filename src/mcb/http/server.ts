@@ -110,6 +110,7 @@ function registerRoutes(routes: Route[], deps: ServerDeps): void {
   });
   routes.push(
     { method: "POST",   pattern: /^\/v1\/sessions$/,                          handler: sess.create },
+    { method: "POST",   pattern: /^\/v1\/sessions\/(?<id>[0-9a-fA-F-]+)\/attach$/, handler: sess.attach },
     { method: "POST",   pattern: /^\/v1\/devices$/,                           handler: dev.create },
     { method: "GET",    pattern: /^\/v1\/devices$/,                           handler: dev.list },
     { method: "DELETE", pattern: /^\/v1\/devices\/(?<id>[a-f0-9-]+)$/,         handler: dev.delete },
