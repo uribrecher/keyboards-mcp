@@ -63,6 +63,19 @@ describe("MCB HTTP", () => {
     assert.equal(r.body.ok, true);
   });
 
+  it("/v1/health with x-session-id returns 200 when the session exists (heartbeat happy path)", async () => {
+    const sid = await newSession();
+    const r = await call("GET", "/v1/health", undefined, { "x-session-id": sid });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.ok, true);
+  });
+
+  it("/v1/health with x-session-id returns 404 session-not-found when the session is unknown (heartbeat sad path)", async () => {
+    const r = await call("GET", "/v1/health", undefined, { "x-session-id": "abcd1234-abcd-1234-abcd-123456789012" });
+    assert.equal(r.statusCode, 404);
+    assert.equal(r.body.error, "session-not-found");
+  });
+
   it("POST /v1/sessions creates session", async () => {
     const r = await call("POST", "/v1/sessions", { pid: 1234, processName: "test" });
     assert.equal(r.statusCode, 200);

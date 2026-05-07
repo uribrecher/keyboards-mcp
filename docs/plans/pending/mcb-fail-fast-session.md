@@ -93,6 +93,37 @@ Connection failed: session-lost: MCB returned session-not-found. Dropped N local
 The agent sees this and knows to retry, and it can also confirm via
 `get_health` that `sessionId` has changed (or is `null` until next claim).
 
+### Heartbeat (proactive detection)
+
+Lazy detection — drop the cache only when the next session-bearing call
+fails — has a hole: tools that don't go through MCB (`list_parameters`,
+`set_parameters`, MIDI-only paths) and read-open broker calls
+(`list_midi_devices`) keep operating against a phantom pool for as long as
+the user avoids `connect_to_keyboard` / `disconnect_from_keyboard`. To
+close that hole, mcb-client runs a 5s heartbeat.
+
+- Endpoint: `GET /v1/health` is overloaded — when called with
+  `x-session-id`, the broker validates the session is in its table and
+  returns 404 `session-not-found` if not. Without the header, behavior is
+  unchanged (broker liveness only).
+- Client: a `setInterval` (unref'd) ticks every `MCB_HEARTBEAT_MS` (default
+  5000). Each tick pings `GET /v1/health` with the cached session id.
+  - 200 → no-op.
+  - 404 `session-not-found` → call the shared `dropSessionAndFire()`
+    helper, which clears the cache, stops the heartbeat, and fires the
+    `onSessionLost` callback (same path as a session-bearing call hitting
+    a 404). Idempotent: a concurrent session-bearing failure won't
+    double-fire the callback.
+  - any other error (mcb-unreachable, 5xx, parse) → transient, no drop.
+    Heartbeat keeps running; next tick may succeed when the broker comes
+    back, or surface 404 if the session is genuinely gone.
+- Lifecycle: starts on first session mint, stops on cache drop, restarts
+  on the next mint. `resetSession()` (test-only) also stops it.
+- Why piggyback on `/v1/health` instead of a dedicated session endpoint:
+  the broker already exposes liveness; adding a parallel route would
+  duplicate. The header-based variant keeps the broker surface minimal and
+  the client's intent ("am I still known?") obvious from the call site.
+
 ### get_health MCP tool
 
 New tool, no inputs, returns:

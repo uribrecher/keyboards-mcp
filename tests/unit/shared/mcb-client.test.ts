@@ -17,6 +17,7 @@ import {
   setOnSessionLost,
   getCachedSessionId,
   getMcbHealth,
+  __testing,
 } from "../../../src/shared/mcb-client.js";
 
 let server: StartedServer;
@@ -161,5 +162,63 @@ describe("mcb-client", () => {
     process.env.MCB_SOCKET = join(socketDir, "definitely-not-a-real-socket");
     const h2 = await getMcbHealth();
     assert.equal(h2, null);
+  });
+
+  it("heartbeat is not running before any session is minted", () => {
+    assert.equal(__testing.isHeartbeatRunning(), false);
+    assert.equal(getCachedSessionId(), null);
+  });
+
+  it("heartbeat starts after the first claim and tolerates a 200 OK tick", async () => {
+    await claimLease({ port: "Port A", model: "x" });
+    assert.equal(__testing.isHeartbeatRunning(), true);
+    const sidBefore = getCachedSessionId();
+    let cbCalls = 0;
+    setOnSessionLost(() => { cbCalls += 1; return 0; });
+
+    // Broker still has the session — tick is a no-op.
+    await __testing.triggerHeartbeat();
+    assert.equal(cbCalls, 0);
+    assert.equal(getCachedSessionId(), sidBefore);
+    assert.equal(__testing.isHeartbeatRunning(), true);
+  });
+
+  it("heartbeat detects session-not-found and drops the cache + fires onSessionLost + stops itself", async () => {
+    await claimLease({ port: "Port A", model: "x" });
+    assert.equal(__testing.isHeartbeatRunning(), true);
+
+    let cbCalls = 0;
+    setOnSessionLost(() => { cbCalls += 1; return 7; });
+
+    // Wipe the session table broker-side. Next heartbeat tick must surface
+    // it as session-not-found and drop the local cache.
+    for (const s of sessions.listAll()) sessions.delete(s.sessionId);
+
+    await __testing.triggerHeartbeat();
+
+    assert.equal(cbCalls, 1, "onSessionLost should fire exactly once");
+    assert.equal(getCachedSessionId(), null);
+    assert.equal(__testing.isHeartbeatRunning(), false, "heartbeat stops when the cache is dropped");
+  });
+
+  it("heartbeat tolerates broker-unreachable transparently — no drop, callback not fired", async () => {
+    await claimLease({ port: "Port A", model: "x" });
+    const sidBefore = getCachedSessionId();
+    let cbCalls = 0;
+    setOnSessionLost(() => { cbCalls += 1; return 0; });
+
+    // Stop the broker mid-flight. Next tick will fail with mcb-unreachable —
+    // by spec we treat that as transient and leave the cache alone.
+    await server.stop();
+    await __testing.triggerHeartbeat();
+
+    assert.equal(cbCalls, 0, "broker-unreachable on heartbeat must NOT fire onSessionLost");
+    assert.equal(getCachedSessionId(), sidBefore, "cache survives a transient broker outage");
+    assert.equal(__testing.isHeartbeatRunning(), true, "heartbeat keeps running across transient errors");
+
+    // Bring broker back up so afterEach's server.stop() doesn't try to close
+    // a stopped server (no-op is fine, but matches the lifecycle expected by
+    // other tests in the file).
+    server = await startServerWithFreshState();
   });
 });

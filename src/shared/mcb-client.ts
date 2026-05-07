@@ -9,6 +9,13 @@
  * (the device pool). The MCP does not attempt to re-mint silently — the
  * failing call surfaces session-lost to the user, and the next call mints
  * fresh.
+ *
+ * To detect session loss proactively (rather than waiting for the next
+ * session-bearing call), a 5s heartbeat pings GET /v1/health with the cached
+ * x-session-id once a session has been minted. A 404 from that ping fires the
+ * same drop-and-notify path as a session-bearing call. Broker-unreachable on
+ * the heartbeat is logged but does not drop the cache — only confirmed
+ * session-not-found from MCB drops state.
  */
 
 import { request } from "node:http";
@@ -79,10 +86,64 @@ export function getCachedSessionId(): string | null {
   return cachedSessionId;
 }
 
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 5_000;
+let heartbeatTimer: NodeJS.Timeout | null = null;
+
+function heartbeatIntervalMs(): number {
+  const raw = process.env.MCB_HEARTBEAT_MS;
+  if (raw === undefined) return DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_HEARTBEAT_INTERVAL_MS;
+}
+
+function startHeartbeat(): void {
+  if (heartbeatTimer !== null) return;
+  heartbeatTimer = setInterval(() => { void heartbeatTick(); }, heartbeatIntervalMs());
+  // Don't keep the event loop alive just for the heartbeat — when the process
+  // would otherwise exit (e.g. test teardown), let it.
+  heartbeatTimer.unref();
+}
+
+function stopHeartbeat(): void {
+  if (heartbeatTimer === null) return;
+  clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
+async function heartbeatTick(): Promise<void> {
+  const sid = cachedSessionId;
+  if (sid === null) { stopHeartbeat(); return; }
+  try {
+    await call("GET", "/v1/health", undefined, { "x-session-id": sid });
+  } catch (err) {
+    if (err instanceof MCBError && err.statusCode === 404 && err.code === "session-not-found") {
+      // Confirmed: broker no longer knows our session. Drop everything.
+      dropSessionAndFire();
+    }
+    // Any other error (mcb-unreachable, 5xx, parse) is treated as transient —
+    // we don't have evidence the session is gone, so we leave state alone and
+    // try again next tick.
+  }
+}
+
+/**
+ * Idempotent: clears the cached session, stops the heartbeat, and fires the
+ * onSessionLost callback exactly once per cache lifecycle. Returns the count
+ * of local leases the callback reported tearing down (0 if the cache was
+ * already cleared by a concurrent path).
+ */
+function dropSessionAndFire(): number {
+  if (cachedSessionId === null) return 0;
+  cachedSessionId = null;
+  stopHeartbeat();
+  return onSessionLost ? safeInvoke(onSessionLost) : 0;
+}
+
 async function ensureSession(): Promise<string> {
   if (cachedSessionId) return cachedSessionId;
   const body = await call("POST", "/v1/sessions", { pid: process.pid, processName: "keyboards-mcp" });
   cachedSessionId = (body as { sessionId: string }).sessionId;
+  startHeartbeat();
   return cachedSessionId;
 }
 
@@ -96,10 +157,8 @@ async function callWithSessionGuard(method: string, path: string, body: unknown,
     return await call(method, path, body, { "x-session-id": sessionId });
   } catch (err) {
     if (err instanceof MCBError && err.statusCode === 404 && err.code === "session-not-found") {
-      const lost = cachedSessionId ?? sessionId;
-      cachedSessionId = null;
-      const dropped = onSessionLost ? safeInvoke(onSessionLost) : 0;
-      throw new MCBSessionLostError(dropped, lost);
+      const dropped = dropSessionAndFire();
+      throw new MCBSessionLostError(dropped, sessionId);
     }
     throw err;
   }
@@ -187,7 +246,20 @@ export async function listMidiPorts(): Promise<MidiPortsResponse> {
 }
 
 /** Reset the cached session — primarily for tests. */
-export function resetSession(): void { cachedSessionId = null; onSessionLost = null; }
+export function resetSession(): void {
+  cachedSessionId = null;
+  onSessionLost = null;
+  stopHeartbeat();
+}
+
+/**
+ * Test-only entry points. Production code uses the 5s setInterval; tests
+ * trigger ticks synchronously to avoid sleeping.
+ */
+export const __testing = {
+  triggerHeartbeat: heartbeatTick,
+  isHeartbeatRunning: (): boolean => heartbeatTimer !== null,
+};
 
 function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<unknown> {
   const sock = socketPath();
