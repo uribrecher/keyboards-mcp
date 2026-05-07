@@ -11,7 +11,7 @@ interface HealthBody {
   deviceCount: number;
 }
 
-describe("E2E: get_health", { concurrency: 1 }, () => {
+describe("E2E: get_health", { concurrency: 1, skip: !!process.env.MOCK_WS_URL }, () => {
   before(async () => {
     h = await MultiDeviceHarness.start({
       mocks: [{ model: "nord-electro-5d", wsPort: 5401, label: "nordi" }],

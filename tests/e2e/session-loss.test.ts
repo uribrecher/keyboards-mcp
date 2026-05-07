@@ -4,7 +4,7 @@ import { MultiDeviceHarness } from "../helpers/multi-device-harness.js";
 
 let h: MultiDeviceHarness;
 
-describe("E2E: session-loss after MCB restart", { concurrency: 1 }, () => {
+describe("E2E: session-loss after MCB restart", { concurrency: 1, skip: !!process.env.MOCK_WS_URL }, () => {
   before(async () => {
     h = await MultiDeviceHarness.start({
       mocks: [{ model: "nord-electro-5d", wsPort: 5301, label: "nordi" }],
