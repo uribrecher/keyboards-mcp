@@ -18,6 +18,13 @@
  * only confirmed session-not-found from MCB drops state. The agent observes
  * broker reachability through the existing get_health tool, so heartbeat
  * failures don't need their own log channel.
+ *
+ * Broker-liveness is a separate concern: a 2s ticker pings GET /v1/health
+ * (no session header) whenever a subscriber is registered via
+ * `setOnBrokerLivenessChange`, and pushes "up" / "down" transitions. This is
+ * what consumers like the mock-runner shell wire into to drive UI affordances
+ * (blinking-amber LEDs on outage). Subscribers don't poll MCB themselves —
+ * they listen to the notifications this module owns.
  */
 
 import { request } from "node:http";
@@ -252,15 +259,91 @@ export function resetSession(): void {
   cachedSessionId = null;
   onSessionLost = null;
   stopHeartbeat();
+  setOnBrokerLivenessChange(null);
+}
+
+// === Broker liveness ===
+//
+// "unknown" is the initial state — we haven't probed yet, so subscribers
+// shouldn't render either up or down. After the first tick, the state is
+// always "up" or "down". Public API is one callback, not a multi-subscriber
+// bus, matching `setOnSessionLost`. Wiring multiple consumers — if that ever
+// happens — is the consumer's problem (e.g. main.ts can fan out to many
+// renderers).
+
+export type BrokerLiveness = "up" | "down" | "unknown";
+type BrokerLivenessCallback = (state: "up" | "down") => void;
+
+const DEFAULT_LIVENESS_INTERVAL_MS = 2_000;
+let brokerLiveness: BrokerLiveness = "unknown";
+let onBrokerLivenessChange: BrokerLivenessCallback | null = null;
+let livenessTimer: NodeJS.Timeout | null = null;
+
+function livenessIntervalMs(): number {
+  const raw = process.env.MCB_LIVENESS_MS;
+  if (raw === undefined) return DEFAULT_LIVENESS_INTERVAL_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_LIVENESS_INTERVAL_MS;
+}
+
+export function setOnBrokerLivenessChange(cb: BrokerLivenessCallback | null): void {
+  onBrokerLivenessChange = cb;
+  if (cb === null) {
+    stopLivenessTicker();
+    brokerLiveness = "unknown";
+    return;
+  }
+  startLivenessTicker();
+  // Help fresh subscribers render correctly without waiting for the next
+  // transition: if we already have a known state, fire it now.
+  if (brokerLiveness !== "unknown") safeNotifyLiveness(cb, brokerLiveness);
+}
+
+export function getBrokerLiveness(): BrokerLiveness {
+  return brokerLiveness;
+}
+
+function startLivenessTicker(): void {
+  if (livenessTimer !== null) return;
+  livenessTimer = setInterval(() => { void livenessTick(); }, livenessIntervalMs());
+  livenessTimer.unref();
+  // Fire once immediately so the first state transition out of "unknown"
+  // doesn't have to wait a full interval.
+  void livenessTick();
+}
+
+function stopLivenessTicker(): void {
+  if (livenessTimer === null) return;
+  clearInterval(livenessTimer);
+  livenessTimer = null;
+}
+
+async function livenessTick(): Promise<void> {
+  let next: "up" | "down";
+  try {
+    await call("GET", "/v1/health");
+    next = "up";
+  } catch {
+    next = "down";
+  }
+  if (next === brokerLiveness) return;
+  brokerLiveness = next;
+  if (onBrokerLivenessChange) safeNotifyLiveness(onBrokerLivenessChange, next);
+}
+
+function safeNotifyLiveness(cb: BrokerLivenessCallback, state: "up" | "down"): void {
+  try { cb(state); } catch { /* swallow subscriber errors */ }
 }
 
 /**
- * Test-only entry points. Production code uses the 5s setInterval; tests
+ * Test-only entry points. Production code uses the setInterval timers; tests
  * trigger ticks synchronously to avoid sleeping.
  */
 export const __testing = {
   triggerHeartbeat: heartbeatTick,
   isHeartbeatRunning: (): boolean => heartbeatTimer !== null,
+  triggerLiveness: livenessTick,
+  isLivenessRunning: (): boolean => livenessTimer !== null,
 };
 
 function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<unknown> {

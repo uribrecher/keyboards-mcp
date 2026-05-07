@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, unlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer, type StartedServer } from "../../../src/mcb/http/server.js";
@@ -15,8 +15,10 @@ import {
   MCBError,
   MCBSessionLostError,
   setOnSessionLost,
+  setOnBrokerLivenessChange,
   getCachedSessionId,
   getMcbHealth,
+  getBrokerLiveness,
   __testing,
 } from "../../../src/shared/mcb-client.js";
 
@@ -220,5 +222,73 @@ describe("mcb-client", () => {
     // a stopped server (no-op is fine, but matches the lifecycle expected by
     // other tests in the file).
     server = await startServerWithFreshState();
+  });
+
+  it("broker-liveness ticker is not running before any subscriber", () => {
+    assert.equal(__testing.isLivenessRunning(), false);
+    assert.equal(getBrokerLiveness(), "unknown");
+  });
+
+  it("setOnBrokerLivenessChange starts the ticker; an up-tick reports 'up'", async () => {
+    let lastState: string | null = null;
+    let calls = 0;
+    setOnBrokerLivenessChange((s) => { lastState = s; calls += 1; });
+    assert.equal(__testing.isLivenessRunning(), true);
+
+    await __testing.triggerLiveness();
+
+    assert.equal(getBrokerLiveness(), "up");
+    assert.equal(lastState, "up");
+    assert.equal(calls, 1);
+  });
+
+  it("a second up-tick is a no-op (only transitions notify)", async () => {
+    let calls = 0;
+    setOnBrokerLivenessChange(() => { calls += 1; });
+    await __testing.triggerLiveness();
+    await __testing.triggerLiveness();
+    assert.equal(calls, 1, "only the up-from-unknown transition should fire");
+  });
+
+  it("liveness flips up→down on broker outage and notifies the transition", async () => {
+    const events: string[] = [];
+    setOnBrokerLivenessChange((s) => { events.push(s); });
+
+    await __testing.triggerLiveness();
+    assert.deepEqual(events, ["up"]);
+
+    await server.stop();
+    if (existsSync(socketPath)) unlinkSync(socketPath);
+    await __testing.triggerLiveness();
+    assert.deepEqual(events, ["up", "down"]);
+    assert.equal(getBrokerLiveness(), "down");
+
+    // Bring the broker back so afterEach's server.stop() is a no-op rather
+    // than throwing on an already-stopped server.
+    server = await startServerWithFreshState();
+  });
+
+  it("setOnBrokerLivenessChange(null) stops the ticker and resets state", async () => {
+    setOnBrokerLivenessChange(() => { /* noop */ });
+    await __testing.triggerLiveness();
+    assert.equal(getBrokerLiveness(), "up");
+    assert.equal(__testing.isLivenessRunning(), true);
+
+    setOnBrokerLivenessChange(null);
+    assert.equal(__testing.isLivenessRunning(), false);
+    assert.equal(getBrokerLiveness(), "unknown");
+  });
+
+  it("subscribing AFTER the ticker has a known state immediately fires that state", async () => {
+    // First subscriber drives a tick.
+    setOnBrokerLivenessChange(() => { /* noop */ });
+    await __testing.triggerLiveness();
+    assert.equal(getBrokerLiveness(), "up");
+
+    // Replace with a fresh subscriber — should be notified of "up" right away,
+    // without waiting for a ticker tick.
+    let firstNotifiedState: string | null = null;
+    setOnBrokerLivenessChange((s) => { firstNotifiedState = s; });
+    assert.equal(firstNotifiedState, "up");
   });
 });

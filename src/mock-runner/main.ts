@@ -15,7 +15,7 @@ import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
 import { MockEngine } from "./engine.js";
 import * as mockRegistry from "../shared/mock-registry.js";
-import { listAllDevices } from "../shared/mcb-client.js";
+import { listAllDevices, setOnBrokerLivenessChange, getBrokerLiveness } from "../shared/mcb-client.js";
 import {
   parseMockrack,
   writeMockrackAtomic,
@@ -674,6 +674,10 @@ ipcMain.handle("list-tabs", (): Array<{
   }));
 });
 
+// Lets a freshly-loaded renderer fetch the current liveness without waiting
+// for the next transition. mcb-client owns the state — main is just relaying.
+ipcMain.handle("get-broker-liveness", () => getBrokerLiveness());
+
 // Phase 3 — per-tab MCB lease state. Returns one of "primary" | "shadow" |
 // "none" per live tab so the renderer can color each tab's LED. MCB
 // unreachable (not running, stale socket, etc.) or stalled past the
@@ -867,6 +871,16 @@ void app.whenReady().then(() => {
   mockRegistry.purgeStale();
   buildMenu();
   createWindow();
+
+  // Subscribe to MCB broker-liveness — when MCB goes down/up, fan the
+  // transition out to every renderer so the shell can flip tab LEDs into
+  // a blinking-amber "MCB-down" state and back. mcb-client owns the polling
+  // and state machine; the main process is just an IPC bridge.
+  setOnBrokerLivenessChange((state) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("mcb:broker-liveness", state);
+    }
+  });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

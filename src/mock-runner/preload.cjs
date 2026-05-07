@@ -23,6 +23,13 @@ contextBridge.exposeInMainWorld("mockRunnerAPI", {
   // Phase 3 — per-tab MCB lease state. Returns Record<tabId, "primary" | "shadow" | "none">.
   getTabLeaseStates: () => ipcRenderer.invoke("get-tab-lease-states"),
 
+  // MCB broker-liveness — fetched once on renderer load, then push-updated on
+  // every transition. State is "up" | "down" | "unknown" (the latter only
+  // before the first probe lands).
+  getBrokerLiveness: () => ipcRenderer.invoke("get-broker-liveness"),
+  onBrokerLiveness: (cb) =>
+    ipcRenderer.on("mcb:broker-liveness", (_e, state) => cb(state)),
+
   // Menu → renderer events (relayed by main.ts via webContents.send)
   onMenuNewTab: (cb) => ipcRenderer.on("menu:new-tab", cb),
   onMenuExtractBackup: (cb) => ipcRenderer.on("menu:extract-backup", cb),
