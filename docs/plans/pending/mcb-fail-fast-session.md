@@ -59,10 +59,14 @@ items I'm folding into this plan rather than a separate one:
 
 ### Session-loss detection
 
-MCB returns `404 session-not-found` from `POST /v1/devices` and `DELETE /v1/devices/:id`
-when the `x-session-id` header references a session MCB doesn't have. (It does
-NOT return this for `GET /v1/devices` — that's a read-open call. The MCB server
-has no other path that takes `x-session-id`.)
+MCB returns `404 session-not-found` from `POST /v1/devices` (claim) and from
+`GET /v1/health` when called with an `x-session-id` header referencing a
+session MCB doesn't have. `DELETE /v1/devices/:id` doesn't validate the
+session against the session table — it returns `404 device-not-found` if the
+lease is unknown, or `403 not-owner` if the header doesn't match the lease
+owner — so a session-restart-then-release sequence surfaces as
+`device-not-found` (the lease is gone too), not `session-not-found`.
+`GET /v1/devices` is read-open; no `x-session-id` is consulted.
 
 ### MCP response to session-not-found
 
@@ -87,7 +91,7 @@ When `mcb-client.ts` sees `404 session-not-found`:
 `releaseLease`) catches `MCBSessionLostError` and returns:
 
 ```
-Connection failed: session-lost: MCB returned session-not-found. Dropped N local lease(s). Retry the call to establish a fresh session.
+Connection failed: session-lost: MCB returned session-not-found. Dropped N local lease(s). Retry to establish a fresh session.
 ```
 
 The agent sees this and knows to retry, and it can also confirm via
@@ -169,8 +173,11 @@ When MCB is unreachable: `mcbReachable: false, mcbHealth: null, sessionId: <what
   - Wrap `call()` (for status-bearing requests) so that a 404
     `session-not-found` clears `cachedSessionId`, fires `onSessionLost`, and
     rethrows as `MCBSessionLostError(droppedLeaseCount, ...)`.
-  - Update `releaseLease` to also tolerate `session-lost` cleanly (lease is
-    already gone broker-side; treat as success after pool teardown).
+  - `releaseLease` propagates `MCBSessionLostError` (the same
+    `callWithSessionGuard` wrap clears the cache and fires the callback);
+    `disconnect_from_keyboard` catches it and surfaces a
+    `(session-lost: dropped N local lease(s))` note instead of the usual
+    `(lease ... released)` note.
 - `src/index.ts`: wire `setOnSessionLost(() => tearDownPool(pool))`. Helper
   iterates `pool.list()` and calls `pool.disconnect(entry.index)` for each;
   swallows individual disposer errors.
