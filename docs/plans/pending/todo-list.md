@@ -84,3 +84,11 @@ Emitter sites to migrate (search `mainWindow?.webContents.send("menu:console-not
 
 Out of scope for the MVP: a unified backend event-log that aggregates across MCB / mock-runner / MCP servers — the *Operator dashboard* item in the MCB backlog covers that broader ambition. This task is just the mock-runner shell: pull the noise out of the chat box.
 
+### 19. Mock-runner: tab LEDs reflect MCB liveness via blinking-amber state
+
+**Status:** Ready to plan. The frontend-design skill is appropriate for the LED visuals.
+
+When MCB is unreachable, every per-tab LED in the mock-runner switches to a blinking-amber "MCB-down" state. When MCB recovers, the LEDs stop blinking and resume rendering from lease ownership (primary / shadow / none) as today.
+
+mcb-client owns liveness internally and pushes broker-up / broker-down notifications. Mock-runner subscribes and toggles the blink state — no polling on the mock-runner side.
+
