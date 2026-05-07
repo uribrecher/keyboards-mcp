@@ -101,4 +101,18 @@ export class DevicePool {
   size(): number {
     return this.devices.size;
   }
+
+  /**
+   * Disconnect every device in the pool. Used on MCB session-loss: the
+   * broker has already discarded our leases, so the local OS-level handles
+   * (MIDI output/input/forward + mock-status WS) must be torn down to keep
+   * the cache consistent with broker truth. Returns the count torn down.
+   */
+  disconnectAll(): number {
+    const indices = [...this.devices.keys()];
+    for (const i of indices) {
+      try { this.disconnect(i); } catch { /* already gone */ }
+    }
+    return indices.length;
+  }
 }

@@ -60,10 +60,6 @@ function postJson(socketPath: string, path: string, body: unknown, headers: Reco
   return udsCall(socketPath, "POST", path, body, headers);
 }
 
-function getJson(socketPath: string, path: string, headers: Record<string, string> = {}): Promise<{ statusCode: number; body: unknown }> {
-  return udsCall(socketPath, "GET", path, undefined, headers);
-}
-
 function udsCall(socketPath: string, method: string, path: string, body: unknown | undefined, headers: Record<string, string>): Promise<{ statusCode: number; body: unknown }> {
   return new Promise((resolve, reject) => {
     const req = request({ socketPath, method, path, headers: { "content-type": "application/json", ...headers } }, (res) => {
@@ -125,7 +121,7 @@ describe("MCB lifecycle", () => {
     }
   });
 
-  it("a session survives an MCB restart via attach", async () => {
+  it("does not persist sessions across an MCB restart — old session id returns 404, client must mint a fresh one", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mcb-lifecycle-"));
     const path = join(dir, "sock");
     let mcb1: ChildProcess | undefined;
@@ -134,27 +130,31 @@ describe("MCB lifecycle", () => {
       mcb1 = spawnMcb(path);
       assert.equal(await waitForHealth(path), true, "first MCB failed to come up");
 
-      // Create a session against MCB-1 and remember its id.
-      const create = await postJson(path, "/v1/sessions", { pid: process.pid, processName: "test" });
-      assert.equal(create.statusCode, 200);
-      const sessionId = (create.body as { sessionId: string }).sessionId;
+      const create1 = await postJson(path, "/v1/sessions", { pid: process.pid, processName: "test" });
+      assert.equal(create1.statusCode, 200);
+      const oldSessionId = (create1.body as { sessionId: string }).sessionId;
 
-      // Crash MCB-1 (SIGKILL — no graceful unlink). Because socket-cleanup at
-      // startup auto-recovers stale UDS files, MCB-2 can re-bind cleanly.
-      mcb1.kill("SIGKILL");
+      // SIGTERM (graceful shutdown) — the broker unlinks the socket and
+      // exits cleanly. SIGKILL on the tsx wrapper PID does not propagate to
+      // the broker child, so the listener stays bound and the successor
+      // refuses to start (another-instance-alive).
+      mcb1.kill("SIGTERM");
       await waitForExit(mcb1);
 
       mcb2 = spawnMcb(path);
       assert.equal(await waitForHealth(path), true, "second MCB failed to come up");
 
-      // MCB-2 doesn't know `sessionId` yet. Attach with the same id —
-      // subsequent calls using x-session-id work normally.
-      const attach = await postJson(path, `/v1/sessions/${sessionId}/attach`, { pid: process.pid, processName: "test" });
-      assert.equal(attach.statusCode, 200);
-      assert.equal((attach.body as { sessionId: string }).sessionId, sessionId);
+      // MCB is the source of truth for sessions; restarting it discards the
+      // session table. Using the old sessionId on a session-bearing call must
+      // return session-not-found — clients are expected to mint a fresh one.
+      const claim = await postJson(path, "/v1/devices", { port: "Port A", model: "m" }, { "x-session-id": oldSessionId });
+      assert.equal(claim.statusCode, 404, `expected 404 session-not-found, got ${claim.statusCode}: ${JSON.stringify(claim.body)}`);
+      assert.equal((claim.body as { error: string }).error, "session-not-found");
 
-      const list = await getJson(path, "/v1/devices", { "x-session-id": sessionId });
-      assert.equal(list.statusCode, 200);
+      const create2 = await postJson(path, "/v1/sessions", { pid: process.pid, processName: "test" });
+      assert.equal(create2.statusCode, 200);
+      const freshSessionId = (create2.body as { sessionId: string }).sessionId;
+      assert.notEqual(freshSessionId, oldSessionId, "a freshly minted session must not reuse the old id");
     } finally {
       if (mcb1 && mcb1.exitCode === null && mcb1.signalCode === null) mcb1.kill("SIGKILL");
       if (mcb2 && mcb2.exitCode === null && mcb2.signalCode === null) mcb2.kill("SIGTERM");

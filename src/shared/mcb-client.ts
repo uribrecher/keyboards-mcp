@@ -1,8 +1,23 @@
 /**
  * HTTP-over-UDS client for talking to midi-connections-broker (MCB).
  *
- * Caches the MCP's session id for the lifetime of the process. The session is
- * created lazily on the first call that needs one (claimLease).
+ * MCB is the source of truth for sessions and leases; this module only caches
+ * the MCP's session id in memory. The session is minted lazily on the first
+ * call that needs one (claimLease). When MCB returns 404 session-not-found on
+ * a session-bearing call, the cache is dropped and the registered
+ * `onSessionLost` callback fires so the caller can tear down dependent caches
+ * (the device pool). The MCP does not attempt to re-mint silently — the
+ * failing call surfaces session-lost to the user, and the next call mints
+ * fresh.
+ *
+ * To detect session loss proactively (rather than waiting for the next
+ * session-bearing call), a 5s heartbeat pings GET /v1/health with the cached
+ * x-session-id once a session has been minted. A 404 from that ping fires the
+ * same drop-and-notify path as a session-bearing call. Any other heartbeat
+ * error (mcb-unreachable, 5xx, parse) is treated as transient and ignored —
+ * only confirmed session-not-found from MCB drops state. The agent observes
+ * broker reachability through the existing get_health tool, so heartbeat
+ * failures don't need their own log channel.
  */
 
 import { request } from "node:http";
@@ -37,59 +52,141 @@ export class MCBError extends Error {
   }
 }
 
+/**
+ * Thrown when MCB returns 404 session-not-found. By the time this error
+ * surfaces, the cached session id has been dropped and the onSessionLost
+ * callback has been invoked. `droppedLeaseCount` is the number of leases
+ * the callback reported tearing down (informational — included in the
+ * user-facing message).
+ */
+export class MCBSessionLostError extends MCBError {
+  constructor(public droppedLeaseCount: number, public lostSessionId: string) {
+    super(404, "session-lost",
+      `MCB returned session-not-found. Dropped ${droppedLeaseCount} local lease(s). Retry to establish a fresh session.`);
+  }
+}
+
 function socketPath(): string {
   return process.env.MCB_SOCKET ?? join(homedir(), ".mcb", "sock");
 }
 
 let cachedSessionId: string | null = null;
-let attachedThisRun = false;
 
 /**
- * Idempotently re-attach the cached sessionId to MCB. Used after an MCB
- * restart so subsequent claims don't fail with `session-not-found`. Safe to
- * call on every claim; the second call is a no-op for the lifetime of the
- * MCB process (handler refreshes PID/clears miss state).
+ * Returns the number of local leases torn down. Registered by `index.ts` so
+ * a session-loss can clear the device pool synchronously with the cache drop.
  */
-export async function attachSession(sessionId: string): Promise<void> {
-  await call("POST", `/v1/sessions/${sessionId}/attach`, { pid: process.pid, processName: "keyboards-mcp" });
+type SessionLostCallback = () => number;
+let onSessionLost: SessionLostCallback | null = null;
+
+export function setOnSessionLost(cb: SessionLostCallback | null): void {
+  onSessionLost = cb;
+}
+
+/** Read the cached session id without minting one. Used by get_health. */
+export function getCachedSessionId(): string | null {
+  return cachedSessionId;
+}
+
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 5_000;
+let heartbeatTimer: NodeJS.Timeout | null = null;
+
+function heartbeatIntervalMs(): number {
+  const raw = process.env.MCB_HEARTBEAT_MS;
+  if (raw === undefined) return DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_HEARTBEAT_INTERVAL_MS;
+}
+
+function startHeartbeat(): void {
+  if (heartbeatTimer !== null) return;
+  heartbeatTimer = setInterval(() => { void heartbeatTick(); }, heartbeatIntervalMs());
+  // Don't keep the event loop alive just for the heartbeat — when the process
+  // would otherwise exit (e.g. test teardown), let it.
+  heartbeatTimer.unref();
+}
+
+function stopHeartbeat(): void {
+  if (heartbeatTimer === null) return;
+  clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
+async function heartbeatTick(): Promise<void> {
+  const sid = cachedSessionId;
+  if (sid === null) { stopHeartbeat(); return; }
+  try {
+    await call("GET", "/v1/health", undefined, { "x-session-id": sid });
+  } catch (err) {
+    if (err instanceof MCBError && err.statusCode === 404 && err.code === "session-not-found") {
+      // Confirmed: broker no longer knows our session. Drop everything.
+      dropSessionAndFire();
+    }
+    // Any other error (mcb-unreachable, 5xx, parse) is treated as transient —
+    // we don't have evidence the session is gone, so we leave state alone and
+    // try again next tick.
+  }
+}
+
+/**
+ * Idempotent: clears the cached session, stops the heartbeat, and fires the
+ * onSessionLost callback exactly once per cache lifecycle. Returns the count
+ * of local leases the callback reported tearing down (0 if the cache was
+ * already cleared by a concurrent path).
+ */
+function dropSessionAndFire(): number {
+  if (cachedSessionId === null) return 0;
+  cachedSessionId = null;
+  stopHeartbeat();
+  return onSessionLost ? safeInvoke(onSessionLost) : 0;
 }
 
 async function ensureSession(): Promise<string> {
-  if (cachedSessionId) {
-    // First claim after an MCB restart: tell MCB about our session before
-    // the claim. Cached locally so we don't pay the round-trip on every call.
-    if (!attachedThisRun) {
-      try {
-        await attachSession(cachedSessionId);
-        attachedThisRun = true;
-      } catch (err) {
-        // If MCB is unreachable, propagate; the claim will fail and the
-        // caller surfaces the user-facing error.
-        if (err instanceof MCBError && err.code === "mcb-unreachable") throw err;
-        // Any other failure (4xx/5xx) is non-fatal for the cached path —
-        // the claim itself will surface the real problem.
-      }
-    }
-    return cachedSessionId;
-  }
+  if (cachedSessionId) return cachedSessionId;
   const body = await call("POST", "/v1/sessions", { pid: process.pid, processName: "keyboards-mcp" });
   cachedSessionId = (body as { sessionId: string }).sessionId;
-  attachedThisRun = true;
+  startHeartbeat();
   return cachedSessionId;
+}
+
+/**
+ * Wrap a session-bearing call so that 404 session-not-found drops the cached
+ * session, fires the onSessionLost callback, and rethrows as
+ * MCBSessionLostError. All other errors propagate as-is.
+ */
+async function callWithSessionGuard(method: string, path: string, body: unknown, sessionId: string): Promise<unknown> {
+  try {
+    return await call(method, path, body, { "x-session-id": sessionId });
+  } catch (err) {
+    if (err instanceof MCBError && err.statusCode === 404 && err.code === "session-not-found") {
+      const dropped = dropSessionAndFire();
+      throw new MCBSessionLostError(dropped, sessionId);
+    }
+    throw err;
+  }
+}
+
+function safeInvoke(cb: SessionLostCallback): number {
+  try { return cb(); } catch { return 0; }
 }
 
 export async function claimLease(req: ClaimRequest): Promise<Manifest> {
   const sessionId = await ensureSession();
-  return await call("POST", "/v1/devices", req, { "x-session-id": sessionId }) as Manifest;
+  return await callWithSessionGuard("POST", "/v1/devices", req, sessionId) as Manifest;
 }
 
 export async function releaseLease(deviceId: string): Promise<void> {
   if (!cachedSessionId) return;
-  await call("DELETE", `/v1/devices/${deviceId}`, undefined, { "x-session-id": cachedSessionId });
+  await callWithSessionGuard("DELETE", `/v1/devices/${deviceId}`, undefined, cachedSessionId);
 }
 
+/**
+ * Returns leases owned by this MCP's cached session, or [] if no session has
+ * been minted yet. Reads must not mint a session as a side effect.
+ */
 export async function listMyDevices(): Promise<Manifest[]> {
-  const sessionId = await ensureSession();
+  if (cachedSessionId === null) return [];
+  const sessionId = cachedSessionId;
   const all = (await call("GET", "/v1/devices")) as Manifest[];
   return all.filter((m) => m.ownerSessionId === sessionId);
 }
@@ -97,6 +194,23 @@ export async function listMyDevices(): Promise<Manifest[]> {
 /** List ALL leases across sessions (read-open). Does not require a session. */
 export async function listAllDevices(): Promise<Manifest[]> {
   return (await call("GET", "/v1/devices")) as Manifest[];
+}
+
+export interface McbHealth {
+  ok: boolean;
+  uptimeSec: number;
+  sessionsActive: number;
+  devicesConnected: number;
+}
+
+/** GET /v1/health. Returns null if MCB is unreachable. */
+export async function getMcbHealth(): Promise<McbHealth | null> {
+  try {
+    return (await call("GET", "/v1/health")) as McbHealth;
+  } catch (err) {
+    if (err instanceof MCBError && err.code === "mcb-unreachable") return null;
+    throw err;
+  }
 }
 
 /**
@@ -134,7 +248,20 @@ export async function listMidiPorts(): Promise<MidiPortsResponse> {
 }
 
 /** Reset the cached session — primarily for tests. */
-export function resetSession(): void { cachedSessionId = null; attachedThisRun = false; }
+export function resetSession(): void {
+  cachedSessionId = null;
+  onSessionLost = null;
+  stopHeartbeat();
+}
+
+/**
+ * Test-only entry points. Production code uses the 5s setInterval; tests
+ * trigger ticks synchronously to avoid sleeping.
+ */
+export const __testing = {
+  triggerHeartbeat: heartbeatTick,
+  isHeartbeatRunning: (): boolean => heartbeatTimer !== null,
+};
 
 function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<unknown> {
   const sock = socketPath();

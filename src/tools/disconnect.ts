@@ -41,7 +41,10 @@ export function registerDisconnect(server: McpServer, pool: DevicePool): void {
       pool.disconnect(index);
 
       // Release the MCB lease (if any). Tolerate failure — local cleanup already happened
-      // and MCB will GC the lease eventually anyway.
+      // and MCB will GC the lease eventually anyway. DELETE never returns
+      // session-not-found (it doesn't consult the session table — only owner
+      // and device existence), so a session loss surfaces as device-not-found
+      // here rather than session-lost.
       let mcbNote = "";
       if (mcbDeviceId) {
         try {
