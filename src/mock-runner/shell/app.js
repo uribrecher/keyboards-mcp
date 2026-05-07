@@ -585,14 +585,14 @@ chatInput.addEventListener("keydown", (e) => {
 // ── Agent heartbeat ──
 //
 // Poll GET /health to keep the meter honest about the agent's
-// reachability without waiting for the user to send a chat. 3s while
-// healthy; backs off to 8s once we've missed three in a row, so a
+// reachability without waiting for the user to send a chat. 10s while
+// healthy; backs off to 20s once we've missed three in a row, so a
 // long server-down doesn't hammer the network tab. We never probe
 // while a chat is in flight — the in-flight POST is itself proof of
 // life and a duplicate fetch is racy.
 
-const PROBE_INTERVAL_OK   = 3000;
-const PROBE_INTERVAL_DOWN = 8000;
+const PROBE_INTERVAL_OK   = 10000;
+const PROBE_INTERVAL_DOWN = 20000;
 const PROBE_FAILURES_BEFORE_BACKOFF = 3;
 let probeFailureCount = 0;
 
