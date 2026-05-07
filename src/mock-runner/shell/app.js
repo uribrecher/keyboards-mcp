@@ -31,6 +31,10 @@ const api = window.mockRunnerAPI;
  */
 const tabs = []; // [{ tabId, modelInfoId|null, displayName, label, wsPort|null, iframe, button }]
 let activeTabId = null;
+// MCB broker-liveness state — "unknown" until the first probe lands. Drives
+// the blinking-amber LED state on every tab while down. Module-level so
+// `renderTabButton` can apply the right class on creation.
+let currentBrokerLiveness = "unknown";
 
 const tabbarEl   = document.getElementById("tabbar");
 const tabPlusEl  = document.getElementById("tab-new");
@@ -60,6 +64,7 @@ function renderTabButton(tab) {
 
   const led = document.createElement("span");
   led.className = "tab__led";
+  if (currentBrokerLiveness === "down") led.classList.add("tab__led--mcb-down");
 
   const title = document.createElement("span");
   title.className = "tab__title";
@@ -725,6 +730,30 @@ async function pollMcbLeaseStates() {
 
 void pollMcbLeaseStates();
 setInterval(() => { void pollMcbLeaseStates(); }, MCB_POLL_INTERVAL_MS);
+
+// MCB broker-liveness → blinking amber on all tab LEDs while broker is down.
+// State machine and polling live in mcb-client (main process); we just
+// listen and toggle a CSS class on every LED. When liveness returns to "up",
+// the regular lease-state poll above re-renders normal colors on its next
+// tick. `currentBrokerLiveness` is declared near the top so newly-created
+// tabs in `renderTabButton` can pick up the right class on creation.
+
+function applyBrokerLivenessToLeds(state) {
+  currentBrokerLiveness = state;
+  const down = state === "down";
+  for (const tab of tabs) {
+    const led = tab.button?.querySelector(".tab__led");
+    if (!led) continue;
+    led.classList.toggle("tab__led--mcb-down", down);
+  }
+}
+
+if (api?.getBrokerLiveness && api?.onBrokerLiveness) {
+  void api.getBrokerLiveness().then((state) => {
+    if (state === "up" || state === "down") applyBrokerLivenessToLeds(state);
+  }).catch(() => { /* preload missing or main-process error — leave default */ });
+  api.onBrokerLiveness((state) => applyBrokerLivenessToLeds(state));
+}
 
 // ─────────────────────────────────────────────────────────────────
 // Backup picker modal

@@ -255,6 +255,19 @@ body {
     inset 0 -1px 0 rgba(0,0,0,0.45);
 }
 
+/* MCB unreachable: every tab's LED blinks amber, overriding any lease-state
+ * coloring. Amber on lease-state colors deliberately — the broker outage
+ * is a system-wide condition that takes precedence over per-tab status. */
+@keyframes tab-led-mcb-down {
+  0%   { background: var(--c-amber);      box-shadow: 0 0 5px var(--c-amber-glow), inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 0 rgba(0,0,0,0.45); border-color: var(--c-amber-deep); }
+  100% { background: var(--c-amber-deep); box-shadow: 0 0 0 transparent,            inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -1px 0 rgba(0,0,0,0.55); border-color: var(--c-amber-deep); }
+}
+.tab__led--mcb-down,
+.tab__led--mcb-down[data-state="primary"],
+.tab__led--mcb-down[data-state="shadow"] {
+  animation: tab-led-mcb-down 0.7s ease-in-out infinite alternate;
+}
+
 .tab__title {
   overflow: hidden;
   text-overflow: ellipsis;
