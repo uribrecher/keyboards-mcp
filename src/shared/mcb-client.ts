@@ -13,9 +13,11 @@
  * To detect session loss proactively (rather than waiting for the next
  * session-bearing call), a 5s heartbeat pings GET /v1/health with the cached
  * x-session-id once a session has been minted. A 404 from that ping fires the
- * same drop-and-notify path as a session-bearing call. Broker-unreachable on
- * the heartbeat is logged but does not drop the cache — only confirmed
- * session-not-found from MCB drops state.
+ * same drop-and-notify path as a session-bearing call. Any other heartbeat
+ * error (mcb-unreachable, 5xx, parse) is treated as transient and ignored —
+ * only confirmed session-not-found from MCB drops state. The agent observes
+ * broker reachability through the existing get_health tool, so heartbeat
+ * failures don't need their own log channel.
  */
 
 import { request } from "node:http";

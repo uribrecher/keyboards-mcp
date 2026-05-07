@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { DevicePool } from "../shared/device-pool.js";
-import { releaseLease, MCBError, MCBSessionLostError } from "../shared/mcb-client.js";
+import { releaseLease, MCBError } from "../shared/mcb-client.js";
 
 export function registerDisconnect(server: McpServer, pool: DevicePool): void {
   server.registerTool(
@@ -41,18 +41,17 @@ export function registerDisconnect(server: McpServer, pool: DevicePool): void {
       pool.disconnect(index);
 
       // Release the MCB lease (if any). Tolerate failure — local cleanup already happened
-      // and MCB will GC the lease eventually anyway.
+      // and MCB will GC the lease eventually anyway. DELETE never returns
+      // session-not-found (it doesn't consult the session table — only owner
+      // and device existence), so a session loss surfaces as device-not-found
+      // here rather than session-lost.
       let mcbNote = "";
       if (mcbDeviceId) {
         try {
           await releaseLease(mcbDeviceId);
           mcbNote = ` (lease ${mcbDeviceId} released)`;
         } catch (err) {
-          if (err instanceof MCBSessionLostError) {
-            // The session-lost callback already disconnected every other device
-            // in the pool. Surface that to the caller — it is not a normal release.
-            mcbNote = ` (session-lost: dropped ${err.droppedLeaseCount} local lease(s))`;
-          } else if (err instanceof MCBError) {
+          if (err instanceof MCBError) {
             console.warn(`[mcp] MCB release failed (non-fatal): ${err.code}: ${err.message}`);
             mcbNote = ` (warning: lease release failed: ${err.code})`;
           } else {
