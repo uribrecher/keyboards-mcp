@@ -35,40 +35,6 @@ describe("SessionManager", () => {
     assert.equal(mgr.listAll().length, 2);
   });
 
-  describe("attach (MCB-crash recovery)", () => {
-    it("creates a session with the given id when MCB doesn't know it (post-restart)", () => {
-      const id = "abcd1234-abcd-1234-abcd-123456789012";
-      const s = mgr.attach(id, { pid: 100, processName: "client" });
-      assert.equal(s.sessionId, id);
-      assert.equal(s.pid, 100);
-      assert.equal(s.processName, "client");
-      assert.equal(mgr.get(id)?.pid, 100);
-    });
-
-    it("refreshes pid on a known session (idempotent attach)", () => {
-      const s = mgr.create({ pid: 100, processName: "old" });
-      const r = mgr.attach(s.sessionId, { pid: 200, processName: "new" });
-      assert.equal(r.sessionId, s.sessionId);
-      assert.equal(r.pid, 200);
-      assert.equal(r.processName, "new");
-      assert.equal(mgr.get(s.sessionId)?.pid, 200);
-    });
-
-    it("clears markedDeadAt and miss state so an attach mid-sweep is not reaped", () => {
-      const s = mgr.create({ pid: 100 });
-      alivePids.delete(100);
-      mgr.runLivenessSweep(0);
-      mgr.runLivenessSweep(10_001);
-      assert.ok(mgr.get(s.sessionId)?.markedDeadAt !== null);
-      alivePids.add(200);
-      mgr.attach(s.sessionId, { pid: 200 });
-      assert.equal(mgr.get(s.sessionId)?.markedDeadAt, null);
-      // Subsequent sweep with the new (alive) PID stays clean.
-      mgr.runLivenessSweep(15_000);
-      assert.ok(mgr.get(s.sessionId));
-    });
-  });
-
   describe("PID-liveness GC", () => {
     it("does not GC a live PID", () => {
       const s = mgr.create({ pid: 100 });

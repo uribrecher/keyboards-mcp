@@ -7,12 +7,35 @@ import { startServer, type StartedServer } from "../../../src/mcb/http/server.js
 import { LeaseRegistry } from "../../../src/mcb/lease-registry.js";
 import { BridgeRegistry } from "../../../src/mcb/bridge-registry.js";
 import { SessionManager } from "../../../src/mcb/session-manager.js";
-import { claimLease, releaseLease, listMyDevices, resetSession, MCBError } from "../../../src/shared/mcb-client.js";
+import {
+  claimLease,
+  releaseLease,
+  listMyDevices,
+  resetSession,
+  MCBError,
+  MCBSessionLostError,
+  setOnSessionLost,
+  getCachedSessionId,
+  getMcbHealth,
+} from "../../../src/shared/mcb-client.js";
 
 let server: StartedServer;
+let sessions: SessionManager;
 let socketDir: string;
 let socketPath: string;
 let prevSocket: string | undefined;
+
+async function startServerWithFreshState(): Promise<StartedServer> {
+  sessions = new SessionManager();
+  return startServer({
+    socketPath,
+    leases: new LeaseRegistry(),
+    bridges: new BridgeRegistry(),
+    sessions,
+    portList: { listOutputs: () => ["Port A", "Port B"], listInputs: () => [] },
+    mockRegistry: { findByLabel: () => undefined, findByMidiPort: () => undefined, list: () => [], listAllWithStale: () => [] },
+  });
+}
 
 beforeEach(async () => {
   socketDir = mkdtempSync(join(tmpdir(), "mcp-mcb-"));
@@ -20,14 +43,7 @@ beforeEach(async () => {
   prevSocket = process.env.MCB_SOCKET;
   process.env.MCB_SOCKET = socketPath;
   resetSession();
-  server = await startServer({
-    socketPath,
-    leases: new LeaseRegistry(),
-    bridges: new BridgeRegistry(),
-    sessions: new SessionManager(),
-    portList: { listOutputs: () => ["Port A", "Port B"], listInputs: () => [] },
-    mockRegistry: { findByLabel: () => undefined, findByMidiPort: () => undefined, list: () => [], listAllWithStale: () => [] },
-  });
+  server = await startServerWithFreshState();
 });
 
 afterEach(async () => {
@@ -76,5 +92,74 @@ describe("mcb-client", () => {
       assert.ok(err instanceof MCBError);
       assert.equal((err as MCBError).code, "mcb-unreachable");
     }
+  });
+
+  it("listMyDevices returns [] without minting a session when none cached", async () => {
+    assert.equal(getCachedSessionId(), null);
+    const mine = await listMyDevices();
+    assert.deepEqual(mine, []);
+    // Verify the read did NOT mint a session.
+    assert.equal(getCachedSessionId(), null);
+  });
+
+  it("session-not-found drops the cache, fires onSessionLost, and throws MCBSessionLostError", async () => {
+    // Mint a session by claiming, capture the id, then wipe the broker's
+    // session table to force session-not-found on the next claim.
+    await claimLease({ port: "Port A", model: "x" });
+    const sidBefore = getCachedSessionId();
+    assert.ok(sidBefore, "expected a cached session after first claim");
+    for (const s of sessions.listAll()) sessions.delete(s.sessionId);
+
+    let cbCalls = 0;
+    setOnSessionLost(() => {
+      cbCalls += 1;
+      return 3;  // Pretend three local leases were torn down.
+    });
+
+    try {
+      await claimLease({ port: "Port B", model: "x" });
+      assert.fail("expected MCBSessionLostError");
+    } catch (err) {
+      assert.ok(err instanceof MCBSessionLostError, `expected MCBSessionLostError, got ${err}`);
+      const sl = err as MCBSessionLostError;
+      assert.equal(sl.code, "session-lost");
+      assert.equal(sl.statusCode, 404);
+      assert.equal(sl.droppedLeaseCount, 3);
+      assert.equal(sl.lostSessionId, sidBefore);
+    }
+    assert.equal(cbCalls, 1, "onSessionLost should fire exactly once");
+    assert.equal(getCachedSessionId(), null, "cache must be dropped after session-lost");
+  });
+
+  it("a follow-up claim after session-lost mints a fresh session", async () => {
+    await claimLease({ port: "Port A", model: "x" });
+    const sidBefore = getCachedSessionId();
+    for (const s of sessions.listAll()) sessions.delete(s.sessionId);
+    setOnSessionLost(() => 0);
+
+    await assert.rejects(
+      claimLease({ port: "Port B", model: "x" }),
+      (err: unknown) => err instanceof MCBSessionLostError,
+    );
+
+    // Next claim must succeed by minting a fresh session.
+    const m = await claimLease({ port: "Port B", model: "x" });
+    assert.equal(m.primary.portName, "Port B");
+    const sidAfter = getCachedSessionId();
+    assert.ok(sidAfter);
+    assert.notEqual(sidAfter, sidBefore, "fresh session id expected after session-lost");
+  });
+
+  it("getMcbHealth returns broker payload when reachable, null when not", async () => {
+    const h = await getMcbHealth();
+    assert.ok(h);
+    assert.equal(h.ok, true);
+    assert.equal(typeof h.uptimeSec, "number");
+    assert.equal(typeof h.sessionsActive, "number");
+    assert.equal(typeof h.devicesConnected, "number");
+
+    process.env.MCB_SOCKET = join(socketDir, "definitely-not-a-real-socket");
+    const h2 = await getMcbHealth();
+    assert.equal(h2, null);
   });
 });
