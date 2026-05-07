@@ -79,6 +79,17 @@ export class MultiDeviceHarness {
     const client = new Client({ name: "multi-device-harness", version: "1.0.0" });
     await client.connect(transport);
 
+    // Drain MCP stderr so a full pipe buffer can't block the child during
+    // shutdown. The pipe stays open for the lifetime of the child; without
+    // a consumer, errors written after the buffer fills (~64KB) deadlock.
+    const stderr = transport.stderr;
+    if (stderr) {
+      stderr.on("data", (chunk: Buffer) => {
+        if (process.env.MCP_TEST_STDERR) process.stderr.write(`[mcp ${transport.pid}] ${chunk}`);
+      });
+      stderr.on("error", () => { /* child went away */ });
+    }
+
     return new MultiDeviceHarness({ mocks, client, transport, mcbProc, mcbDir, mcbSocketPath });
   }
 
@@ -90,7 +101,30 @@ export class MultiDeviceHarness {
     return this.mocks[index];
   }
 
+  /**
+   * Stop the MCB process and spawn a fresh one on the same socket. Used by
+   * the session-loss e2e to simulate "user restarted MCB" — the new broker has
+   * an empty session table, so any session-bearing call from the still-running
+   * MCP triggers session-not-found. SIGTERM lets the broker unlink the
+   * socket cleanly; SIGKILL on the tsx wrapper PID does not propagate to the
+   * broker child, leaving the listener bound.
+   */
+  async restartMcb(): Promise<void> {
+    const proc = this.mcbProc;
+    proc.kill("SIGTERM");
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(() => { proc.kill("SIGKILL"); resolve(); }, 2000);
+      proc.once("exit", () => { clearTimeout(t); resolve(); });
+    });
+    this.mcbProc = await startMcb(this.mcbSocketPath);
+  }
+
   async stop(): Promise<void> {
+    // Close transport pipes first so the MCP child sees stdin EOF and exits.
+    // Without this, an MCP child whose transport.pid is the npx wrapper can
+    // outlive the SIGKILL (the wrapper dies, the underlying node child does
+    // not) — leaving open FDs that keep the test runner's event loop alive.
+    try { await this.mcpClient.close(); } catch { /* best-effort */ }
     const mcpPid = this.transport.pid;
     if (mcpPid) {
       try { process.kill(mcpPid, "SIGKILL"); } catch { /* already dead */ }

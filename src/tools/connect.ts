@@ -6,7 +6,7 @@ import { loadModelById } from "../shared/model-registry.js";
 import { WsMidiConnection } from "../midi/ws-midi-connection.js";
 import type { KeyboardModel, KeyboardDevice } from "../shared/keyboard-model.js";
 import { findByMidiPort } from "../shared/mock-registry.js";
-import { claimLease, MCBError } from "../shared/mcb-client.js";
+import { claimLease, MCBError, MCBSessionLostError } from "../shared/mcb-client.js";
 
 /** Same sanitizer as the model-level backup-cache. */
 function sanitizeLabelForCache(label: string | undefined | null): string {
@@ -122,6 +122,12 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
             upper_channel,
           });
         } catch (err) {
+          if (err instanceof MCBSessionLostError) {
+            return {
+              content: [{ type: "text", text: `Connection failed: session-lost: ${err.message}` }],
+              isError: true,
+            };
+          }
           if (err instanceof MCBError) {
             return {
               content: [{ type: "text", text: `Connection failed: ${err.code}: ${err.message}` }],
