@@ -255,16 +255,15 @@ body {
     inset 0 -1px 0 rgba(0,0,0,0.45);
 }
 
-/* MCB unreachable: every tab's LED blinks amber, overriding any lease-state
- * coloring. Amber on lease-state colors deliberately — the broker outage
- * is a system-wide condition that takes precedence over per-tab status. */
+/* MCB unreachable: every tab's LED blinks amber. With the broker down, the
+ * lease-state poll collapses every tab to "none" (amber), so we only need
+ * to pulse opacity — no need to fight data-state coloring. Same opacity
+ * pattern as `pending-blink`. */
 @keyframes tab-led-mcb-down {
-  0%   { background: var(--c-amber);      box-shadow: 0 0 5px var(--c-amber-glow), inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 0 rgba(0,0,0,0.45); border-color: var(--c-amber-deep); }
-  100% { background: var(--c-amber-deep); box-shadow: 0 0 0 transparent,            inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -1px 0 rgba(0,0,0,0.55); border-color: var(--c-amber-deep); }
+  from { opacity: 1; }
+  to   { opacity: 0.25; }
 }
-.tab__led--mcb-down,
-.tab__led--mcb-down[data-state="primary"],
-.tab__led--mcb-down[data-state="shadow"] {
+.tab__led--mcb-down {
   animation: tab-led-mcb-down 0.7s ease-in-out infinite alternate;
 }
 
