@@ -255,6 +255,18 @@ body {
     inset 0 -1px 0 rgba(0,0,0,0.45);
 }
 
+/* MCB unreachable: every tab's LED blinks amber. With the broker down, the
+ * lease-state poll collapses every tab to "none" (amber), so we only need
+ * to pulse opacity — no need to fight data-state coloring. Same opacity
+ * pattern as `pending-blink`. */
+@keyframes tab-led-mcb-down {
+  from { opacity: 1; }
+  to   { opacity: 0.25; }
+}
+.tab__led--mcb-down {
+  animation: tab-led-mcb-down 0.7s ease-in-out infinite alternate;
+}
+
 .tab__title {
   overflow: hidden;
   text-overflow: ellipsis;
