@@ -23,6 +23,7 @@ import {
   type MockrackV1,
   type MockrackTab,
 } from "../shared/mockrack-format.js";
+import { emitEvent, emitEventLogClear } from "./event-log-ipc.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -118,8 +119,10 @@ function hasContentToSave(): boolean {
  * those don't fail silently.
  */
 function notifyEmptySaveRefused(): void {
-  mainWindow?.webContents.send("menu:console-note", {
-    text: "Nothing to save — add a tab and pick a model first.",
+  emitEvent(mainWindow, {
+    severity: "warn",
+    source:   "setup",
+    text:     "Nothing to save — add a tab and pick a model first.",
   });
 }
 
@@ -259,8 +262,11 @@ async function loadSetupFromPath(path: string): Promise<void> {
       let model;
       try { model = await loadModelById(t.modelId); }
       catch {
-        mainWindow?.webContents.send("menu:console-note",
-          { text: `Skipped tab "${t.label}": model "${t.modelId}" not registered.` });
+        emitEvent(mainWindow, {
+          severity: "warn",
+          source:   "setup",
+          text:     `Skipped tab "${t.label}": model "${t.modelId}" not registered.`,
+        });
         continue;
       }
       const handler = model.createMockHandler?.();
@@ -278,8 +284,10 @@ async function loadSetupFromPath(path: string): Promise<void> {
       try { await engine.start(); }
       catch (err) {
         console.error(`Engine start failed for ${t.label}:`, err);
-        mainWindow?.webContents.send("menu:console-note", {
-          text: `Skipped tab "${t.label}" (${model.info.displayName}): engine failed to start — ${err instanceof Error ? err.message : String(err)}`,
+        emitEvent(mainWindow, {
+          severity: "error",
+          source:   `${model.info.displayName} ("${t.label}")`,
+          text:     `engine failed to start — ${err instanceof Error ? err.message : String(err)}`,
         });
         continue;
       }
@@ -290,8 +298,11 @@ async function loadSetupFromPath(path: string): Promise<void> {
 
       const restored = engine.restoreSnapshot(t.state);
       if (!restored && t.state !== null) {
-        mainWindow?.webContents.send("menu:console-note",
-          { text: `${model.info.displayName} ("${t.label}"): full state restore not yet implemented — knobs reset to defaults.` });
+        emitEvent(mainWindow, {
+          severity: "warn",
+          source:   `${model.info.displayName} ("${t.label}")`,
+          text:     "full state restore not yet implemented — knobs reset to defaults.",
+        });
       }
 
       const isActive = i === parsed.activeTabIndex;
@@ -512,6 +523,20 @@ function buildMenu(): void {
           label: "Extract Backup…",
           accelerator: "CmdOrCtrl+E",
           click: () => mainWindow?.webContents.send("menu:extract-backup"),
+        },
+        {
+          label: "Clear Event Log",
+          accelerator: "CmdOrCtrl+K",
+          // Always-enabled. The renderer ignores the event when CHAT is
+          // active — that's simpler than syncing menu enablement with
+          // renderer pane state.
+          click: () => emitEventLogClear(mainWindow),
+        },
+        {
+          // No accelerator — discoverable via menu only. Backlog #19 will
+          // give it a permanent home (toolbar / composer-row / palette).
+          label: "Reset Chat",
+          click: () => mainWindow?.webContents.send("menu:chat-reset"),
         },
         // Quit lives in the app menu on macOS (no duplicate here). On
         // Windows/Linux there's no app menu, so the File menu owns Quit.
@@ -857,8 +882,11 @@ app.on("open-file", (event, path) => {
   void (async () => {
     if (!await confirmDiscardIfDirty()) return;
     if (!existsSync(path)) {
-      mainWindow?.webContents.send("menu:console-note",
-        { text: `File not found: ${path}` });
+      emitEvent(mainWindow, {
+        severity: "error",
+        source:   "setup",
+        text:     `File not found: ${path}`,
+      });
       return;
     }
     await loadSetupFromPath(path);
@@ -897,8 +925,11 @@ void app.whenReady().then(() => {
           await loadSetupFromPath(path);
           return;
         }
-        mainWindow?.webContents.send("menu:console-note",
-          { text: `File not found: ${path}` });
+        emitEvent(mainWindow, {
+          severity: "warn",
+          source:   "setup",
+          text:     `File not found: ${path}`,
+        });
       }
       const recents = app.getRecentDocuments();
       for (const path of recents) {

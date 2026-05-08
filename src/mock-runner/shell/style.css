@@ -344,17 +344,66 @@ body {
 
 .bay {
   display: grid;
-  /* Console panel was 380px fixed — too narrow for monospaced LLM output
-   * (ASCII tables, code, long URLs). Clamp lets it breathe at larger
-   * window sizes while protecting the model-UI slot at the 1200px min.
-   * Bumped ~10% wider (484/35vw/616) over the first iteration after the
-   * user reported it still felt cramped. */
-  grid-template-columns: 1fr clamp(484px, 35vw, 616px);
+  /* Three columns: slot (flex) | 6px splitter | console (operator-set
+   * width via --console-w, falling back to the original clamp default
+   * if the operator hasn't dragged it yet). The slot has an implicit
+   * floor of 600px enforced by the splitter drag clamp in app.js. */
+  grid-template-columns: 1fr 6px var(--console-w, clamp(484px, 35vw, 616px));
   gap: 0;
   min-height: 0;
   height: 100%;
   background: var(--c-shell);
 }
+
+.bay__splitter {
+  position: relative;
+  cursor: col-resize;
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.02) 0%,
+      rgba(255,255,255,0.06) 50%,
+      rgba(255,255,255,0.02) 100%);
+  border-left:  1px solid var(--c-edge);
+  border-right: 1px solid var(--c-edge);
+  transition: background .12s, box-shadow .12s;
+}
+
+/* Subtle dimple at vertical center — reads as a screw/grip. */
+.bay__splitter::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 14px;
+  margin: -7px 0 0 -1px;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255,255,255,0.18) 0%, transparent 70%),
+    var(--c-chassis-low);
+  border-radius: 1px;
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,0.4);
+}
+
+/* Hover: reveal a faint amber accent line down the middle, echoing
+ * the chassis lamps without becoming a noisy seam. */
+.bay__splitter:hover {
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.04) 0%,
+      rgba(255,255,255,0.10) 50%,
+      rgba(255,255,255,0.04) 100%);
+  box-shadow: inset 0 0 0 1px rgba(240,168,48,0.30);
+}
+
+/* Mid-drag: the body gets this class so iframes don't swallow
+ * pointer events and the cursor stays col-resize globally. */
+body.bay--resizing,
+body.bay--resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+body.bay--resizing iframe { pointer-events: none; }
 
 .slot {
   position: relative;
@@ -435,19 +484,97 @@ body {
   pointer-events: none;
 }
 
-.console__header {
+/* ── Tabbed box: tab strip ── */
+.console__tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background:
+    linear-gradient(180deg, var(--c-console-hi) 0%, var(--c-console) 100%);
+  border-bottom: 1px solid var(--c-edge);
+}
+
+.console__tab {
+  appearance: none;
+  -webkit-appearance: none;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  background:
-    linear-gradient(180deg, var(--c-console-hi) 0%, var(--c-console) 100%);
-  border-bottom: 1px solid var(--c-edge);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--c-edge);
+  cursor: pointer;
+  font-family: var(--font-display);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.32em;
   text-transform: uppercase;
   color: var(--c-text-dim);
+  text-align: left;
+}
+
+.console__tab:focus-visible {
+  outline: 1px solid var(--c-amber);
+  outline-offset: -3px;
+}
+
+/* Active tab: bright text + amber underline. The 1px underline is
+ * laid in via box-shadow inset so it doesn't perturb the flex
+ * baseline. */
+.console__tab[aria-selected="true"] {
+  color: var(--c-text-bright);
+  background: linear-gradient(180deg, var(--c-console) 0%, var(--c-console-hi) 100%);
+  box-shadow: inset 0 -1px 0 0 var(--c-amber);
+}
+
+/* Inactive CHAT tab: ambiently visible, dimmed. Its lamp/SID/meter
+ * children stay live (state still updates) but at lower glow so the
+ * active LOG content reads as primary. */
+.console__tab[aria-selected="false"] {
+  opacity: 0.55;
+}
+.console__tab[aria-selected="false"]:hover {
+  opacity: 0.75;
+}
+
+/* LOG tab specifics */
+.console__tab-label {
+  letter-spacing: 0.45em;
+}
+
+/* Unread LED — small jewel, severity-tinted, slot lives in LOG tab. */
+.console__unread {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-amber);
+  box-shadow:
+    0 0 5px var(--c-amber-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+  transition: background .2s, box-shadow .2s;
+}
+.console__unread[data-severity="info"] {
+  background: var(--c-green);
+  box-shadow:
+    0 0 5px var(--c-green-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+.console__unread[data-severity="warn"] {
+  background: var(--c-amber);
+  box-shadow:
+    0 0 5px var(--c-amber-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+.console__unread[data-severity="error"] {
+  background: var(--c-fault);
+  box-shadow:
+    0 0 5px var(--c-fault-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
 }
 
 .console__lamp {
@@ -463,14 +590,14 @@ body {
 /* When the agent is offline, the lamp goes cold — desaturated oxblood
  * with the highlight pulled to almost nothing. The state lives on the
  * header so all status-driven children can share one selector. */
-.console__header[data-state="lost"] .console__lamp {
+.console__tab[data-state="lost"] .console__lamp {
   background: var(--c-fault-deep);
   box-shadow:
     0 0 3px rgba(110,36,24,0.25),
     inset 0 1px 0 rgba(255,255,255,0.06),
     inset 0 -1px 0 rgba(0,0,0,0.5);
 }
-.console__header[data-state="unknown"] .console__lamp {
+.console__tab[data-state="unknown"] .console__lamp {
   /* Cold/unprobed — same treatment as lost but without the fault hue. */
   background: var(--c-text-faint);
   box-shadow:
@@ -514,10 +641,10 @@ body {
 }
 /* Lost-state: the value stays visible but goes cold — same family of
  * cues as the meter and lamp, no extra ceremony. */
-.console__header[data-state="lost"] .console__sid-label {
+.console__tab[data-state="lost"] .console__sid-label {
   color: var(--c-fault-deep);
 }
-.console__header[data-state="lost"] .console__sid-value {
+.console__tab[data-state="lost"] .console__sid-value {
   color: var(--c-fault-deep);
   opacity: 0.7;
 }
@@ -897,7 +1024,7 @@ body {
  * too so peripheral vision picks up the fault even before the user
  * looks at the meter. The header is an earlier sibling of the
  * composer inside .console, so the general-sibling combinator works. */
-.console__header[data-state="lost"] ~ .composer .composer__prompt {
+.console__tabs:has(.console__tab[data-state="lost"]) ~ .composer .composer__prompt {
   color: var(--c-fault);
   opacity: 0.55;
 }
@@ -1113,4 +1240,87 @@ body {
 @keyframes pending-blink {
   0%, 100% { opacity: 0.25; }
   50%      { opacity: 1; }
+}
+
+/* ═════════════ Event Log pane ═════════════ */
+
+.console__log--events {
+  /* Reuse the chat-log scrollback / padding by sharing .console__log;
+   * this file just adds event-row layout on top. */
+  font-family: var(--font-chat);
+  color: var(--c-paper);
+}
+
+.console__log--events[hidden] {
+  display: none;
+}
+
+.event-log__row {
+  display: grid;
+  grid-template-columns: 14px 70px 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.025);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--c-paper);
+}
+
+.event-log__led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 4px; /* visual centering against first text line */
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+.event-log__row[data-severity="info"]  .event-log__led {
+  background: var(--c-green);
+  box-shadow:
+    0 0 4px var(--c-green-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+.event-log__row[data-severity="warn"]  .event-log__led {
+  background: var(--c-amber);
+  box-shadow:
+    0 0 4px var(--c-amber-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+.event-log__row[data-severity="error"] .event-log__led {
+  background: var(--c-fault);
+  box-shadow:
+    0 0 4px var(--c-fault-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+
+.event-log__ts {
+  color: var(--c-paper-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.event-log__source {
+  color: var(--c-paper-dim);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.event-log__text {
+  color: var(--c-paper);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Empty state — same dim brushed-rail vibe as .slot__empty. */
+.event-log__empty {
+  padding: 32px 12px;
+  text-align: center;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--c-text-faint);
 }
