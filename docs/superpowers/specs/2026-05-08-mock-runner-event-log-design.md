@@ -111,15 +111,16 @@ end up is deferred to the follow-up backlog item *"Re-home the chat
 backup/reset and event-log clear actions"* — it's a small UX question that
 deserves its own thinking pass and shouldn't gate this work.
 
-### Why a segmented switch, not tabs or a split
+### Why tabs, not a vertical split or a drawer
 
-- The chat panel is already cramped at the 484px lower bound (CSS comment at
-  `style.css:347-351`). Splitting it vertically would reverse the user's
-  earlier widening.
-- A bottom drawer would steal vertical space from the model UI iframe, which is
-  the most precious surface.
-- The selector reads as one piece of equipment with a function selector — true
-  to the existing chassis aesthetic and avoids inventing a new visual idiom.
+- A vertical split inside the console would shrink the chat — already cramped
+  at the 484px lower bound (CSS comment at `style.css:347-351`) and recently
+  widened. Splitting it would reverse that.
+- A bottom drawer would steal vertical space from the model UI iframe, which
+  is the most precious surface.
+- Tabs reuse a metaphor the operator already sees in the rack tab rail at the
+  top of the chassis — same family of control, applied to the console. No new
+  visual idiom is invented; the chassis aesthetic is preserved.
 
 ## Unread LED
 
@@ -169,7 +170,10 @@ Pane behavior:
 - Auto-scroll to bottom on new event when the pane is already pinned to bottom;
   preserve scroll position when the operator has scrolled up (same idiom as
   chat).
-- `clear` button in the header empties the pane (does not affect chat).
+- **Clear**: not surfaced as a button in this work — see backlog #19 for where
+  the action lands. The implementation plan adds a keyboard accelerator that
+  fires `clear-event-log` when the LOG pane is active so the action is
+  reachable in the meantime.
 - Empty state: a single dim line — `— no events —` — using the same
   brushed-rail empty-state idiom as `.slot__empty`.
 
@@ -209,12 +213,15 @@ onEventLog: (cb) => ipcRenderer.on("menu:event-log", (_e, p) => cb(p)),
 - Adds `api.onEventLog((p) => appendEventRow(p))`.
 - New `appendEventRow({severity, source, text, ts})` builds a row in the log
   pane DOM and updates the unread LED if the active pane is CHAT.
-- Two new DOM containers: `#event-log` (sibling of `#chat-log`, hidden when
-  CHAT is active) and an `#event-clear` button.
+- One new DOM container: `#event-log` (sibling of `#chat-log`, hidden when
+  CHAT is active). No new buttons in this surface.
 - Pane switch handler toggles `[hidden]` between `#chat-log` and `#event-log`,
   toggles `aria-selected` / active styling on the two tabs, applies the
-  inactive-tab dim state to the CHAT tab when LOG is active (and vice versa),
-  and clears the unread LED on switch-to-LOG.
+  inactive-tab dim state to whichever tab is inactive, and clears the unread
+  LED when LOG becomes active.
+- Keyboard accelerator handler for `clear-event-log` (registered in `main.ts`
+  menu setup, only enabled when the LOG tab is active) sends a `menu:event-log-clear`
+  event to the renderer, which empties `#event-log`.
 
 ## Migration table
 
@@ -255,9 +262,11 @@ Replace with a draggable vertical splitter between slot and console.
 - Console width: **min 380px, max 800px**. Below 380 the chat composer becomes
   uncomfortable; above 800 the slot starts losing meaningful UI space on a
   ~1440px window. The lower bound is intentionally below the prior 484 floor —
-  the original floor was a chat-readability defense, but the segmented switch
-  reduces chat dominance, and the splitter lets the operator pick a split per
-  task.
+  that floor was a chat-readability defense built into the static CSS, but
+  with a draggable splitter the operator can pick a comfortable split per
+  task. Letting the floor drop to 380 means an operator who wants a
+  slot-dominant view (driving a keyboard, glancing at log entries) can have it
+  without hitting an arbitrary stop.
 - Slot width: implicit floor of **600px** enforced by clamping the console max
   width when the window is small. On windows where 600 + 6 + 380 > total, the
   splitter clamps to whatever console width the available space allows.
