@@ -4,6 +4,7 @@
 
 import { AgentClient, isWebSearchResult } from "@sounds-and-recreation/agent-client";
 import { marked } from "marked";
+import { nextUnread } from "./unread-state.js";
 
 // GFM gives us markdown tables (the original itch); breaks:true so a
 // single \n becomes a <br> rather than being collapsed inside a paragraph,
@@ -139,7 +140,12 @@ function beginRename(tab, titleEl) {
       // effect for any header-bound state. The wsPort doesn't change.
     } else {
       titleEl.textContent = tabTitleText(tab);
-      appendRow("system", `Rename failed: ${result.error ?? "(unknown)"}`);
+      appendEventRow({
+        severity: "warn",
+        source:   `${tab.displayName} ("${tab.label}")`,
+        text:     `rename failed: ${result.error ?? "(unknown)"}`,
+        ts:       Date.now(),
+      });
     }
   };
 
@@ -285,12 +291,15 @@ void newTab();
 const chatLog       = document.getElementById("chat-log");
 const chatForm      = document.getElementById("chat-form");
 const chatInput     = document.getElementById("chat-input");
-const chatReset     = document.getElementById("chat-reset");
-const chatExtract   = document.getElementById("chat-extract");
 const meterEl       = document.getElementById("agent-status");
-const consoleHeader = document.getElementById("console-header");
+const consoleHeader = document.getElementById("tab-chat"); // tabbed-box restructure: data-state lives on the chat tab now
 const sidEl         = document.getElementById("agent-sid");
 const sidValueEl    = document.getElementById("agent-sid-value");
+const tabChatBtn        = document.getElementById("tab-chat");
+const tabLogBtn         = document.getElementById("tab-log");
+const eventLog          = document.getElementById("event-log");
+const eventLogUnread    = document.getElementById("event-log-unread");
+const composerForm      = document.getElementById("chat-form");
 
 let chatBusy = false;
 // Agent process identity — emitted by GET /health. Stable while the
@@ -310,6 +319,124 @@ let agentSessionId = null;
 let agentState = "unknown";
 let lastConfirmed = "unknown";
 const PLACEHOLDER_LOST = "agent offline — start agent on :2999";
+
+// ─────────────────────────────────────────────────────────────────
+// Console panes — CHAT / LOG (see spec
+// docs/superpowers/specs/2026-05-08-mock-runner-event-log-design.md)
+// ─────────────────────────────────────────────────────────────────
+
+/** @type {"chat" | "log"} */
+let activePane = "chat";
+
+/** @type {"info" | "warn" | "error" | null} */
+let unreadSeverity = null;
+
+function setActivePane(pane) {
+  if (pane === activePane) return;
+  activePane = pane;
+
+  const isChat = pane === "chat";
+  tabChatBtn.setAttribute("aria-selected", isChat ? "true" : "false");
+  tabLogBtn.setAttribute("aria-selected",  isChat ? "false" : "true");
+
+  chatLog.hidden       = !isChat;
+  composerForm.hidden  = !isChat;     // composer only makes sense in CHAT
+  eventLog.hidden      = isChat;
+
+  if (!isChat) {
+    // Selecting LOG clears the unread state — by-definition read.
+    unreadSeverity = null;
+    renderUnreadLed();
+    // When entering LOG, scroll to bottom so the operator sees the
+    // most recent events without manually scrolling.
+    eventLog.scrollTop = eventLog.scrollHeight;
+  } else {
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+}
+
+function renderUnreadLed() {
+  if (unreadSeverity === null) {
+    eventLogUnread.hidden = true;
+    eventLogUnread.removeAttribute("data-severity");
+  } else {
+    eventLogUnread.hidden = false;
+    eventLogUnread.setAttribute("data-severity", unreadSeverity);
+  }
+}
+
+tabChatBtn.addEventListener("click", () => setActivePane("chat"));
+tabLogBtn.addEventListener("click",  () => setActivePane("log"));
+
+/**
+ * @param {{severity:"info"|"warn"|"error", source?:string, text:string, ts:number}} ev
+ */
+function appendEventRow(ev) {
+  // Drop empty-state placeholder on first append.
+  const empty = eventLog.querySelector(".event-log__empty");
+  if (empty) empty.remove();
+
+  const row = document.createElement("div");
+  row.className = "event-log__row";
+  row.setAttribute("data-severity", ev.severity);
+
+  const led = document.createElement("span");
+  led.className = "event-log__led";
+  row.appendChild(led);
+
+  const ts = document.createElement("span");
+  ts.className = "event-log__ts";
+  ts.textContent = formatHms(ev.ts);
+  row.appendChild(ts);
+
+  const body = document.createElement("div");
+  if (ev.source) {
+    const src = document.createElement("span");
+    src.className = "event-log__source";
+    src.textContent = ev.source;
+    body.appendChild(src);
+  }
+  const text = document.createElement("span");
+  text.className = "event-log__text";
+  text.textContent = ev.text;
+  body.appendChild(text);
+  row.appendChild(body);
+
+  // Cap scrollback at 500 rows; drop oldest first.
+  while (eventLog.children.length >= 500) eventLog.firstElementChild?.remove();
+
+  // Auto-scroll only if pinned to bottom (chat idiom).
+  const pinnedToBottom =
+    eventLog.scrollHeight - eventLog.scrollTop - eventLog.clientHeight < 4;
+
+  eventLog.appendChild(row);
+
+  if (pinnedToBottom) eventLog.scrollTop = eventLog.scrollHeight;
+
+  // Update unread LED if CHAT is active.
+  if (activePane === "chat") {
+    unreadSeverity = nextUnread(unreadSeverity, ev.severity);
+    renderUnreadLed();
+  }
+}
+
+function formatHms(ts) {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
+function clearEventLog() {
+  eventLog.innerHTML = "";
+  const empty = document.createElement("div");
+  empty.className = "event-log__empty";
+  empty.textContent = "— no events —";
+  eventLog.appendChild(empty);
+  unreadSeverity = null;
+  renderUnreadLed();
+}
 
 function applyAgentState(next) {
   agentState = next;
@@ -413,7 +540,7 @@ loadChatHistory();
 
 let inFlightAbort = null;
 
-chatReset.addEventListener("click", () => {
+function resetChat() {
   // If a turn is mid-stream, abort it. The SDK rolls back the in-flight
   // user message automatically, so client.messages stays consistent.
   if (inFlightAbort) inFlightAbort.abort();
@@ -421,7 +548,9 @@ chatReset.addEventListener("click", () => {
   chatLog.innerHTML = "";
   try { localStorage.removeItem(CHAT_HISTORY_KEY); } catch { /* ignore */ }
   appendRow("system", "Conversation reset.");
-});
+}
+
+api.onMenuChatReset?.(() => resetChat());
 
 // ── Send ──
 
@@ -768,7 +897,12 @@ const modalConfirm  = document.getElementById("backup-confirm");
 function openBackupModal() {
   const loaded = tabs.filter((t) => t.modelInfoId);
   if (loaded.length === 0) {
-    appendRow("system", "No loaded mocks. Pick a model on a tab first.");
+    appendEventRow({
+      severity: "warn",
+      source:   "backup",
+      text:     "No loaded mocks. Pick a model on a tab first.",
+      ts:       Date.now(),
+    });
     return;
   }
 
@@ -823,14 +957,23 @@ modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeBackup
 async function runBackupExtract(tabId) {
   const filePath = await api.openBackupDialog();
   if (!filePath) return;
-  appendRow("system", `Extracting backup from ${filePath}…`);
+  const tab    = tabs.find((t) => t.tabId === tabId);
+  const source = tab ? `${tab.displayName} ("${tab.label}")` : "backup";
+  appendEventRow({
+    severity: "info",
+    source,
+    text:     `Extracting backup from ${filePath}…`,
+    ts:       Date.now(),
+  });
   const result = await api.extractBackup({ filePath, tabId });
-  appendRow(result.ok ? "system" : "tool",
-    result.message,
-    { error: !result.ok });
+  appendEventRow({
+    severity: result.ok ? "info" : "error",
+    source,
+    text:     result.message,
+    ts:       Date.now(),
+  });
 }
 
-chatExtract.addEventListener("click", openBackupModal);
 api.onMenuExtractBackup?.(() => openBackupModal());
 
 // ─────────────────────────────────────────────────────────────────
@@ -846,8 +989,14 @@ api.onDirtyChanged?.(({ isDirty, currentFileName }) => {
     : base;
 });
 
-// Render in-shell notes from main (Open errors, graceful-degradation msgs).
-api.onConsoleNote?.(({ text }) => { appendRow("system", text); });
+// Event-log subscriptions — non-agent lifecycle/status notes from main
+// (replaces the old menu:console-note → chat path).
+api.onEventLog?.((payload) => appendEventRow(payload));
+api.onEventLogClear?.(() => {
+  // Accelerator fires globally; ignore unless LOG is the active pane.
+  if (activePane !== "log") return;
+  clearEventLog();
+});
 
 // Open flow asks the renderer to drop a specific iframe (during teardown)
 api.onCloseTab?.(({ tabId }) => {
@@ -908,4 +1057,111 @@ api.onMountTab?.((info) => {
     btn.classList.remove("is-active");
     slotEmpty.hidden = tabs.length > 0;
   }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// Bay splitter — operator-controlled slot/console width
+// (spec: docs/superpowers/specs/2026-05-08-mock-runner-event-log-design.md)
+// ─────────────────────────────────────────────────────────────────
+
+const SPLITTER_STORAGE_KEY = "mock-runner:console-w";
+const CONSOLE_MIN_PX = 380;
+const CONSOLE_MAX_PX = 800;
+const SLOT_FLOOR_PX  = 600;
+const SPLITTER_PX    = 6;
+
+const bayEl     = document.querySelector(".bay");
+const splitter  = document.getElementById("bay-splitter");
+
+function clampConsoleWidth(px, viewportW) {
+  // Hard min/max + dynamic ceiling so the slot never drops below its floor.
+  const dynamicMax = Math.max(
+    CONSOLE_MIN_PX,
+    Math.min(CONSOLE_MAX_PX, viewportW - SPLITTER_PX - SLOT_FLOOR_PX),
+  );
+  return Math.max(CONSOLE_MIN_PX, Math.min(dynamicMax, px));
+}
+
+function applyConsoleWidth(px) {
+  bayEl.style.setProperty("--console-w", `${px}px`);
+}
+
+function persistConsoleWidth(px) {
+  try { localStorage.setItem(SPLITTER_STORAGE_KEY, String(px)); }
+  catch { /* private mode / quota — ignore */ }
+}
+
+function clearPersistedWidth() {
+  try { localStorage.removeItem(SPLITTER_STORAGE_KEY); }
+  catch { /* ignore */ }
+  bayEl.style.removeProperty("--console-w");
+}
+
+// Initial load — apply persisted width if present and within current bounds.
+(function initSplitter() {
+  let saved;
+  try { saved = localStorage.getItem(SPLITTER_STORAGE_KEY); } catch { saved = null; }
+  if (!saved) return;
+  const n = Number(saved);
+  if (!Number.isFinite(n)) return;
+  const clamped = clampConsoleWidth(n, window.innerWidth);
+  applyConsoleWidth(clamped);
+})();
+
+// Drag handlers
+let dragStartX = 0;
+let dragStartW = 0;
+
+splitter.addEventListener("pointerdown", (e) => {
+  splitter.setPointerCapture(e.pointerId);
+  document.body.classList.add("bay--resizing");
+  dragStartX = e.clientX;
+  // Read the current rendered width — uses --console-w if set, else
+  // the clamp() default. getBoundingClientRect on the console gives
+  // us the real pixel value either way.
+  dragStartW = document.getElementById("console").getBoundingClientRect().width;
+  e.preventDefault();
+});
+
+splitter.addEventListener("pointermove", (e) => {
+  if (!splitter.hasPointerCapture(e.pointerId)) return;
+  // Splitter sits to the LEFT of the console. Dragging right shrinks
+  // the console; dragging left grows it. (Reverse the sign vs intuition.)
+  const next = clampConsoleWidth(dragStartW - (e.clientX - dragStartX), window.innerWidth);
+  applyConsoleWidth(next);
+});
+
+function endSplitterDrag(e, persist) {
+  if (splitter.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
+  document.body.classList.remove("bay--resizing");
+  if (persist) {
+    const finalW = document.getElementById("console").getBoundingClientRect().width;
+    persistConsoleWidth(Math.round(finalW));
+  }
+}
+
+splitter.addEventListener("pointerup",     (e) => endSplitterDrag(e, true));
+// On cancel (OS gesture, alt-tab, focus loss) clear the resizing state
+// without overwriting the persisted width — the drag is being aborted,
+// not committed. Without these, .bay--resizing can stick on <body>
+// leaving cursor: col-resize and iframe pointer-events disabled until
+// reload.
+splitter.addEventListener("pointercancel", (e) => endSplitterDrag(e, false));
+splitter.addEventListener("lostpointercapture", (e) => endSplitterDrag(e, false));
+
+// Double-click resets to the static-CSS default.
+splitter.addEventListener("dblclick", () => {
+  clearPersistedWidth();
+});
+
+// Window resize — re-clamp the persisted width if it would now violate
+// the slot floor under the new viewport. Don't rewrite localStorage; if
+// the operator resizes back later, restore their original choice.
+window.addEventListener("resize", () => {
+  let saved;
+  try { saved = localStorage.getItem(SPLITTER_STORAGE_KEY); } catch { saved = null; }
+  if (!saved) return;
+  const n = Number(saved);
+  if (!Number.isFinite(n)) return;
+  applyConsoleWidth(clampConsoleWidth(n, window.innerWidth));
 });
