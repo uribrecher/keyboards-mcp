@@ -11,7 +11,7 @@
 
 import { describe, it, before, after } from "node:test";
 import { strict as assert } from "node:assert";
-import { MultiDeviceHarness } from "../helpers/multi-device-harness.js";
+import { MultiDeviceHarness } from "../../helpers/multi-device-harness.js";
 
 let h: MultiDeviceHarness;
 let prevHeartbeat: string | undefined;
