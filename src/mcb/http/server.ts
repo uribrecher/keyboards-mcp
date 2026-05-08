@@ -11,8 +11,12 @@ import { makeSessionsHandlers } from "./sessions.js";
 import { makeDevicesHandlers } from "./devices.js";
 import { makeMidiPortsHandler } from "./midi-ports.js";
 
+export type ListenTarget =
+  | { kind: "uds"; socketPath: string }
+  | { kind: "tcp"; host: string; port: number };
+
 export interface ServerDeps {
-  socketPath: string;
+  listen: ListenTarget;
   leases: LeaseRegistry;
   bridges: BridgeRegistry;
   sessions: SessionManager;
@@ -20,7 +24,7 @@ export interface ServerDeps {
   mockRegistry: MockRegistryReader;
 }
 
-export interface StartedServer { socketPath: string; stop(): Promise<void>; }
+export interface StartedServer { listen: ListenTarget; stop(): Promise<void>; }
 
 export interface RouteContext {
   params: Record<string, string>;
@@ -36,8 +40,10 @@ interface Route {
 
 export async function startServer(deps: ServerDeps): Promise<StartedServer> {
   const startedAtMs = Date.now();
-  const dir = dirname(deps.socketPath);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  if (deps.listen.kind === "uds") {
+    const dir = dirname(deps.listen.socketPath);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  }
 
   const routes: Route[] = [
     { method: "GET", pattern: /^\/v1\/health$/, handler: makeHealthHandler({ leases: deps.leases, sessions: deps.sessions, startedAtMs }) },
@@ -72,14 +78,23 @@ export async function startServer(deps: ServerDeps): Promise<StartedServer> {
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(deps.socketPath, () => {
-      try { chmodSync(deps.socketPath, 0o600); } catch { /* macOS sometimes refuses */ }
-      resolve();
-    });
+    if (deps.listen.kind === "uds") {
+      const sock = deps.listen.socketPath;
+      server.listen(sock, () => {
+        try { chmodSync(sock, 0o600); } catch { /* macOS sometimes refuses */ }
+        resolve();
+      });
+    } else {
+      // TCP listen mode — used by the docker-compose CI topology where MCB
+      // runs in its own container and reachability is over the bridge network.
+      // No filesystem permissions to apply; operators are expected to bind on
+      // a private network only.
+      server.listen(deps.listen.port, deps.listen.host, () => resolve());
+    }
   });
 
   return {
-    socketPath: deps.socketPath,
+    listen: deps.listen,
     stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }

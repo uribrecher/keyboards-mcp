@@ -25,11 +25,15 @@ ESLint config is in `eslint.config.js` (flat config). Key rules: `no-floating-pr
 ## Testing
 
 ```bash
-npm test               # Run all layers: unit → integration → E2E
-npm run test:unit      # Unit tests only (fast, no processes)
+npm test                  # Run all layers: unit → integration → E2E (mcb + external)
+npm run test:unit         # Unit tests only (fast, no processes)
 npm run test:integration  # Integration tests (spawns headless mocks)
-npm run test:e2e       # E2E tests (spawns mock + MCP server)
-npm run test:check     # Type-check test files (no emit)
+npm run test:e2e:mcb      # E2E tests that spin up their own MCB on a tmpdir socket
+npm run test:e2e          # E2E tests that REQUIRE an external MCB at MCB_SOCKET
+                          #   start one in another terminal: `npm run mcb`
+npm run test:coverage     # All tests under V8 coverage; writes coverage.lcov + console summary
+                          #   same external-MCB precondition as test:e2e
+npm run test:check        # Type-check test files (no emit)
 ```
 
 Tests use `node:test` + `node:assert` (zero dependencies) and run via `tsx` from source.
@@ -46,15 +50,24 @@ tests/
     prophet-6/
   integration/
     mock-runner.test.ts            # Headless mock spawn + WS state
-  e2e/
+  e2e/                             # Top-level files require an external MCB (npm run mcb)
     connect.test.ts                # MCP connect/disconnect
     set-parameters.test.ts         # MCP set params + verify
     get-state.test.ts              # MCP get state
     list-parameters.test.ts        # MCP list params
     multi-model.test.ts            # Regression: all models connect + basic tools
+    mcb/                           # Self-provisioning: each suite spawns its own MCB
+      multi-device.test.ts         # Two-device pool isolation
+      three-concurrent.test.ts     # Plan #6 — three concurrent mocks
+      backup-per-instance.test.ts
+      get-health.test.ts
+      heartbeat.test.ts
+      label-discovery.test.ts
+      session-loss.test.ts
   helpers/
     mock-process.ts                # Headless mock child process helper
-    test-harness.ts                # Full harness (mock + MCP client)
+    test-harness.ts                # Full harness (mock + MCP client) — does NOT spawn MCB
+    multi-device-harness.ts        # Multi-device harness — spawns its own MCB on a tmpdir socket
 ```
 
 ### Adding tests for a new keyboard model

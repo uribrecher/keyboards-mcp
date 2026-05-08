@@ -31,7 +31,7 @@ let prevSocket: string | undefined;
 async function startServerWithFreshState(): Promise<StartedServer> {
   sessions = new SessionManager();
   return startServer({
-    socketPath,
+    listen: { kind: "uds", socketPath },
     leases: new LeaseRegistry(),
     bridges: new BridgeRegistry(),
     sessions,

@@ -1,3 +1,7 @@
+// PRECONDITION: requires an external MCB broker running at MCB_SOCKET (default
+// ~/.mcb/sock). Start it in another terminal with `npm run mcb`. Self-provisioning
+// E2Es live under tests/e2e/mcb/ — see `npm run test:e2e:mcb`.
+
 import { describe, it, before, after } from "node:test";
 import { strict as assert } from "node:assert";
 import { TestHarness } from "../helpers/test-harness.js";

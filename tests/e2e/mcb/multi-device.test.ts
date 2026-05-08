@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import { strict as assert } from "node:assert";
-import { MultiDeviceHarness } from "../helpers/multi-device-harness.js";
+import { MultiDeviceHarness } from "../../helpers/multi-device-harness.js";
 
 const _isDocker = !!process.env.MOCK_WS_URL;
 
