@@ -41,9 +41,73 @@ jobs:
       # Runs the coverage service from docker-compose.test.yml. It depends on
       # the `mcb` and `mock` services and talks to MCB over TCP (MCB_TCP=mcb:3100).
       # The 90% line-coverage gate is enforced by --test-coverage-lines=90 inside
-      # the test:coverage:ci script — the docker run exits non-zero on miss.
+      # the test:coverage script — the docker run exits non-zero on miss.
+      # Output is teed to coverage-output.log so the next step can extract a
+      # human-readable summary without re-reading the whole 200-line table.
       - name: Run coverage (gated at 90% line coverage)
-        run: docker compose -f docker-compose.test.yml run --rm coverage
+        id: cov
+        run: |
+          set -o pipefail
+          docker compose -f docker-compose.test.yml run --rm coverage 2>&1 \
+            | tee coverage-output.log
+
+      - name: Summarize coverage
+        if: always()
+        env:
+          THRESHOLD: "90"
+        run: |
+          if [ ! -f coverage-output.log ]; then
+            echo "::warning::coverage-output.log missing — coverage step did not run"
+            exit 0
+          fi
+
+          # Coverage totals row from node:test:
+          #   ℹ all files                | 85.07 |  83.89 |  70.33 |
+          row=$(grep "all files" coverage-output.log | tail -1 || true)
+          if [ -z "$row" ]; then
+            echo "::warning::could not find 'all files' row in coverage output"
+            exit 0
+          fi
+
+          lines=$(echo "$row"     | awk -F'|' '{gsub(/[^0-9.]/, "", $2); print $2}')
+          branches=$(echo "$row"  | awk -F'|' '{gsub(/[^0-9.]/, "", $3); print $3}')
+          funcs=$(echo "$row"     | awk -F'|' '{gsub(/[^0-9.]/, "", $4); print $4}')
+
+          pass="❌ FAIL"
+          awk -v a="$lines" -v t="$THRESHOLD" 'BEGIN{exit (a+0>=t+0)?0:1}' && pass="✅ PASS"
+
+          # Inline log block — visible in the step output without scrolling.
+          {
+            echo ""
+            echo "═════════════════════════════════════════════════════════"
+            echo "  Coverage gate: line ≥ ${THRESHOLD}%   →   ${pass}"
+            echo "  ─────────────────────────────────────────────────────"
+            printf "  lines      %6s%%  (required ≥ %s%%)\n" "$lines"    "$THRESHOLD"
+            printf "  branches   %6s%%  (no gate)\n"          "$branches"
+            printf "  functions  %6s%%  (no gate)\n"          "$funcs"
+            echo "═════════════════════════════════════════════════════════"
+            echo ""
+          }
+
+          # GitHub Actions Job Summary — rendered as Markdown on the run page.
+          {
+            echo "## Coverage gate"
+            echo ""
+            echo "**Result:** ${pass} (line coverage gate: ≥ ${THRESHOLD}%)"
+            echo ""
+            echo "| metric | actual | required |"
+            echo "|---|---:|---:|"
+            echo "| lines | ${lines}% | ${THRESHOLD}% |"
+            echo "| branches | ${branches}% | — |"
+            echo "| functions | ${funcs}% | — |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Annotate the run with a single, prominent line at the top of the log.
+          if [ "$pass" = "✅ PASS" ]; then
+            echo "::notice title=Coverage gate::Line coverage ${lines}% ≥ ${THRESHOLD}% — PASS"
+          else
+            echo "::error title=Coverage gate::Line coverage ${lines}% < required ${THRESHOLD}% — FAIL"
+          fi
 
       - name: Cleanup
         if: always()
