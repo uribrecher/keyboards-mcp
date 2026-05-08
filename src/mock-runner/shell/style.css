@@ -344,17 +344,71 @@ body {
 
 .bay {
   display: grid;
-  /* Console panel was 380px fixed — too narrow for monospaced LLM output
-   * (ASCII tables, code, long URLs). Clamp lets it breathe at larger
-   * window sizes while protecting the model-UI slot at the 1200px min.
-   * Bumped ~10% wider (484/35vw/616) over the first iteration after the
-   * user reported it still felt cramped. */
-  grid-template-columns: 1fr clamp(484px, 35vw, 616px);
+  /* Three columns: slot (flex) | 6px splitter | console (operator-set
+   * width via --console-w, falling back to the original clamp default
+   * if the operator hasn't dragged it yet). The slot has an implicit
+   * floor of 600px enforced by the splitter drag clamp in app.js. */
+  grid-template-columns: 1fr 6px var(--console-w, clamp(484px, 35vw, 616px));
   gap: 0;
   min-height: 0;
   height: 100%;
   background: var(--c-shell);
 }
+
+.bay__splitter {
+  position: relative;
+  cursor: col-resize;
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.02) 0%,
+      rgba(255,255,255,0.06) 50%,
+      rgba(255,255,255,0.02) 100%);
+  border-left:  1px solid var(--c-edge);
+  border-right: 1px solid var(--c-edge);
+  transition: background .12s, box-shadow .12s;
+}
+
+/* Subtle dimple at vertical center — reads as a screw/grip. */
+.bay__splitter::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 14px;
+  margin: -7px 0 0 -1px;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255,255,255,0.18) 0%, transparent 70%),
+    var(--c-chassis-low);
+  border-radius: 1px;
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,0.4);
+}
+
+/* Hover: reveal a faint amber accent line down the middle, echoing
+ * the chassis lamps without becoming a noisy seam. */
+.bay__splitter:hover {
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.04) 0%,
+      rgba(255,255,255,0.10) 50%,
+      rgba(255,255,255,0.04) 100%);
+  box-shadow: inset 0 0 0 1px rgba(240,168,48,0.30);
+}
+
+.bay__splitter:focus-visible {
+  outline: 1px solid var(--c-amber);
+  outline-offset: -2px;
+}
+
+/* Mid-drag: the body gets this class so iframes don't swallow
+ * pointer events and the cursor stays col-resize globally. */
+body.bay--resizing,
+body.bay--resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+body.bay--resizing iframe { pointer-events: none; }
 
 .slot {
   position: relative;
