@@ -60,7 +60,7 @@ Implement a new keyboard model emulating the Yamaha DX7, the iconic FM (frequenc
 
 ### 18. Mock-runner Event Log panel — separate non-chat events from the chat console
 
-**Status:** Needs brainstorming — UI surface design required before planning.
+**Status:** Done — see `docs/plans/completed/13-mock-runner-event-log-panel.md`.
 
 The chat console in the mock-runner shell currently absorbs *everything* that comes through `menu:console-note`: agent dialog (the actual reason it exists) plus a stream of unrelated lifecycle / status / "not yet implemented" notes from the per-tab MockHandlers and from File-menu actions. After loading a multi-tab `.mockrack`, the chat is flooded with lines like:
 
