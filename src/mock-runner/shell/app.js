@@ -140,7 +140,12 @@ function beginRename(tab, titleEl) {
       // effect for any header-bound state. The wsPort doesn't change.
     } else {
       titleEl.textContent = tabTitleText(tab);
-      appendRow("system", `Rename failed: ${result.error ?? "(unknown)"}`);
+      appendEventRow({
+        severity: "warn",
+        source:   `${tab.displayName} ("${tab.label}")`,
+        text:     `rename failed: ${result.error ?? "(unknown)"}`,
+        ts:       Date.now(),
+      });
     }
   };
 
@@ -892,7 +897,12 @@ const modalConfirm  = document.getElementById("backup-confirm");
 function openBackupModal() {
   const loaded = tabs.filter((t) => t.modelInfoId);
   if (loaded.length === 0) {
-    appendRow("system", "No loaded mocks. Pick a model on a tab first.");
+    appendEventRow({
+      severity: "warn",
+      source:   "backup",
+      text:     "No loaded mocks. Pick a model on a tab first.",
+      ts:       Date.now(),
+    });
     return;
   }
 
@@ -947,11 +957,21 @@ modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeBackup
 async function runBackupExtract(tabId) {
   const filePath = await api.openBackupDialog();
   if (!filePath) return;
-  appendRow("system", `Extracting backup from ${filePath}…`);
+  const tab    = tabs.find((t) => t.tabId === tabId);
+  const source = tab ? `${tab.displayName} ("${tab.label}")` : "backup";
+  appendEventRow({
+    severity: "info",
+    source,
+    text:     `Extracting backup from ${filePath}…`,
+    ts:       Date.now(),
+  });
   const result = await api.extractBackup({ filePath, tabId });
-  appendRow(result.ok ? "system" : "tool",
-    result.message,
-    { error: !result.ok });
+  appendEventRow({
+    severity: result.ok ? "info" : "error",
+    source,
+    text:     result.message,
+    ts:       Date.now(),
+  });
 }
 
 api.onMenuExtractBackup?.(() => openBackupModal());
