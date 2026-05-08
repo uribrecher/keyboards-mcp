@@ -1192,3 +1192,116 @@ body {
   0%, 100% { opacity: 0.25; }
   50%      { opacity: 1; }
 }
+
+/* ═════════════ Event Log pane ═════════════ */
+
+.console__log--events {
+  /* Reuse the chat-log scrollback / padding by sharing .console__log;
+   * this file just adds event-row layout on top. */
+  font-family: var(--font-chat);
+  color: var(--c-paper);
+}
+
+.console__log--events[hidden] {
+  display: none;
+}
+
+.event-log__row {
+  display: grid;
+  grid-template-columns: 14px 70px 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.025);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--c-paper);
+}
+
+.event-log__led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 4px; /* visual centering against first text line */
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+.event-log__row[data-severity="info"]  .event-log__led {
+  background: var(--c-green);
+  box-shadow:
+    0 0 4px var(--c-green-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+.event-log__row[data-severity="warn"]  .event-log__led {
+  background: var(--c-amber);
+  box-shadow:
+    0 0 4px var(--c-amber-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+.event-log__row[data-severity="error"] .event-log__led {
+  background: var(--c-fault);
+  box-shadow:
+    0 0 4px var(--c-fault-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+
+.event-log__ts {
+  color: var(--c-paper-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.event-log__source {
+  color: var(--c-paper-dim);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.event-log__text {
+  color: var(--c-paper);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Empty state — same dim brushed-rail vibe as .slot__empty. */
+.event-log__empty {
+  padding: 32px 12px;
+  text-align: center;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--c-text-faint);
+}
+
+/* ═════════════ Event Log pane ═════════════ */
+
+.console__log--events {
+  /* Reuse the chat-log scrollback / padding by sharing .console__log;
+   * this file just adds event-row layout on top. */
+  font-family: var(--font-chat);
+  color: var(--c-paper);
+}
+
+.console__log--events[hidden] {
+  display: none;
+}
+
+.event-log__row {
+  display: grid;
+  grid-template-columns: 14px 70px 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.025);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--c-paper);
+}
+
+.event-log__led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50
