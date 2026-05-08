@@ -39,5 +39,6 @@ contextBridge.exposeInMainWorld("mockRunnerAPI", {
   onDirtyChanged: (cb) => ipcRenderer.on("file:dirty-changed", (_e, payload) => cb(payload)),
   onCloseTab: (cb) => ipcRenderer.on("file:close-tab", (_e, payload) => cb(payload)),
   onMountTab: (cb) => ipcRenderer.on("file:mount-tab", (_e, payload) => cb(payload)),
-  onConsoleNote: (cb) => ipcRenderer.on("menu:console-note", (_e, payload) => cb(payload)),
+  onEventLog: (cb) => ipcRenderer.on("menu:event-log", (_e, payload) => cb(payload)),
+  onEventLogClear: (cb) => ipcRenderer.on("menu:event-log-clear", () => cb()),
 });
