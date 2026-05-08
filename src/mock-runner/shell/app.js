@@ -285,10 +285,10 @@ void newTab();
 const chatLog       = document.getElementById("chat-log");
 const chatForm      = document.getElementById("chat-form");
 const chatInput     = document.getElementById("chat-input");
-const chatReset     = document.getElementById("chat-reset");
-const chatExtract   = document.getElementById("chat-extract");
+const chatReset     = document.getElementById("chat-reset"); // null until backlog #19 re-homes the button
+const chatExtract   = document.getElementById("chat-extract"); // null until backlog #19 re-homes the button
 const meterEl       = document.getElementById("agent-status");
-const consoleHeader = document.getElementById("console-header");
+const consoleHeader = document.getElementById("tab-chat"); // tabbed-box restructure: data-state lives on the chat tab now
 const sidEl         = document.getElementById("agent-sid");
 const sidValueEl    = document.getElementById("agent-sid-value");
 
@@ -413,7 +413,7 @@ loadChatHistory();
 
 let inFlightAbort = null;
 
-chatReset.addEventListener("click", () => {
+chatReset?.addEventListener("click", () => {
   // If a turn is mid-stream, abort it. The SDK rolls back the in-flight
   // user message automatically, so client.messages stays consistent.
   if (inFlightAbort) inFlightAbort.abort();
@@ -830,7 +830,7 @@ async function runBackupExtract(tabId) {
     { error: !result.ok });
 }
 
-chatExtract.addEventListener("click", openBackupModal);
+chatExtract?.addEventListener("click", openBackupModal);
 api.onMenuExtractBackup?.(() => openBackupModal());
 
 // ─────────────────────────────────────────────────────────────────

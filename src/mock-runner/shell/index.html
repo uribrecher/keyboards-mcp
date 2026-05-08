@@ -44,22 +44,41 @@
     </section>
 
     <aside class="console" id="console">
-      <div class="console__header" id="console-header" data-state="unknown">
-        <span class="console__lamp"></span>
-        <span class="console__sid" id="agent-sid" title="Agent process id — changes if the agent restarts">
-          <span class="console__sid-label">SID</span><span class="console__sid-value" id="agent-sid-value">—</span>
-        </span>
-        <span class="console__meter" id="agent-status" data-state="unknown">
-          <span></span><span></span><span></span><span></span><span></span>
-        </span>
-        <button class="console__btn" id="chat-extract" title="Extract backup (⌘E)">backup</button>
-        <button class="console__btn" id="chat-reset" title="Reset conversation">reset</button>
+      <!-- Tabbed box: tabs are first-class. CHAT tab carries the agent
+           identity strip (lamp + SID + meter); LOG tab carries an unread
+           severity-tinted LED. The action buttons that used to live up
+           here (backup / reset / clear) have been removed pending
+           backlog #19. -->
+      <div class="console__tabs" role="tablist" aria-label="Console panes">
+        <button class="console__tab" id="tab-chat" role="tab"
+                aria-selected="true" aria-controls="chat-log"
+                data-state="unknown">
+          <span class="console__lamp"></span>
+          <span class="console__sid" id="agent-sid"
+                title="Agent process id — changes if the agent restarts">
+            <span class="console__sid-label">SID:</span><span
+                  class="console__sid-value" id="agent-sid-value">—</span>
+          </span>
+          <span class="console__meter" id="agent-status" data-state="unknown">
+            <span></span><span></span><span></span><span></span><span></span>
+          </span>
+        </button>
+        <button class="console__tab" id="tab-log" role="tab"
+                aria-selected="false" aria-controls="event-log">
+          <span class="console__tab-label">LOG</span>
+          <span class="console__unread" id="event-log-unread" hidden></span>
+        </button>
       </div>
 
       <div class="console__log" id="chat-log" role="log" aria-live="polite">
         <div class="chat-row chat-row--system">
           <p class="chat-line">Bring up a model on the rack. Then ask Claude to drive it.</p>
         </div>
+      </div>
+
+      <div class="console__log console__log--events" id="event-log"
+           role="log" aria-live="polite" hidden>
+        <div class="event-log__empty">— no events —</div>
       </div>
 
       <form class="composer" id="chat-form" autocomplete="off">
