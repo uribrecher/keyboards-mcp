@@ -1035,3 +1035,100 @@ api.onMountTab?.((info) => {
     slotEmpty.hidden = tabs.length > 0;
   }
 });
+
+// ─────────────────────────────────────────────────────────────────
+// Bay splitter — operator-controlled slot/console width
+// (spec: docs/superpowers/specs/2026-05-08-mock-runner-event-log-design.md)
+// ─────────────────────────────────────────────────────────────────
+
+const SPLITTER_STORAGE_KEY = "mock-runner:console-w";
+const CONSOLE_MIN_PX = 380;
+const CONSOLE_MAX_PX = 800;
+const SLOT_FLOOR_PX  = 600;
+const SPLITTER_PX    = 6;
+
+const bayEl     = document.querySelector(".bay");
+const splitter  = document.getElementById("bay-splitter");
+
+function clampConsoleWidth(px, viewportW) {
+  // Hard min/max + dynamic ceiling so the slot never drops below its floor.
+  const dynamicMax = Math.max(
+    CONSOLE_MIN_PX,
+    Math.min(CONSOLE_MAX_PX, viewportW - SPLITTER_PX - SLOT_FLOOR_PX),
+  );
+  return Math.max(CONSOLE_MIN_PX, Math.min(dynamicMax, px));
+}
+
+function applyConsoleWidth(px) {
+  bayEl.style.setProperty("--console-w", `${px}px`);
+}
+
+function persistConsoleWidth(px) {
+  try { localStorage.setItem(SPLITTER_STORAGE_KEY, String(px)); }
+  catch { /* private mode / quota — ignore */ }
+}
+
+function clearPersistedWidth() {
+  try { localStorage.removeItem(SPLITTER_STORAGE_KEY); }
+  catch { /* ignore */ }
+  bayEl.style.removeProperty("--console-w");
+}
+
+// Initial load — apply persisted width if present and within current bounds.
+(function initSplitter() {
+  let saved;
+  try { saved = localStorage.getItem(SPLITTER_STORAGE_KEY); } catch { saved = null; }
+  if (!saved) return;
+  const n = Number(saved);
+  if (!Number.isFinite(n)) return;
+  const clamped = clampConsoleWidth(n, window.innerWidth);
+  applyConsoleWidth(clamped);
+})();
+
+// Drag handlers
+let dragStartX = 0;
+let dragStartW = 0;
+
+splitter.addEventListener("pointerdown", (e) => {
+  splitter.setPointerCapture(e.pointerId);
+  document.body.classList.add("bay--resizing");
+  dragStartX = e.clientX;
+  // Read the current rendered width — uses --console-w if set, else
+  // the clamp() default. getBoundingClientRect on the console gives
+  // us the real pixel value either way.
+  dragStartW = document.getElementById("console").getBoundingClientRect().width;
+  e.preventDefault();
+});
+
+splitter.addEventListener("pointermove", (e) => {
+  if (!splitter.hasPointerCapture(e.pointerId)) return;
+  // Splitter sits to the LEFT of the console. Dragging right shrinks
+  // the console; dragging left grows it. (Reverse the sign vs intuition.)
+  const next = clampConsoleWidth(dragStartW - (e.clientX - dragStartX), window.innerWidth);
+  applyConsoleWidth(next);
+});
+
+splitter.addEventListener("pointerup", (e) => {
+  if (!splitter.hasPointerCapture(e.pointerId)) return;
+  splitter.releasePointerCapture(e.pointerId);
+  document.body.classList.remove("bay--resizing");
+  const finalW = document.getElementById("console").getBoundingClientRect().width;
+  persistConsoleWidth(Math.round(finalW));
+});
+
+// Double-click resets to the static-CSS default.
+splitter.addEventListener("dblclick", () => {
+  clearPersistedWidth();
+});
+
+// Window resize — re-clamp the persisted width if it would now violate
+// the slot floor under the new viewport. Don't rewrite localStorage; if
+// the operator resizes back later, restore their original choice.
+window.addEventListener("resize", () => {
+  let saved;
+  try { saved = localStorage.getItem(SPLITTER_STORAGE_KEY); } catch { saved = null; }
+  if (!saved) return;
+  const n = Number(saved);
+  if (!Number.isFinite(n)) return;
+  applyConsoleWidth(clampConsoleWidth(n, window.innerWidth));
+});
