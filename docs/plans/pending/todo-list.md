@@ -84,3 +84,18 @@ Emitter sites to migrate (search `mainWindow?.webContents.send("menu:console-not
 
 Out of scope for the MVP: a unified backend event-log that aggregates across MCB / mock-runner / MCP servers — the *Operator dashboard* item in the MCB backlog covers that broader ambition. This task is just the mock-runner shell: pull the noise out of the chat box.
 
+### 19. Re-home the chat backup/reset and event-log clear actions
+
+**Status:** Needs brainstorming — small UX question, not blocking #18.
+
+The Event Log design (`docs/superpowers/specs/2026-05-08-mock-runner-event-log-design.md`) converts what was the chat console header into a two-tab strip whose only job is identity (CHAT tab carries lamp + SID + agent meter) and selection (LOG tab + unread LED). The three action buttons that used to live in that header — `backup`, `reset`, and the would-be `clear` for the event log — have no home.
+
+Until this ships, those actions are reachable only via keyboard accelerator (`backup` already has ⌘E; `reset` already has its accelerator; `clear` needs one added during #18 implementation).
+
+Design questions:
+
+- Where do the buttons go? Candidates: a thin toolbar above the composer (CHAT) and above the event-log pane (LOG); a single composer-row utility button cluster; a command palette / overflow menu shared between panes; per-pane footers below the scrollback.
+- Should the buttons be pane-scoped (live with their respective pane body) or always-visible (then how do they not creep back into the tab strip)?
+- Discoverability: keyboard accelerators are fine for power users but the existing `backup` button is the only signal for new operators that the action exists. Whatever replaces it has to be at least as discoverable.
+- Visual: the existing `.console__btn` is a compact graphite button — preserve that idiom or rethink in light of the new tabbed layout.
+

@@ -42,31 +42,74 @@ panel so the operator can rebalance the bay.
 - Adding new emitter sites (tab create/close/select-model lifecycle, MCB lease
   changes, MCB-unreachable). Those are Phase 2 once the surface exists.
 
-## Layout — segmented switch in the console panel
+## Layout — tabbed box, not a header
 
 The existing `.bay` is a 2-column grid: `slot | console`. The console keeps the
-same outer dimensions; internally its header gains a two-position selector
-styled like a vintage rack-equipment input switch:
+same outer dimensions; internally what is currently the `.console__header`
+strip is replaced by a two-tab strip. The console is now a **tabbed box**, not
+a panel-with-a-header — tabs are first-class and they carry their own state.
 
 ```
-┌─ console header ─────────────────────────────────────────────┐
-│  ●  [ CHAT ▸ ]  [ LOG  ]●   SID …   ▮▮▮▮▮   backup  reset    │
+CHAT active:
+┌─ tabs ───────────────────────────────────────────────────────┐
+│ [ ●  SID: a1b2c3   ▮▮▮▮▮  ▸ ]   [  LOG  ]                    │
+└──────────────────────────────────────────────────────────────┘
+
+LOG active (CHAT tab still shows live SID + meter, dimmed):
+┌─ tabs ───────────────────────────────────────────────────────┐
+│ [ ●  SID: a1b2c3   ▮▮▮▮▮    ]   [  LOG ▸ ]                   │
+└──────────────────────────────────────────────────────────────┘
+
+CHAT active, unread events accumulated on the LOG tab:
+┌─ tabs ───────────────────────────────────────────────────────┐
+│ [ ●  SID: a1b2c3   ▮▮▮▮▮  ▸ ]   [  LOG  ● ]                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-- The active label is bright (`--c-text-bright`); the inactive label is dim
-  (`--c-text-dim`) with the existing brushed-metal background.
-- A **single** amber lamp (`--c-amber`) sits to the left of the active label
-  using the existing `.console__lamp` styling. The lamp does not duplicate per
-  side; it follows the active selection.
-- A second LED — the **unread indicator** — sits to the right of the inactive
-  `LOG` label only when there are unread events (see *Unread LED* below).
+### CHAT tab
 
-Clicking a label switches panes. The chat scrollback, composer state, agent
-status meter, SID, and `backup`/`reset` buttons are unchanged in CHAT mode. The
-LOG mode swaps the body for the event log and replaces the chat-only buttons
-with a single `clear` button (also keeps the SID + meter; those describe
-the agent process, not the active pane).
+The tab label *is* the agent identity strip:
+
+- The agent-liveness **lamp** (existing `.console__lamp`, amber → fault hue
+  driven by `data-state`).
+- `SID: <value>` — the agent process id, currently rendered via
+  `.console__sid`. The label `CHAT` is gone; the SID is the tab's identity.
+- The 5-bar agent-status **meter** (existing `.console__meter`).
+
+When the CHAT tab is active these elements use their current bright/lit
+treatment. When the LOG tab is active the entire CHAT tab dims (text drops to
+`--c-text-faint`, lamp stays at its true state but at lower glow, meter
+animates at reduced opacity) so the agent state remains *ambiently visible*
+without competing with the active log content. This replaces the earlier
+proposal that kept the meter "global" — the dim-when-inactive treatment
+preserves the same operator benefit (spotting agent loss while triaging
+events) without the visual ambiguity of "is this header chrome or tab
+chrome?".
+
+### LOG tab
+
+A short label — `LOG` — and an **unread LED** that lights inside the tab when
+the LOG tab is inactive and ≥1 unread event has arrived (see *Unread LED*).
+When LOG is active the LED is hidden (read by definition).
+
+### Active-tab indicator
+
+The active tab is signaled by:
+1. Brighter foreground color (`--c-text-bright` vs `--c-text-faint`).
+2. A subtle `▸` caret on the trailing edge of the active tab label (in the
+   sketches above) **or** a 1px amber underline along the bottom edge of the
+   active tab — pick whichever reads cleaner against the brushed-metal
+   pinstripe in implementation. The two options are visually equivalent for
+   the spec; the implementor chooses based on how the existing `.tab` rail
+   above the bay handles active state, for consistency.
+
+### Buttons removed from this area
+
+`backup`, `reset`, and (the would-be) `clear` buttons do **not** live in the
+tab strip. The tab strip is identity + selection only. Where these buttons
+end up is deferred to the follow-up backlog item *"Re-home the chat
+backup/reset and event-log clear actions"* — it's a small UX question that
+deserves its own thinking pass and shouldn't gate this work.
 
 ### Why a segmented switch, not tabs or a split
 
@@ -169,9 +212,9 @@ onEventLog: (cb) => ipcRenderer.on("menu:event-log", (_e, p) => cb(p)),
 - Two new DOM containers: `#event-log` (sibling of `#chat-log`, hidden when
   CHAT is active) and an `#event-clear` button.
 - Pane switch handler toggles `[hidden]` between `#chat-log` and `#event-log`,
-  swaps active state on the segmented labels, swaps the header button row
-  (chat: `backup` + `reset`; log: `clear`), and clears the unread LED on
-  switch-to-LOG.
+  toggles `aria-selected` / active styling on the two tabs, applies the
+  inactive-tab dim state to the CHAT tab when LOG is active (and vice versa),
+  and clears the unread LED on switch-to-LOG.
 
 ## Migration table
 
@@ -248,6 +291,11 @@ Replace with a draggable vertical splitter between slot and console.
 - Severity filter chips (`INFO` / `WARN` / `ERR` toggle).
 - Persistence of log contents across runs.
 - Per-event copy / dismiss / pin actions.
+- **Re-home the `backup` / `reset` / `clear` actions** — the tab strip is
+  identity + selection only. These actions need a new home (composer-adjacent
+  toolbar? per-pane footer? command palette?). Tracked as its own backlog
+  item; until it ships those actions are reachable only via keyboard
+  accelerator (`backup` and `reset` already are; `clear` needs one added).
 
 ## Test surface
 
@@ -263,7 +311,10 @@ Replace with a draggable vertical splitter between slot and console.
 - **Manual smoke:** drag the splitter past both bounds, double-click reset,
   resize the window, restart the mock-runner — confirm position persists and
   clamps gracefully. Trigger each of the 6 migration sites and confirm the
-  unread LED color matches expected severity when CHAT is active.
+  unread LED color matches expected severity when CHAT is active. Switch to
+  LOG and confirm the CHAT tab dims while still showing the live SID and
+  meter; trigger an agent restart from the SDK side and confirm the lamp +
+  SID update remains visible from the dim CHAT tab.
 
 ## Migration / rollout
 
