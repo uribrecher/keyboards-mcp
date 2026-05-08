@@ -51,7 +51,9 @@ services:
     build: .
     # Run coverage, then copy the lcov out to the bind-mount regardless of
     # exit status so we still surface the report when coverage trips the
-    # 90% threshold gate. `set -e` after capture preserves the original rc.
+    # 90% threshold gate. The original rc is captured immediately into $$rc;
+    # the cp is `|| true` so a missing/unreadable file can't mask it; the
+    # final `exit $$rc` restores the real exit code.
     command: >
       sh -c "npm run test:coverage; rc=$$?;
              cp -f coverage.lcov /out/ 2>/dev/null || true;

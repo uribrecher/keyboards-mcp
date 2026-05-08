@@ -1,5 +1,6 @@
-// PRECONDITION: requires an external MCB broker running at MCB_SOCKET (default
-// ~/.mcb/sock). Start it in another terminal with `npm run mcb`. Tests in this
+// PRECONDITION: requires an external MCB broker reachable by the MCP server.
+// Default is UDS at MCB_SOCKET (~/.mcb/sock); CI/docker uses TCP via
+// MCB_TCP=<host>:<port>. Start one locally with `npm run mcb`. Tests in this
 // file use TestHarness, which spawns the MCP server only — it connects to MCB
 // as a client and fails with `mcb-unreachable` if no broker is listening.
 // Self-provisioning E2Es live under tests/e2e/mcb/ and are run by
