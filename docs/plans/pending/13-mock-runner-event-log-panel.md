@@ -45,28 +45,37 @@ The two new pure modules are the entire test surface. Everything else is DOM-cou
 // tests/unit/mock-runner/event-log-ipc.test.ts
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
+import type { BrowserWindow } from "electron";
 import {
   emitEvent,
   emitEventLogClear,
   EVENT_LOG_CHANNEL,
   EVENT_LOG_CLEAR_CHANNEL,
-  type WebContentsLike,
 } from "../../../src/mock-runner/event-log-ipc.js";
 
-function fakeWin(): { sent: Array<{ channel: string; payload: unknown }>; webContents: WebContentsLike } {
+interface FakeWin {
+  sent: Array<{ channel: string; payload: unknown }>;
+  webContents: { send(channel: string, payload?: unknown): void };
+}
+
+function fakeWin(): FakeWin {
   const sent: Array<{ channel: string; payload: unknown }> = [];
   return {
     sent,
     webContents: {
-      send(channel: string, payload: unknown) { sent.push({ channel, payload }); },
+      send(channel, payload) { sent.push({ channel, payload }); },
     },
   };
 }
 
+// One cast at the call site — fakeWin's shape is structurally compatible
+// with the real BrowserWindow for emitEvent's needs.
+const asWin = (f: FakeWin) => f as unknown as BrowserWindow;
+
 describe("event-log-ipc", () => {
   it("emitEvent sends to menu:event-log with full payload", () => {
     const win = fakeWin();
-    emitEvent(win, { severity: "warn", source: "setup", text: "skipped tab", ts: 1000 });
+    emitEvent(asWin(win), { severity: "warn", source: "setup", text: "skipped tab", ts: 1000 });
     assert.equal(win.sent.length, 1);
     assert.equal(win.sent[0].channel, EVENT_LOG_CHANNEL);
     assert.equal(EVENT_LOG_CHANNEL, "menu:event-log");
@@ -86,7 +95,7 @@ describe("event-log-ipc", () => {
 
   it("emitEvent omits source when not provided", () => {
     const win = fakeWin();
-    emitEvent(win, { severity: "info", text: "hello", ts: 2000 });
+    emitEvent(asWin(win), { severity: "info", text: "hello", ts: 2000 });
     const payload = win.sent[0].payload as { source?: string };
     assert.equal(payload.source, undefined);
   });
@@ -97,7 +106,7 @@ describe("event-log-ipc", () => {
 
   it("emitEventLogClear sends on the clear channel", () => {
     const win = fakeWin();
-    emitEventLogClear(win);
+    emitEventLogClear(asWin(win));
     assert.equal(win.sent.length, 1);
     assert.equal(win.sent[0].channel, EVENT_LOG_CLEAR_CHANNEL);
     assert.equal(EVENT_LOG_CLEAR_CHANNEL, "menu:event-log-clear");
@@ -127,9 +136,11 @@ Create `src/mock-runner/event-log-ipc.ts`:
  * (which doesn't go through IPC at all — it's an in-renderer fetch
  * stream).
  *
- * Kept dependency-free so it can be unit-tested with a fake
- * webContents.
+ * `import type` — no runtime import of electron, so the unit tests
+ * can run under plain `tsx --test` without an Electron host.
  */
+
+import type { BrowserWindow } from "electron";
 
 export const EVENT_LOG_CHANNEL       = "menu:event-log";
 export const EVENT_LOG_CLEAR_CHANNEL = "menu:event-log-clear";
@@ -146,21 +157,14 @@ export interface EventLogPayload {
   ts: number;
 }
 
-export interface WebContentsLike {
-  send(channel: string, payload?: unknown): void;
-}
-
-export interface BrowserWindowLike {
-  webContents: WebContentsLike;
-}
-
+type Win   = Pick<BrowserWindow, "webContents">;
 type Input = Omit<EventLogPayload, "ts"> & { ts?: number };
 
 /**
  * Emit one event-log row to the renderer. No-op if `win` is null
  * (the renderer hasn't been created yet, e.g. during cold startup).
  */
-export function emitEvent(win: BrowserWindowLike | null | undefined, input: Input): void {
+export function emitEvent(win: Win | null | undefined, input: Input): void {
   if (!win) return;
   const payload: EventLogPayload = {
     severity: input.severity,
@@ -172,7 +176,7 @@ export function emitEvent(win: BrowserWindowLike | null | undefined, input: Inpu
 }
 
 /** Tell the renderer to empty the Event Log pane. */
-export function emitEventLogClear(win: BrowserWindowLike | null | undefined): void {
+export function emitEventLogClear(win: Win | null | undefined): void {
   if (!win) return;
   win.webContents.send(EVENT_LOG_CLEAR_CHANNEL);
 }
@@ -430,14 +434,9 @@ accelerator wired up later)."
 // tests/unit/mock-runner/unread-state.test.ts
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { nextUnread, severityRank } from "../../../src/mock-runner/shell/unread-state.js";
+import { nextUnread } from "../../../src/mock-runner/shell/unread-state.js";
 
 describe("unread-state", () => {
-  it("severityRank orders info < warn < error", () => {
-    assert.ok(severityRank("info") < severityRank("warn"));
-    assert.ok(severityRank("warn") < severityRank("error"));
-  });
-
   it("nextUnread starts at the incoming severity from null", () => {
     assert.equal(nextUnread(null, "info"), "info");
     assert.equal(nextUnread(null, "warn"), "warn");
@@ -490,14 +489,6 @@ Create `src/mock-runner/shell/unread-state.js`:
 const RANK = { info: 0, warn: 1, error: 2 };
 
 /**
- * @param {"info" | "warn" | "error"} sev
- * @returns {number}
- */
-export function severityRank(sev) {
-  return RANK[sev];
-}
-
-/**
  * @param {"info" | "warn" | "error" | null} prev
  * @param {"info" | "warn" | "error"} incoming
  * @returns {"info" | "warn" | "error"}
@@ -513,7 +504,7 @@ export function nextUnread(prev, incoming) {
 ```bash
 npx tsx --test tests/unit/mock-runner/unread-state.test.ts
 ```
-Expected: 5 tests passing.
+Expected: 4 tests passing.
 
 - [ ] **Step 5: Lint + commit**
 
@@ -1506,39 +1497,33 @@ so the iframe doesn't swallow the drag stream."
 - Modify: `src/mock-runner/main.ts`
 - Modify: `src/mock-runner/shell/app.js`
 
-- [ ] **Step 1: Add the menu item in `buildMenu()`**
+- [ ] **Step 1: Add the menu item to the File menu**
 
-In `src/mock-runner/main.ts`, locate the `buildMenu()` function (around line 465). Find the View menu role:
-
-```ts
-{ role: "viewMenu" },
-```
-
-Replace it with an explicit View submenu so we can add our entry while preserving the standard view items:
+In `src/mock-runner/main.ts`, locate the `buildMenu()` function (around line 465). Find the existing "Extract Backup…" entry:
 
 ```ts
 {
-  label: "View",
-  submenu: [
-    { role: "reload" },
-    { role: "forceReload" },
-    { role: "toggleDevTools" },
-    { type: "separator" },
-    { role: "resetZoom" },
-    { role: "zoomIn" },
-    { role: "zoomOut" },
-    { type: "separator" },
-    { role: "togglefullscreen" },
-    { type: "separator" },
-    {
-      label: "Clear Event Log",
-      accelerator: "CmdOrCtrl+K",
-      // Always-enabled. The renderer ignores the event when CHAT is
-      // active — that's simpler than syncing menu enablement with
-      // renderer pane state.
-      click: () => emitEventLogClear(mainWindow),
-    },
-  ],
+  label: "Extract Backup…",
+  accelerator: "CmdOrCtrl+E",
+  click: () => mainWindow?.webContents.send("menu:extract-backup"),
+},
+```
+
+Add a new entry directly after it:
+
+```ts
+{
+  label: "Extract Backup…",
+  accelerator: "CmdOrCtrl+E",
+  click: () => mainWindow?.webContents.send("menu:extract-backup"),
+},
+{
+  label: "Clear Event Log",
+  accelerator: "CmdOrCtrl+K",
+  // Always-enabled. The renderer ignores the event when CHAT is
+  // active — that's simpler than syncing menu enablement with
+  // renderer pane state.
+  click: () => emitEventLogClear(mainWindow),
 },
 ```
 
