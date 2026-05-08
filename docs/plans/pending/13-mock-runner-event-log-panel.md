@@ -1489,15 +1489,16 @@ so the iframe doesn't swallow the drag stream."
 
 ---
 
-## Phase 6 — Clear-event-log accelerator
+## Phase 6 — Menu actions for clear-event-log and reset-chat
 
-### Task 11: Wire up Cmd-K to clear the event log when LOG is active
+### Task 11: Wire up File-menu items for Clear Event Log and Reset Chat
 
 **Files:**
 - Modify: `src/mock-runner/main.ts`
+- Modify: `src/mock-runner/preload.cjs`
 - Modify: `src/mock-runner/shell/app.js`
 
-- [ ] **Step 1: Add the menu item to the File menu**
+- [ ] **Step 1: Add the two menu items to the File menu**
 
 In `src/mock-runner/main.ts`, locate the `buildMenu()` function (around line 465). Find the existing "Extract Backup…" entry:
 
@@ -1509,7 +1510,7 @@ In `src/mock-runner/main.ts`, locate the `buildMenu()` function (around line 465
 },
 ```
 
-Add a new entry directly after it:
+Add two new entries directly after it:
 
 ```ts
 {
@@ -1525,6 +1526,12 @@ Add a new entry directly after it:
   // renderer pane state.
   click: () => emitEventLogClear(mainWindow),
 },
+{
+  // No accelerator — discoverable via menu only. Backlog #19 will
+  // give it a permanent home (toolbar / composer-row / palette).
+  label: "Reset Chat",
+  click: () => mainWindow?.webContents.send("menu:chat-reset"),
+},
 ```
 
 And update the import at the top of `main.ts` to bring in the helper:
@@ -1533,7 +1540,15 @@ And update the import at the top of `main.ts` to bring in the helper:
 import { emitEvent, emitEventLogClear } from "./event-log-ipc.js";
 ```
 
-- [ ] **Step 2: Gate the clear handler on the active pane in renderer**
+- [ ] **Step 2: Expose `onMenuChatReset` in the preload**
+
+In `src/mock-runner/preload.cjs`, near the other `onMenu…` handlers, add:
+
+```js
+onMenuChatReset: (cb) => ipcRenderer.on("menu:chat-reset", () => cb()),
+```
+
+- [ ] **Step 3: Gate the clear handler on the active pane in renderer**
 
 Locate the lines you added in Task 8 step 4:
 
@@ -1551,19 +1566,86 @@ api.onEventLogClear?.(() => {
 });
 ```
 
-- [ ] **Step 3: Smoke**
+- [ ] **Step 4: Refactor reset logic into a function and remove the dead button code**
+
+In `src/mock-runner/shell/app.js`, find the existing reset block (currently around line 416 after Task 5's null-safe edits):
+
+```js
+chatReset?.addEventListener("click", () => {
+  // If a turn is mid-stream, abort it. The SDK rolls back the in-flight
+  // user message automatically, so client.messages stays consistent.
+  if (inFlightAbort) inFlightAbort.abort();
+  agentClient.reset();
+  chatLog.innerHTML = "";
+  try { localStorage.removeItem(CHAT_HISTORY_KEY); } catch { /* ignore */ }
+  appendRow("system", "Conversation reset.");
+});
+```
+
+Replace with:
+
+```js
+function resetChat() {
+  // If a turn is mid-stream, abort it. The SDK rolls back the in-flight
+  // user message automatically, so client.messages stays consistent.
+  if (inFlightAbort) inFlightAbort.abort();
+  agentClient.reset();
+  chatLog.innerHTML = "";
+  try { localStorage.removeItem(CHAT_HISTORY_KEY); } catch { /* ignore */ }
+  appendRow("system", "Conversation reset.");
+}
+
+api.onMenuChatReset?.(() => resetChat());
+```
+
+- [ ] **Step 5: Drop the now-dead button-click handlers and DOM lookups**
+
+The `#chat-reset` and `#chat-extract` buttons no longer exist (removed in Task 5). Their menu accelerators / new menu items provide the only entry points now. Clean up the dead code.
+
+In `src/mock-runner/shell/app.js`, find:
+
+```js
+const chatReset     = document.getElementById("chat-reset"); // null until backlog #19 re-homes the button
+const chatExtract   = document.getElementById("chat-extract"); // null until backlog #19 re-homes the button
+```
+
+Remove both lines.
+
+Then find:
+
+```js
+chatExtract?.addEventListener("click", openBackupModal);
+api.onMenuExtractBackup?.(() => openBackupModal());
+```
+
+Remove the first line; keep the second:
+
+```js
+api.onMenuExtractBackup?.(() => openBackupModal());
+```
+
+Verify there are no remaining references to `chatReset` or `chatExtract` in `app.js`:
+
+```bash
+grep -n "chatReset\|chatExtract" src/mock-runner/shell/app.js
+```
+Expected: no output.
+
+- [ ] **Step 6: Smoke**
 
 ```bash
 npm run mock:runner
 ```
 
 Expected:
-- With CHAT active, fire a few events (e.g. Cmd-S with no tabs, twice). Events accumulate. Press Cmd-K. Expected: event log NOT cleared (CHAT is active; accelerator is ignored).
+- File menu shows the new entries: "Clear Event Log ⌘K" and "Reset Chat" (no accelerator).
+- With CHAT active, fire a few events (e.g. Cmd-S with no tabs, twice). Events accumulate as unread on the LOG tab. Press Cmd-K. Expected: event log NOT cleared (CHAT is active; accelerator ignored).
 - Click LOG. See the events. Press Cmd-K. Expected: event log cleared, empty state returns.
+- Click CHAT. Send a chat turn. File → Reset Chat. Expected: chat log cleared, "Conversation reset." appears as a system row.
 
 Close.
 
-- [ ] **Step 4: Build + lint**
+- [ ] **Step 7: Build + lint**
 
 ```bash
 npm run build
@@ -1571,19 +1653,20 @@ npm run lint
 ```
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/mock-runner/main.ts src/mock-runner/shell/app.js
-git commit -S -m "feat(mock-runner): Cmd-K clears event log when LOG active
+git add src/mock-runner/main.ts src/mock-runner/preload.cjs src/mock-runner/shell/app.js
+git commit -S -m "feat(mock-runner): File-menu items for Clear Event Log + Reset Chat
 
-Adds Clear Event Log under the View menu with the standard
-'clear console' accelerator. The accelerator fires unconditionally;
-the renderer ignores it unless the LOG tab is the active pane —
-simpler than syncing main-process menu enablement with renderer state.
-
-Until backlog #19 lands and re-homes the buttons, this accelerator is
-the only way to clear the event log."
+- Cmd-K (Clear Event Log) — fires unconditionally; renderer ignores
+  when CHAT is the active pane. Simpler than syncing main-process
+  menu enablement with renderer state.
+- Reset Chat — no accelerator (discoverable via File menu only).
+  Backlog #19 will give it a permanent home alongside Extract Backup.
+- Drops the now-dead chatReset / chatExtract button-click handlers
+  and DOM lookups (the buttons themselves were removed in the
+  earlier tabbed-box restructure)."
 ```
 
 ---
@@ -1661,6 +1744,10 @@ npm run mock:runner
 **Clear accelerator:**
 - [ ] Cmd-K with CHAT active → no effect on event log.
 - [ ] Cmd-K with LOG active → empties to `— no events —`.
+
+**Reset Chat menu item:**
+- [ ] File menu shows "Reset Chat" with no accelerator.
+- [ ] Send a chat turn, then File → Reset Chat → chat log clears, "Conversation reset." system row appears, in-flight stream (if any) is aborted cleanly.
 
 - [ ] **Step 4: Move the plan into completed/**
 

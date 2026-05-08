@@ -301,10 +301,12 @@ Replace with a draggable vertical splitter between slot and console.
 - Persistence of log contents across runs.
 - Per-event copy / dismiss / pin actions.
 - **Re-home the `backup` / `reset` / `clear` actions** — the tab strip is
-  identity + selection only. These actions need a new home (composer-adjacent
-  toolbar? per-pane footer? command palette?). Tracked as its own backlog
-  item; until it ships those actions are reachable only via keyboard
-  accelerator (`backup` and `reset` already are; `clear` needs one added).
+  identity + selection only. These actions need a permanent home
+  (composer-adjacent toolbar? per-pane footer? command palette?). Tracked as
+  its own backlog item. Interim affordances added by this work:
+  - `backup` — File → Extract Backup… (⌘E, already existed).
+  - `clear` — File → Clear Event Log (⌘K, new).
+  - `reset` — File → Reset Chat (no accelerator, menu only — new).
 
 ## Test surface
 
