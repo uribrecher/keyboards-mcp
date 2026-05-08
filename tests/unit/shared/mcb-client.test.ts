@@ -27,6 +27,7 @@ let sessions: SessionManager;
 let socketDir: string;
 let socketPath: string;
 let prevSocket: string | undefined;
+let prevTcp: string | undefined;
 
 async function startServerWithFreshState(): Promise<StartedServer> {
   sessions = new SessionManager();
@@ -44,7 +45,11 @@ beforeEach(async () => {
   socketDir = mkdtempSync(join(tmpdir(), "mcp-mcb-"));
   socketPath = join(socketDir, "sock");
   prevSocket = process.env.MCB_SOCKET;
+  prevTcp = process.env.MCB_TCP;
   process.env.MCB_SOCKET = socketPath;
+  // CI sets MCB_TCP globally on the test container; clear it so this suite's
+  // UDS test fixtures are addressed instead of the real broker.
+  delete process.env.MCB_TCP;
   resetSession();
   server = await startServerWithFreshState();
 });
@@ -53,6 +58,7 @@ afterEach(async () => {
   await server.stop();
   rmSync(socketDir, { recursive: true, force: true });
   if (prevSocket === undefined) delete process.env.MCB_SOCKET; else process.env.MCB_SOCKET = prevSocket;
+  if (prevTcp === undefined) delete process.env.MCB_TCP; else process.env.MCB_TCP = prevTcp;
   resetSession();
 });
 
