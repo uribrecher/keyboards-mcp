@@ -23,7 +23,7 @@ import {
   type MockrackV1,
   type MockrackTab,
 } from "../shared/mockrack-format.js";
-import { emitEvent } from "./event-log-ipc.js";
+import { emitEvent, emitEventLogClear } from "./event-log-ipc.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -523,6 +523,20 @@ function buildMenu(): void {
           label: "Extract Backup…",
           accelerator: "CmdOrCtrl+E",
           click: () => mainWindow?.webContents.send("menu:extract-backup"),
+        },
+        {
+          label: "Clear Event Log",
+          accelerator: "CmdOrCtrl+K",
+          // Always-enabled. The renderer ignores the event when CHAT is
+          // active — that's simpler than syncing menu enablement with
+          // renderer pane state.
+          click: () => emitEventLogClear(mainWindow),
+        },
+        {
+          // No accelerator — discoverable via menu only. Backlog #19 will
+          // give it a permanent home (toolbar / composer-row / palette).
+          label: "Reset Chat",
+          click: () => mainWindow?.webContents.send("menu:chat-reset"),
         },
         // Quit lives in the app menu on macOS (no duplicate here). On
         // Windows/Linux there's no app menu, so the File menu owns Quit.

@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld("mockRunnerAPI", {
   // Menu → renderer events (relayed by main.ts via webContents.send)
   onMenuNewTab: (cb) => ipcRenderer.on("menu:new-tab", cb),
   onMenuExtractBackup: (cb) => ipcRenderer.on("menu:extract-backup", cb),
+  onMenuChatReset: (cb) => ipcRenderer.on("menu:chat-reset", () => cb()),
 
   // Plan #9 — file menu plumbing
   setActiveTab: (tabId) => ipcRenderer.invoke("set-active-tab", tabId),

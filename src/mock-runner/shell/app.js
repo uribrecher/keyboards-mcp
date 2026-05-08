@@ -286,8 +286,6 @@ void newTab();
 const chatLog       = document.getElementById("chat-log");
 const chatForm      = document.getElementById("chat-form");
 const chatInput     = document.getElementById("chat-input");
-const chatReset     = document.getElementById("chat-reset"); // null until backlog #19 re-homes the button
-const chatExtract   = document.getElementById("chat-extract"); // null until backlog #19 re-homes the button
 const meterEl       = document.getElementById("agent-status");
 const consoleHeader = document.getElementById("tab-chat"); // tabbed-box restructure: data-state lives on the chat tab now
 const sidEl         = document.getElementById("agent-sid");
@@ -537,7 +535,7 @@ loadChatHistory();
 
 let inFlightAbort = null;
 
-chatReset?.addEventListener("click", () => {
+function resetChat() {
   // If a turn is mid-stream, abort it. The SDK rolls back the in-flight
   // user message automatically, so client.messages stays consistent.
   if (inFlightAbort) inFlightAbort.abort();
@@ -545,7 +543,9 @@ chatReset?.addEventListener("click", () => {
   chatLog.innerHTML = "";
   try { localStorage.removeItem(CHAT_HISTORY_KEY); } catch { /* ignore */ }
   appendRow("system", "Conversation reset.");
-});
+}
+
+api.onMenuChatReset?.(() => resetChat());
 
 // ── Send ──
 
@@ -954,7 +954,6 @@ async function runBackupExtract(tabId) {
     { error: !result.ok });
 }
 
-chatExtract?.addEventListener("click", openBackupModal);
 api.onMenuExtractBackup?.(() => openBackupModal());
 
 // ─────────────────────────────────────────────────────────────────
@@ -973,7 +972,11 @@ api.onDirtyChanged?.(({ isDirty, currentFileName }) => {
 // Event-log subscriptions — non-agent lifecycle/status notes from main
 // (replaces the old menu:console-note → chat path).
 api.onEventLog?.((payload) => appendEventRow(payload));
-api.onEventLogClear?.(() => clearEventLog());
+api.onEventLogClear?.(() => {
+  // Accelerator fires globally; ignore unless LOG is the active pane.
+  if (activePane !== "log") return;
+  clearEventLog();
+});
 
 // Open flow asks the renderer to drop a specific iframe (during teardown)
 api.onCloseTab?.(({ tabId }) => {
