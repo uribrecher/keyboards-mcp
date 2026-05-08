@@ -396,11 +396,6 @@ body {
   box-shadow: inset 0 0 0 1px rgba(240,168,48,0.30);
 }
 
-.bay__splitter:focus-visible {
-  outline: 1px solid var(--c-amber);
-  outline-offset: -2px;
-}
-
 /* Mid-drag: the body gets this class so iframes don't swallow
  * pointer events and the cursor stays col-resize globally. */
 body.bay--resizing,
@@ -1329,33 +1324,3 @@ body.bay--resizing iframe { pointer-events: none; }
   font-size: 11px;
   color: var(--c-text-faint);
 }
-
-/* ═════════════ Event Log pane ═════════════ */
-
-.console__log--events {
-  /* Reuse the chat-log scrollback / padding by sharing .console__log;
-   * this file just adds event-row layout on top. */
-  font-family: var(--font-chat);
-  color: var(--c-paper);
-}
-
-.console__log--events[hidden] {
-  display: none;
-}
-
-.event-log__row {
-  display: grid;
-  grid-template-columns: 14px 70px 1fr;
-  gap: 8px;
-  align-items: start;
-  padding: 6px 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.025);
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--c-paper);
-}
-
-.event-log__led {
-  width: 8px;
-  height: 8px;
-  border-radius: 50

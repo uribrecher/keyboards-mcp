@@ -1687,7 +1687,7 @@ npm test
 
 Expected:
 - `unit/mock-runner/event-log-ipc.test.ts` — 5 passing.
-- `unit/mock-runner/unread-state.test.ts` — 5 passing.
+- `unit/mock-runner/unread-state.test.ts` — 4 passing.
 - All existing unit / integration / e2e tests pass.
 
 - [ ] **Step 2: Run lint and type-check**

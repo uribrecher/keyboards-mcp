@@ -1131,13 +1131,23 @@ splitter.addEventListener("pointermove", (e) => {
   applyConsoleWidth(next);
 });
 
-splitter.addEventListener("pointerup", (e) => {
-  if (!splitter.hasPointerCapture(e.pointerId)) return;
-  splitter.releasePointerCapture(e.pointerId);
+function endSplitterDrag(e, persist) {
+  if (splitter.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
   document.body.classList.remove("bay--resizing");
-  const finalW = document.getElementById("console").getBoundingClientRect().width;
-  persistConsoleWidth(Math.round(finalW));
-});
+  if (persist) {
+    const finalW = document.getElementById("console").getBoundingClientRect().width;
+    persistConsoleWidth(Math.round(finalW));
+  }
+}
+
+splitter.addEventListener("pointerup",     (e) => endSplitterDrag(e, true));
+// On cancel (OS gesture, alt-tab, focus loss) clear the resizing state
+// without overwriting the persisted width — the drag is being aborted,
+// not committed. Without these, .bay--resizing can stick on <body>
+// leaving cursor: col-resize and iframe pointer-events disabled until
+// reload.
+splitter.addEventListener("pointercancel", (e) => endSplitterDrag(e, false));
+splitter.addEventListener("lostpointercapture", (e) => endSplitterDrag(e, false));
 
 // Double-click resets to the static-CSS default.
 splitter.addEventListener("dblclick", () => {
