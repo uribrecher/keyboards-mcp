@@ -4,6 +4,7 @@
 
 import { AgentClient, isWebSearchResult } from "@sounds-and-recreation/agent-client";
 import { marked } from "marked";
+import { nextUnread } from "./unread-state.js";
 
 // GFM gives us markdown tables (the original itch); breaks:true so a
 // single \n becomes a <br> rather than being collapsed inside a paragraph,
@@ -291,6 +292,11 @@ const meterEl       = document.getElementById("agent-status");
 const consoleHeader = document.getElementById("tab-chat"); // tabbed-box restructure: data-state lives on the chat tab now
 const sidEl         = document.getElementById("agent-sid");
 const sidValueEl    = document.getElementById("agent-sid-value");
+const tabChatBtn        = document.getElementById("tab-chat");
+const tabLogBtn         = document.getElementById("tab-log");
+const eventLog          = document.getElementById("event-log");
+const eventLogUnread    = document.getElementById("event-log-unread");
+const composerForm      = document.getElementById("chat-form");
 
 let chatBusy = false;
 // Agent process identity — emitted by GET /health. Stable while the
@@ -310,6 +316,124 @@ let agentSessionId = null;
 let agentState = "unknown";
 let lastConfirmed = "unknown";
 const PLACEHOLDER_LOST = "agent offline — start agent on :2999";
+
+// ─────────────────────────────────────────────────────────────────
+// Console panes — CHAT / LOG (see spec
+// docs/superpowers/specs/2026-05-08-mock-runner-event-log-design.md)
+// ─────────────────────────────────────────────────────────────────
+
+/** @type {"chat" | "log"} */
+let activePane = "chat";
+
+/** @type {"info" | "warn" | "error" | null} */
+let unreadSeverity = null;
+
+function setActivePane(pane) {
+  if (pane === activePane) return;
+  activePane = pane;
+
+  const isChat = pane === "chat";
+  tabChatBtn.setAttribute("aria-selected", isChat ? "true" : "false");
+  tabLogBtn.setAttribute("aria-selected",  isChat ? "false" : "true");
+
+  chatLog.hidden       = !isChat;
+  composerForm.hidden  = !isChat;     // composer only makes sense in CHAT
+  eventLog.hidden      = isChat;
+
+  if (!isChat) {
+    // Selecting LOG clears the unread state — by-definition read.
+    unreadSeverity = null;
+    renderUnreadLed();
+    // When entering LOG, scroll to bottom so the operator sees the
+    // most recent events without manually scrolling.
+    eventLog.scrollTop = eventLog.scrollHeight;
+  } else {
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+}
+
+function renderUnreadLed() {
+  if (unreadSeverity === null) {
+    eventLogUnread.hidden = true;
+    eventLogUnread.removeAttribute("data-severity");
+  } else {
+    eventLogUnread.hidden = false;
+    eventLogUnread.setAttribute("data-severity", unreadSeverity);
+  }
+}
+
+tabChatBtn.addEventListener("click", () => setActivePane("chat"));
+tabLogBtn.addEventListener("click",  () => setActivePane("log"));
+
+/**
+ * @param {{severity:"info"|"warn"|"error", source?:string, text:string, ts:number}} ev
+ */
+function appendEventRow(ev) {
+  // Drop empty-state placeholder on first append.
+  const empty = eventLog.querySelector(".event-log__empty");
+  if (empty) empty.remove();
+
+  const row = document.createElement("div");
+  row.className = "event-log__row";
+  row.setAttribute("data-severity", ev.severity);
+
+  const led = document.createElement("span");
+  led.className = "event-log__led";
+  row.appendChild(led);
+
+  const ts = document.createElement("span");
+  ts.className = "event-log__ts";
+  ts.textContent = formatHms(ev.ts);
+  row.appendChild(ts);
+
+  const body = document.createElement("div");
+  if (ev.source) {
+    const src = document.createElement("span");
+    src.className = "event-log__source";
+    src.textContent = ev.source;
+    body.appendChild(src);
+  }
+  const text = document.createElement("span");
+  text.className = "event-log__text";
+  text.textContent = ev.text;
+  body.appendChild(text);
+  row.appendChild(body);
+
+  // Cap scrollback at 500 rows; drop oldest first.
+  while (eventLog.children.length >= 500) eventLog.firstElementChild?.remove();
+
+  // Auto-scroll only if pinned to bottom (chat idiom).
+  const pinnedToBottom =
+    eventLog.scrollHeight - eventLog.scrollTop - eventLog.clientHeight < 4;
+
+  eventLog.appendChild(row);
+
+  if (pinnedToBottom) eventLog.scrollTop = eventLog.scrollHeight;
+
+  // Update unread LED if CHAT is active.
+  if (activePane === "chat") {
+    unreadSeverity = nextUnread(unreadSeverity, ev.severity);
+    renderUnreadLed();
+  }
+}
+
+function formatHms(ts) {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
+function clearEventLog() {
+  eventLog.innerHTML = "";
+  const empty = document.createElement("div");
+  empty.className = "event-log__empty";
+  empty.textContent = "— no events —";
+  eventLog.appendChild(empty);
+  unreadSeverity = null;
+  renderUnreadLed();
+}
 
 function applyAgentState(next) {
   agentState = next;
@@ -846,8 +970,10 @@ api.onDirtyChanged?.(({ isDirty, currentFileName }) => {
     : base;
 });
 
-// Render in-shell notes from main (Open errors, graceful-degradation msgs).
-api.onConsoleNote?.(({ text }) => { appendRow("system", text); });
+// Event-log subscriptions — non-agent lifecycle/status notes from main
+// (replaces the old menu:console-note → chat path).
+api.onEventLog?.((payload) => appendEventRow(payload));
+api.onEventLogClear?.(() => clearEventLog());
 
 // Open flow asks the renderer to drop a specific iframe (during teardown)
 api.onCloseTab?.(({ tabId }) => {
