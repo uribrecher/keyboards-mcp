@@ -435,19 +435,97 @@ body {
   pointer-events: none;
 }
 
-.console__header {
+/* ── Tabbed box: tab strip ── */
+.console__tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background:
+    linear-gradient(180deg, var(--c-console-hi) 0%, var(--c-console) 100%);
+  border-bottom: 1px solid var(--c-edge);
+}
+
+.console__tab {
+  appearance: none;
+  -webkit-appearance: none;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  background:
-    linear-gradient(180deg, var(--c-console-hi) 0%, var(--c-console) 100%);
-  border-bottom: 1px solid var(--c-edge);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--c-edge);
+  cursor: pointer;
+  font-family: var(--font-display);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.32em;
   text-transform: uppercase;
   color: var(--c-text-dim);
+  text-align: left;
+}
+
+.console__tab:focus-visible {
+  outline: 1px solid var(--c-amber);
+  outline-offset: -3px;
+}
+
+/* Active tab: bright text + amber underline. The 1px underline is
+ * laid in via box-shadow inset so it doesn't perturb the flex
+ * baseline. */
+.console__tab[aria-selected="true"] {
+  color: var(--c-text-bright);
+  background: linear-gradient(180deg, var(--c-console) 0%, var(--c-console-hi) 100%);
+  box-shadow: inset 0 -1px 0 0 var(--c-amber);
+}
+
+/* Inactive CHAT tab: ambiently visible, dimmed. Its lamp/SID/meter
+ * children stay live (state still updates) but at lower glow so the
+ * active LOG content reads as primary. */
+.console__tab[aria-selected="false"] {
+  opacity: 0.55;
+}
+.console__tab[aria-selected="false"]:hover {
+  opacity: 0.75;
+}
+
+/* LOG tab specifics */
+.console__tab-label {
+  letter-spacing: 0.45em;
+}
+
+/* Unread LED — small jewel, severity-tinted, slot lives in LOG tab. */
+.console__unread {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-amber);
+  box-shadow:
+    0 0 5px var(--c-amber-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+  transition: background .2s, box-shadow .2s;
+}
+.console__unread[data-severity="info"] {
+  background: var(--c-green);
+  box-shadow:
+    0 0 5px var(--c-green-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+.console__unread[data-severity="warn"] {
+  background: var(--c-amber);
+  box-shadow:
+    0 0 5px var(--c-amber-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+}
+.console__unread[data-severity="error"] {
+  background: var(--c-fault);
+  box-shadow:
+    0 0 5px var(--c-fault-glow),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
 }
 
 .console__lamp {
@@ -463,14 +541,14 @@ body {
 /* When the agent is offline, the lamp goes cold — desaturated oxblood
  * with the highlight pulled to almost nothing. The state lives on the
  * header so all status-driven children can share one selector. */
-.console__header[data-state="lost"] .console__lamp {
+.console__tab[data-state="lost"] .console__lamp {
   background: var(--c-fault-deep);
   box-shadow:
     0 0 3px rgba(110,36,24,0.25),
     inset 0 1px 0 rgba(255,255,255,0.06),
     inset 0 -1px 0 rgba(0,0,0,0.5);
 }
-.console__header[data-state="unknown"] .console__lamp {
+.console__tab[data-state="unknown"] .console__lamp {
   /* Cold/unprobed — same treatment as lost but without the fault hue. */
   background: var(--c-text-faint);
   box-shadow:
@@ -514,10 +592,10 @@ body {
 }
 /* Lost-state: the value stays visible but goes cold — same family of
  * cues as the meter and lamp, no extra ceremony. */
-.console__header[data-state="lost"] .console__sid-label {
+.console__tab[data-state="lost"] .console__sid-label {
   color: var(--c-fault-deep);
 }
-.console__header[data-state="lost"] .console__sid-value {
+.console__tab[data-state="lost"] .console__sid-value {
   color: var(--c-fault-deep);
   opacity: 0.7;
 }
@@ -897,7 +975,7 @@ body {
  * too so peripheral vision picks up the fault even before the user
  * looks at the meter. The header is an earlier sibling of the
  * composer inside .console, so the general-sibling combinator works. */
-.console__header[data-state="lost"] ~ .composer .composer__prompt {
+.console__tabs:has(.console__tab[data-state="lost"]) ~ .composer .composer__prompt {
   color: var(--c-fault);
   opacity: 0.55;
 }
