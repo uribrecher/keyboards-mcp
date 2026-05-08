@@ -17,14 +17,57 @@ services:
       retries: 10
       start_period: 5s
 
+  mcb:
+    build: .
+    command: npx tsx src/mcb/index.ts
+    environment:
+      - MCB_LISTEN_TCP=3100         # CI-only: listen on TCP instead of UDS
+      - MIDI_TRANSPORT=ws           # skip easymidi (no ALSA in containers)
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3100/v1/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
   test:
     build: .
     command: npm run test:ci
     environment:
       - MOCK_WS_URL=ws://mock:3000
       - MIDI_TRANSPORT=ws
+      - MCB_TCP=mcb:3100            # talk to the mcb container over the bridge net
     networks:
       - test-net
     depends_on:
       mock:
+        condition: service_healthy
+      mcb:
+        condition: service_healthy
+
+  coverage:
+    build: .
+    # Run coverage, then copy the lcov out to the bind-mount regardless of
+    # exit status so we still surface the report when coverage trips the
+    # 90% threshold gate. The original rc is captured immediately into $$rc;
+    # the cp is `|| true` so a missing/unreadable file can't mask it; the
+    # final `exit $$rc` restores the real exit code.
+    command: >
+      sh -c "npm run test:coverage; rc=$$?;
+             cp -f coverage.lcov /out/ 2>/dev/null || true;
+             exit $$rc"
+    environment:
+      - MOCK_WS_URL=ws://mock:3000
+      - MIDI_TRANSPORT=ws
+      - MCB_TCP=mcb:3100
+    networks:
+      - test-net
+    volumes:
+      - ./.coverage-out:/out
+    depends_on:
+      mock:
+        condition: service_healthy
+      mcb:
         condition: service_healthy

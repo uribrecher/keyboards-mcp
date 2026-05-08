@@ -77,6 +77,31 @@ function socketPath(): string {
   return process.env.MCB_SOCKET ?? join(homedir(), ".mcb", "sock");
 }
 
+type ConnectTarget =
+  | { kind: "uds"; socketPath: string }
+  | { kind: "tcp"; host: string; port: number };
+
+// MCB_TCP=<host>:<port> opts the client into TCP mode (docker-compose CI
+// topology). Anything else falls through to the UDS default at MCB_SOCKET.
+function connectTarget(): ConnectTarget {
+  const tcp = process.env.MCB_TCP;
+  if (tcp) {
+    const lastColon = tcp.lastIndexOf(":");
+    if (lastColon <= 0) throw new Error(`MCB_TCP must be host:port, got: ${tcp}`);
+    const host = tcp.slice(0, lastColon);
+    const port = Number(tcp.slice(lastColon + 1));
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      throw new Error(`MCB_TCP port must be 1-65535, got: ${tcp}`);
+    }
+    return { kind: "tcp", host, port };
+  }
+  return { kind: "uds", socketPath: socketPath() };
+}
+
+function describeTarget(t: ConnectTarget): string {
+  return t.kind === "uds" ? t.socketPath : `tcp://${t.host}:${t.port}`;
+}
+
 let cachedSessionId: string | null = null;
 
 /**
@@ -347,10 +372,13 @@ export const __testing = {
 };
 
 function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<unknown> {
-  const sock = socketPath();
+  const target = connectTarget();
+  const reqOpts = target.kind === "uds"
+    ? { socketPath: target.socketPath, method, path, headers: { "content-type": "application/json", ...headers } }
+    : { host: target.host, port: target.port, method, path, headers: { "content-type": "application/json", ...headers } };
   return new Promise((resolve, reject) => {
     const req = request(
-      { socketPath: sock, method, path, headers: { "content-type": "application/json", ...headers } },
+      reqOpts,
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c) => chunks.push(c));
@@ -368,7 +396,7 @@ function call(method: string, path: string, body?: unknown, headers: Record<stri
         });
       },
     );
-    req.on("error", (err) => reject(new MCBError(0, "mcb-unreachable", `MCB unreachable at ${sock}: ${err.message}. Is MCB running? (npm run mcb)`)));
+    req.on("error", (err) => reject(new MCBError(0, "mcb-unreachable", `MCB unreachable at ${describeTarget(target)}: ${err.message}. Is MCB running? (npm run mcb)`)));
     if (body !== undefined) req.write(JSON.stringify(body));
     req.end();
   });

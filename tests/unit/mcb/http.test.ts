@@ -17,7 +17,7 @@ beforeEach(async () => {
   socketDir = mkdtempSync(join(tmpdir(), "mcb-test-"));
   socketPath = join(socketDir, "sock");
   server = await startServer({
-    socketPath,
+    listen: { kind: "uds", socketPath },
     leases: new LeaseRegistry(),
     bridges: new BridgeRegistry(),
     sessions: new SessionManager(),
