@@ -129,4 +129,64 @@ describe("BridgeRegistry", () => {
       assert.equal(registry.shadowOf("dev-A2"), "port-C");
     });
   });
+
+  // #21 enabled mock-as-primary (bidirectional virtual MIDI ports).
+  // These regression tests exercise the existing walker against the new
+  // configurations to ensure none of them slip through cycle detection.
+  describe("regression: cycles in #21-enabled configurations", () => {
+    it("rejects a 2-hop cycle between two mock primaries (mocks share OS port name across directions)", () => {
+      // For mocks, both MIDI directions share the same OS port name (#21).
+      // So a bridge `mockA → mockB` plus a bridge `mockB → mockA` is a
+      // straight 2-hop cycle, indistinguishable from any other 2-hop case.
+      const r = new BridgeRegistry();
+      r.add("dev-A", "Roland JUNO-X Mock", "Roland JUNO-X Mock1");
+      assert.throws(
+        () => r.add("dev-B", "Roland JUNO-X Mock1", "Roland JUNO-X Mock"),
+        /cycle-would-form/,
+      );
+    });
+
+    it("rejects a 3-hop cycle across three mocks", () => {
+      const r = new BridgeRegistry();
+      r.add("dev-A", "mockA", "mockB");
+      r.add("dev-B", "mockB", "mockC");
+      assert.throws(
+        () => r.add("dev-C", "mockC", "mockA"),
+        /cycle-would-form/,
+      );
+    });
+
+    it("allows mock-as-primary chained linearly without closing", () => {
+      const r = new BridgeRegistry();
+      r.add("dev-A", "mockA", "mockB");
+      r.add("dev-B", "mockB", "mockC");
+      // Linear chain — no cycle.
+    });
+
+    it("rejects a self-bridge on a mock primary", () => {
+      // For mocks, primary.portName === input.portName (same OS port name).
+      // A bridge from a mock to itself is just a self-shadow.
+      const r = new BridgeRegistry();
+      assert.throws(
+        () => r.add("dev-A", "mockA", "mockA"),
+        /self-shadow/,
+      );
+    });
+
+    it("rejects reusing a mock as the master of a second bridge (master-port-conflict)", () => {
+      // A port can only be the master of ONE bridge (data flows from
+      // master to shadow — duplicating wouldn't make physical sense).
+      // First bridge claims mockB as master OK; second bridge using
+      // mockB as master fails. Note: a port CAN be both a shadow target
+      // (bridge1.shadow=mockB) AND the master of a different bridge
+      // (bridge2.master=mockB), as the chain test below exercises.
+      const r = new BridgeRegistry();
+      r.add("dev-A", "mockA", "mockB");
+      r.add("dev-B", "mockB", "mockC"); // mockB is shadow of A, master of B — OK.
+      assert.throws(
+        () => r.add("dev-C", "mockB", "mockD"),
+        /master-port-conflict/,
+      );
+    });
+  });
 });
