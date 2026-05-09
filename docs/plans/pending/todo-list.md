@@ -67,26 +67,6 @@ Design questions:
 - Discoverability: keyboard accelerators are fine for power users but the existing `backup` button is the only signal for new operators that the action exists. Whatever replaces it has to be at least as discoverable.
 - Visual: the existing `.console__btn` is a compact graphite button — preserve that idiom or rethink in light of the new tabbed layout.
 
-### 22. MCP-side receive plumbing for SysEx: connect semantics + bridge integration
-
-**Status:** Needs brainstorming.
-
-PR #21 implemented the Roland RQ1 protocol on the JUNO-X mock side and added a virtual MIDI input port (device's MIDI Out socket) to every model mock. **The MCP cannot yet receive on that port.** This todo closes the loop on the receive direction across all models — pure plumbing, no model-specific feature work.
-
-Open design questions:
-
-- **`connect_to_keyboard` arg semantics.** Today `port` means "the device's MIDI In socket (where MCP sends)" and `input_port` is a sidecar for shadow physical-knob mirroring. For queryable models, the MCP needs to listen on the device's MIDI Out. Should `input_port` be promoted to a real receive channel? Auto-resolved from a name pattern? Or rename `port` → `output_port` for clarity?
-- **MCB lease scope.** Today MCB leases the primary output port. MIDI Input opens are exclusive on macOS — should the lease also cover the input direction so two MCPs don't fight over the same device's response stream?
-- **Bridges as the receive-direction primitive.** Today `with_shadow` tees outgoing MIDI from primary → shadow. Could bridges become bidirectional, with a `with_input_bridge` argument forwarding device-output → MCP-input?
-- **Transport options for receive.** Two paths to evaluate:
-  - (a) MCP opens an OS-level MIDI input on the device's MIDI Out port and consumes `input.on("sysex")`. Works for both real hw and mocks. Requires extending `connect_to_keyboard` semantics.
-  - (b) Mock-only: MockEngine spins up a dedicated WebSocket lane for outgoing MIDI, MCP listens there. Real-hw still needs path (a).
-- **`MidiConnection.requestSysEx` API.** Generic request/response correlator (one-shot listener, timeout, matched-only resolution). Belongs on the interface so device classes can use it without knowing the transport.
-
-Out of scope: any model-level feature that uses the receive path (e.g. JUNO-X get_current_state — that's #23, blocked on this).
-
-Useful prior art: `src/midi/midi-manager.ts` `connectInput`, `src/mcb/bridge-registry.ts`, the `with_shadow` flow in `src/tools/connect.ts`. Mock side already done in #21.
-
 ### 23. JUNO-X `get_current_state` via Roland RQ1
 
 **Status:** Blocked on #22.
@@ -149,4 +129,24 @@ In other words, **routing decisions live in the engine**, keyed off the source o
 #### Why this matters
 
 Once a real external MIDI source can also drive the mock (hw + mock pair via a bridge — todo #22 territory), getting the routing wrong becomes a hard-to-debug runtime feedback loop. Documenting the trap here means the next implementer designs around it instead of discovering it the hard way.
+
+### 25. WS-mode SysEx receive — second WebSocket lane for outgoing MIDI
+
+**Status:** Needs design.
+
+#21 added a virtual MIDI Out port on every model mock; #22 wired the MCP-side real-MIDI receive path. CI/Docker mode (where `MOCK_WS_URL` is set and real MIDI is unavailable) currently has no symmetric receive path — `WsMidiConnection.onSysEx` is still a no-op.
+
+To close that gap, mirror the real-MIDI approach over WebSockets. The user's directive from the #22 brainstorm (paraphrased): *similar to the output direction's env var, we can have an env var that picks real MIDI vs WS for receive.*
+
+Scope:
+- **MockEngine: second WS server.** Per the "port for port" decision recorded in earlier #21 brainstorm — each MIDI direction maps to its own WS port. Existing WS keeps its mixed role (UI state + UI commands + MCP status); new WS is dedicated to outgoing-from-mock MIDI events. On every `MockHandlerResult.sysexOut`, broadcast `{type:"sysex", bytes}` only on the new server.
+- **mock-registry**: add `wsOutPort` field alongside the existing `wsPort`.
+- **MCB manifest**: surface `primary.wsOutPort` from the mock-registry entry.
+- **`WsMidiConnection`**: take a second URL; listen there for `{type:"sysex"}`; fire `onSysEx`.
+- **`connect.ts`**: plumb `manifest.primary.wsOutPort` into the WS-mode `WsMidiConnection.connect` call. Add `MOCK_WS_OUT_URL` env var for direct-WS-mode usage in tests.
+- **CI integration test** for RQ1 round-trip in WS mode.
+
+Out of scope (separate todo if needed): the receive path on real hardware over a *bridge* (e.g. someone wants to listen for DT1 via a bridge tee instead of direct connection). Today's bridges are one-way (master out → shadow in); making them bidirectional or adding a separate input bridge is its own design work.
+
+Useful prior art: `src/midi/ws-midi-connection.ts` (existing send-only WS impl), `src/mock-runner/engine.ts` (existing WS server + virtual MIDI Out fan-out from #21), `tests/helpers/test-harness.ts` (CI/Docker WS-mode infrastructure).
 

@@ -47,6 +47,25 @@ export function makeDevicesHandlers(deps: Deps) {
       if (typeof body.input_port === "string") {
         const ip = resolveOrHttp(() => resolvePort(body.input_port!, "input", deps.portList, deps.mockRegistry));
         input = { portName: ip.portName };
+      } else {
+        // Auto-resolve from a mock primary: mocks expose both directions
+        // (device's MIDI In and MIDI Out) under the same OS port name (#21).
+        // Real hardware uses different names for IN vs OUT, so the user
+        // must pass `input_port` explicitly there. Run the resolved name
+        // through resolvePort with kind="input" to validate that the
+        // mock's input direction is actually visible to the OS — guards
+        // against stale mock-registry entries.
+        const mockEntry = deps.mockRegistry.findByMidiPort(primary.portName);
+        if (mockEntry) {
+          try {
+            const ip = resolvePort(primary.portName, "input", deps.portList, deps.mockRegistry);
+            input = { portName: ip.portName };
+          } catch {
+            // Stale registry entry or OS port list changed — silently skip
+            // input wiring rather than failing the whole connect call.
+            // The user can still pass input_port explicitly to force.
+          }
+        }
       }
 
       let shadow: { portName: string; wsPort: number | null } | undefined;

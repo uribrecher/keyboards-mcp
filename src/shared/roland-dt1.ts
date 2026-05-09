@@ -8,6 +8,8 @@
  * Default device ID: 0x10 (broadcast: 0x7F)
  */
 
+import type { MidiConnection } from "./midi-connection.js";
+
 // Internal constants
 const SYSEX_START = 0xF0;
 const SYSEX_END = 0xF7;
@@ -20,6 +22,9 @@ export interface RolandModelId {
 }
 
 export interface DT1Message {
+  /** Echoed by the responding device — used by callers to filter responses
+   *  by device ID when multiple devices of the same model are on the bus. */
+  deviceId: number;
   address: number[];  // 4 bytes
   data: number[];     // 1+ bytes
 }
@@ -121,8 +126,8 @@ export function parseDT1(sysex: number[], modelId: RolandModelId): DT1Message | 
   // Manufacturer: Roland (0x41)
   if (sysex[i++] !== ROLAND_ID) return null;
 
-  // Device ID (skip — any device ID is accepted)
-  i++;
+  // Device ID — capture so callers can filter by responding device.
+  const deviceId = sysex[i++];
 
   // Model ID
   for (const b of modelId.bytes) {
@@ -152,7 +157,7 @@ export function parseDT1(sysex: number[], modelId: RolandModelId): DT1Message | 
   const expectedChecksum = rolandChecksum([...address, ...data]);
   if (receivedChecksum !== expectedChecksum) return null;
 
-  return { address, data };
+  return { deviceId, address, data };
 }
 
 export interface RQ1Message {
@@ -219,4 +224,63 @@ export function parseRQ1(sysex: number[], modelId: RolandModelId): RQ1Message | 
  */
 export function addAddresses(base: number[], offset: number[]): number[] {
   return base.map((b, i) => (b + (offset[i] ?? 0)) & 0x7F);
+}
+
+/**
+ * Send a Roland RQ1 SysEx and await the matching DT1 response.
+ *
+ * Resolves with the DT1 data bytes when a DT1 arrives whose address AND
+ * device ID match. Rejects with a timeout error if no matching DT1
+ * arrives within `timeoutMs`. Non-DT1 SysEx and DT1s with mismatched
+ * address/device ID are silently ignored — they may be unrelated
+ * traffic on the bus, including responses from other devices of the
+ * same model. The listener is unsubscribed on every exit path.
+ */
+export async function requestRolandValue(
+  conn: MidiConnection,
+  modelId: RolandModelId,
+  deviceId: number,
+  address: number[],
+  size: number,
+  timeoutMs: number,
+): Promise<number[]> {
+  return new Promise<number[]>((resolve, reject) => {
+    let settled = false;
+    let unsubscribe: (() => void) | null = null;
+
+    const finish = (cb: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsubscribe?.();
+      unsubscribe = null;
+      cb();
+    };
+
+    const timer = setTimeout(() => {
+      finish(() => reject(new Error(
+        `requestRolandValue: timeout after ${timeoutMs}ms ` +
+        `(addr=${address.map((b) => b.toString(16).padStart(2, "0")).join(":")})`,
+      )));
+    }, timeoutMs);
+
+    unsubscribe = conn.onSysEx((bytes) => {
+      if (settled) return;
+      const dt1 = parseDT1(bytes, modelId);
+      if (!dt1) return;
+      if (dt1.deviceId !== deviceId) return;
+      if (!dt1.address.every((b, i) => b === address[i])) return;
+      finish(() => resolve(dt1.data));
+    });
+
+    // Encode size as 4 x 7-bit bytes (MSB-first), matching the wire
+    // format produced by buildRQ1.
+    const sizeBytes = [
+      (size >> 21) & 0x7F,
+      (size >> 14) & 0x7F,
+      (size >> 7) & 0x7F,
+      size & 0x7F,
+    ];
+    conn.sendSysEx(buildRQ1(modelId, deviceId, address, sizeBytes));
+  });
 }
