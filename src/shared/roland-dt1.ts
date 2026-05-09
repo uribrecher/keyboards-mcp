@@ -155,6 +155,65 @@ export function parseDT1(sysex: number[], modelId: RolandModelId): DT1Message | 
   return { address, data };
 }
 
+export interface RQ1Message {
+  /** Echoed back from the incoming SysEx so a DT1 response can address the same client. */
+  deviceId: number;
+  /** 4-byte address (7-bit per byte). */
+  address: number[];
+  /** 4-byte size field. Use {@link decodeRolandSize} to convert to a byte count. */
+  size: number[];
+}
+
+/**
+ * Decode a Roland 4-byte size field into a byte count.
+ *
+ * The wire format is 4 x 7-bit bytes, MSB-first. Total addressable size
+ * is 28 bits (≈256 MB), well beyond any real DT1 read.
+ *
+ * NOT to be confused with `unpackNibbles`, which is for DT1 *data* fields
+ * that pack a single nibble per byte. Size and address fields use the
+ * 7-bits-per-byte encoding instead; this helper is the right one for them.
+ */
+export function decodeRolandSize(bytes: number[]): number {
+  return ((bytes[0] & 0x7F) << 21)
+    | ((bytes[1] & 0x7F) << 14)
+    | ((bytes[2] & 0x7F) << 7)
+    | (bytes[3] & 0x7F);
+}
+
+/**
+ * Parse incoming SysEx bytes as a Roland RQ1 (Data Request 1) message.
+ * Returns deviceId + address + size if valid RQ1 for the given model, null otherwise.
+ * Verifies: manufacturer=0x41, model ID match, command=0x11, checksum.
+ */
+export function parseRQ1(sysex: number[], modelId: RolandModelId): RQ1Message | null {
+  // F0 41 <dev> <modelId> 11 <addr:4> <size:4> <checksum> F7
+  const expectedLen = 1 + 1 + 1 + modelId.bytes.length + 1 + 4 + 4 + 1 + 1;
+  if (sysex.length !== expectedLen) return null;
+
+  let i = 0;
+  if (sysex[i++] !== SYSEX_START) return null;
+  if (sysex[i++] !== ROLAND_ID) return null;
+  const deviceId = sysex[i++];
+  for (const b of modelId.bytes) {
+    if (sysex[i++] !== b) return null;
+  }
+  if (sysex[i++] !== CMD_RQ1) return null;
+
+  const address = sysex.slice(i, i + 4);
+  i += 4;
+  const size = sysex.slice(i, i + 4);
+  i += 4;
+
+  const receivedChecksum = sysex[i++];
+  if (sysex[i] !== SYSEX_END) return null;
+
+  const expectedChecksum = rolandChecksum([...address, ...size]);
+  if (receivedChecksum !== expectedChecksum) return null;
+
+  return { deviceId, address, size };
+}
+
 /**
  * Add two 4-byte Roland addresses. Each byte wraps at 0x7F (& 0x7F).
  */

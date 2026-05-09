@@ -35,6 +35,10 @@ export class MockEngine extends EventEmitter {
   private opts: EngineOptions;
 
   private midiInput: any | null = null;
+  // The device's MIDI Out socket — apps listen FROM this port to receive
+  // outgoing MIDI emitted by the mock. Constructed via `easymidi.Output`.
+  // Task 4 wires JUNO-X RQ1 responses through here via MockHandlerResult.sysexOut.
+  private midiOutput: any | null = null;
   private httpServer: Server | null = null;
   private wss: WebSocketServer | null = null;
   private clients = new Set<WebSocket>();
@@ -64,6 +68,11 @@ export class MockEngine extends EventEmitter {
       const after = easymidi.default.getOutputs();
       const newOnes = after.filter((p: string) => !before.has(p));
       if (newOnes.length === 1) this.actualPortName = newOnes[0];
+
+      // Virtual MIDI Out port (the device's MIDI Out socket — apps listen
+      // FROM it). Same OS port name as the Input — Core MIDI distinguishes
+      // by direction. easymidi `Output` = OS-level MIDI source.
+      this.midiOutput = new easymidi.default.Output(this.actualPortName, true);
     }
 
     // Bare HTTP server for WebSocket
@@ -223,6 +232,10 @@ export class MockEngine extends EventEmitter {
       this.midiInput.close();
       this.midiInput = null;
     }
+    if (this.midiOutput) {
+      this.midiOutput.close?.();
+      this.midiOutput = null;
+    }
     for (const ws of this.clients) ws.terminate();
     for (const ws of this.mcpClients) ws.terminate();
     this.clients.clear();
@@ -243,6 +256,15 @@ export class MockEngine extends EventEmitter {
     const result = this.handler.onMIDI(msg);
     if (result.state) this.broadcast(result.state);
     if (result.log) console.log(`MIDI: ${result.log}`);
+    if (result.sysexOut && result.sysexOut.length > 0 && this.midiOutput) {
+      for (const bytes of result.sysexOut) {
+        try {
+          this.midiOutput.send("sysex", bytes);
+        } catch (err) {
+          console.error("Mock virtual output sysex send failed:", err);
+        }
+      }
+    }
   }
 
   private broadcast(msg: Record<string, any>): void {

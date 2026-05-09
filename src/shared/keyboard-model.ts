@@ -119,6 +119,12 @@ export interface MockHandlerResult {
   state?: Record<string, any>;
   /** Console log line */
   log?: string;
+  /**
+   * Outgoing SysEx messages emitted by the handler. Each entry is one
+   * full SysEx packet (F0..F7). The engine writes each packet to the
+   * mock's virtual MIDI Out port (the device's MIDI Out socket).
+   */
+  sysexOut?: number[][];
 }
 
 /**
