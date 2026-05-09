@@ -193,8 +193,12 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       results.push(`  ${entry.found.param.name}: ${prevDisplay} → ${displayValue}`);
     }
 
-    // Phase 4: post-apply advisory warnings.
-    const warnings = this.validateAfterSet(resolvedKeys, part ?? "upper");
+    // Phase 4: post-apply advisory warnings. Skip keys that the preflight
+    // refused — they were never sent, so warnings about them would mislead.
+    const appliedKeys = preflight.blockedKeys.size === 0
+      ? resolvedKeys
+      : resolvedKeys.filter((k) => !preflight.blockedKeys.has(k.key));
+    const warnings = this.validateAfterSet(appliedKeys, part ?? "upper");
 
     if (preflight.errors.length > 0) errors.push(...preflight.errors);
 

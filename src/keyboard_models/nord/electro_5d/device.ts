@@ -47,9 +47,9 @@ export class NordElectro5DDevice extends BaseKeyboardDevice {
 
   protected override preflightBatch(
     resolvedKeys: Array<{ key: string; value: number | string }>,
-    _part: string,
+    part: string,
   ): { errors: string[]; blockedKeys: Set<string> } {
-    return preflightDisabledSections(resolvedKeys, this.state, this.parameterMap);
+    return preflightDisabledSections(resolvedKeys, this.state, this.parameterMap, part);
   }
 
   protected override validateAfterSet(

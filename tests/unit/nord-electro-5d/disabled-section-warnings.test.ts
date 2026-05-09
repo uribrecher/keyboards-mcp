@@ -19,6 +19,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       [{ key: "reverb_dry_wet", value: 64 }],
       state,
       parameterMap,
+      "upper",
     );
 
     const reverbError = result.errors.find((e) => e.includes("Reverb"));
@@ -36,6 +37,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       [{ key: "reverb_dry_wet", value: 64 }],
       state,
       parameterMap,
+      "upper",
     );
 
     assert.equal(result.errors.length, 0, `expected no errors, got: ${JSON.stringify(result.errors)}`);
@@ -50,6 +52,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       [{ key: "reverb_enable", value: 0 }],
       state,
       parameterMap,
+      "upper",
     );
 
     assert.equal(result.errors.length, 0, `expected no errors, got: ${JSON.stringify(result.errors)}`);
@@ -64,6 +67,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       [{ key: "part_upper_engine_select", value: "Piano" }],
       state,
       parameterMap,
+      "upper",
     );
 
     assert.ok(
@@ -84,6 +88,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       ],
       state,
       parameterMap,
+      "upper",
     );
 
     assert.ok(
@@ -104,6 +109,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       ],
       state,
       parameterMap,
+      "upper",
     );
 
     assert.ok(
@@ -124,6 +130,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       [{ key: "piano_model", value: 0 }],
       state,
       parameterMap,
+      "upper",
     );
 
     const pianoError = result.errors.find((e) => e.includes("Piano engine is currently disabled"));
@@ -145,6 +152,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       [{ key: "piano_model", value: 0 }],
       state,
       parameterMap,
+      "upper",
     );
 
     assert.equal(result.errors.length, 0, `expected no errors, got: ${JSON.stringify(result.errors)}`);
@@ -164,6 +172,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       [{ key: "piano_model", value: 0 }],
       state,
       parameterMap,
+      "upper",
     );
 
     const pianoError = result.errors.find((e) => e.includes("Piano engine is currently disabled"));
@@ -185,6 +194,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       ],
       state,
       parameterMap,
+      "upper",
     );
 
     assert.equal(result.errors.length, 0, `expected no errors, got: ${JSON.stringify(result.errors)}`);
@@ -202,6 +212,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       ],
       state,
       parameterMap,
+      "upper",
     );
 
     const reverbErrors = result.errors.filter((e) => e.includes("Reverb is currently disabled"));
@@ -228,6 +239,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       ],
       state,
       parameterMap,
+      "upper",
     );
 
     assert.equal(result.errors.length, 0, `expected no errors, got: ${JSON.stringify(result.errors)}`);
@@ -242,6 +254,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       [{ key: "spkr_comp_drive", value: 64 }],
       state,
       parameterMap,
+      "upper",
     );
 
     const ampError = result.errors.find((e) => e.includes("Amp/Speaker is currently disabled"));
@@ -257,6 +270,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       [{ key: "spkr_comp_drive", value: 64 }],
       state,
       parameterMap,
+      "upper",
     );
 
     assert.equal(result.errors.length, 0, `expected no errors, got: ${JSON.stringify(result.errors)}`);
@@ -278,6 +292,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       [{ key: "vibrato_type", value: 1 }],
       state,
       parameterMap,
+      "upper",
     );
 
     const vibError = result.errors.find((e) => /vibrato.*disabled/i.test(e));
@@ -302,6 +317,7 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       ],
       state,
       parameterMap,
+      "upper",
     );
 
     assert.ok(
@@ -309,5 +325,45 @@ describe("Nord Electro 5D disabled-section blocking errors", () => {
       `expected no vibrato-disabled error when batch enables it, got: ${JSON.stringify(result.errors)}`,
     );
     assert.equal(result.blockedKeys.size, 0);
+  });
+
+  it("evaluates vibrato_enable for the targeted part (lower vs upper)", () => {
+    const state = freshState();
+    const engineParam = parameterMap.params["part_upper_engine_select"]!;
+    const organMidi = parameterMap.resolveValue(engineParam, "Organ");
+    state.set("part_lower_engine_select", organMidi);
+    state.set("part_upper_engine_select", organMidi);
+    state.set("part_lower_enable", 1);
+    state.set("part_upper_enable", 1);
+
+    // Lower vibrato = on, upper vibrato = off.
+    state.set("vibrato_enable", 1, "lower");
+    state.set("vibrato_enable", 0, "upper");
+
+    // Targeting upper → upper's vibrato is off → block.
+    const upper = preflightDisabledSections(
+      [{ key: "vibrato_type", value: 1 }],
+      state,
+      parameterMap,
+      "upper",
+    );
+    assert.ok(
+      upper.errors.some((e) => /vibrato.*disabled/i.test(e)),
+      `expected upper-part error, got: ${JSON.stringify(upper.errors)}`,
+    );
+    assert.ok(upper.blockedKeys.has("vibrato_type"));
+
+    // Targeting lower → lower's vibrato is on → no block.
+    const lower = preflightDisabledSections(
+      [{ key: "vibrato_type", value: 1 }],
+      state,
+      parameterMap,
+      "lower",
+    );
+    assert.ok(
+      !lower.errors.some((e) => /vibrato.*disabled/i.test(e)),
+      `expected no error for lower part, got: ${JSON.stringify(lower.errors)}`,
+    );
+    assert.equal(lower.blockedKeys.size, 0);
   });
 });

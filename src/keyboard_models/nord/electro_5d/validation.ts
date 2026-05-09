@@ -136,6 +136,7 @@ export function preflightDisabledSections(
   parameters: Array<{ key: string; value: number | string }>,
   state: StateManager,
   parameterMap: ParameterMap,
+  targetPart: string,
 ): { errors: string[]; blockedKeys: Set<string> } {
   const errors: string[] = [];
   const blockedKeys = new Set<string>();
@@ -179,6 +180,9 @@ export function preflightDisabledSections(
 
   // Post-batch view: start from current state, then overlay the batch.
   // part_*_enable defaults to On (1) on hardware; treat undefined as enabled.
+  // Per-part keys (e.g. vibrato_enable) route via targetPart — the whole
+  // setParameters batch shares one part argument, so the same part applies
+  // to both the state read and any in-batch overlay.
   const postBatch: Record<string, number | undefined> = {};
   const POST_BATCH_KEYS = [
     ...Object.values(ENABLE_KEY),
@@ -187,7 +191,8 @@ export function preflightDisabledSections(
     "vibrato_enable",
   ];
   for (const k of POST_BATCH_KEYS) {
-    postBatch[k] = state.get(k);
+    const param = parameterMap.params[k];
+    postBatch[k] = param?.perPart ? state.get(k, targetPart) : state.get(k);
   }
   for (const { key, value } of parameters) {
     if (key in postBatch) {
