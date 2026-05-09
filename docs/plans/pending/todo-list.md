@@ -122,3 +122,39 @@ Out of scope: scene-modify (per-part offsets within scene-modify section), scene
 
 Useful prior art: `docs/plans/completed/23-juno-x-get-state-rq1.md` (scene-effects scope), `src/keyboard_models/roland/juno_x/device.ts` `setParameters` (per-part address calculation already in place), `src/keyboard_models/roland/juno_x/engines/engine-types.ts` (`SCENE_PART_OFFSETS`, `PART_NAMES`, `JunoXEngine`).
 
+### 28. JUNO-X chorus type — UI ↔ state propagation bug
+
+**Status:** Needs investigation.
+
+Observed during #24 local testing: clicking a chorus mode button on jino's UI causes chorus_switch to propagate correctly (verifiable via shadow mock junio's UI lighting up the chorus group), but chorus *type* (the algorithm selector — JUNO Chorus, etc., 0..9 at `01:50:00:01`) does NOT propagate properly.
+
+This is distinct from the wiring fix shipped in #24:
+- The `{type:"param"}` UI message → `MockHandler.onUIParam` → DT1 → state path is now correct generally.
+- The bridge from primary → shadow is verified working for delay_switch, reverb_switch, drive_switch.
+- chorus_switch propagates.
+- chorus *type* (the algorithm) still misbehaves — symptom unclear without further repro.
+
+Likely culprits to investigate:
+- The chorus mode buttons on the UI emit `chorus_mode` (param name doesn't exist server-side — see todo #11) rather than `chorus_type`. So clicking a mode button never sends the actual chorus_type DT1, even when the user expected "select JUNO Chorus" semantics.
+- The chorus *type* selector (a separate dropdown control, distinct from the mode buttons) may not have a syncSceneGlobalUI mirror — `syncSceneGlobalUI` in `web/app.js` only mirrors switch-toggle buttons today.
+- Possible UI selector listening on a different state path (CC vs scene-global SysEx).
+
+Scope when picked up:
+- Reproduce: change Chorus Type via jino's selector dropdown → verify junio's selector updates.
+- If selector mirrors are missing, extend `syncSceneGlobalUI` to read `01:50:00:01[0]` for chorus_type and update the selector.
+- If chorus_mode buttons should route to chorus_type semantically (e.g. "JUNO Chorus" on click), wire that mapping. Otherwise wait for #11 (full chorus mode sub-parameter set) which will give chorus_mode a proper home.
+
+Useful prior art: `src/keyboard_models/roland/juno_x/scene-params.ts` (chorus_type at offset `00:50:00:01`), `src/keyboard_models/roland/juno_x/web/app.js` (`syncSceneGlobalUI`, `initChorusButtons`), todo #11.
+
+### 29. JUNO-X drive button — click does nothing
+
+**Status:** Needs investigation.
+
+Observed during #24 local testing: clicking the "DRV" button on jino's UI doesn't toggle anything. Delay and Reverb buttons in the same FX cluster work correctly; only Drive is broken.
+
+Likely culprits:
+- Markup mismatch: HTML may have `data-fx="drv"` but `FX_PARAMS` map in `web/app.js:260` uses `drive: "drive_switch"`. If the data attribute is `drv` instead of `drive`, the lookup misses and no UI param is sent.
+- Or `tog-btn` class missing on the drive button — `initFxButtons` selects `button.tog-btn[data-fx]`.
+
+Quick fix is likely a one-character HTML change.
+
