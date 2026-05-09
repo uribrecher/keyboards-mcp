@@ -125,6 +125,17 @@ export interface MockHandlerResult {
    * mock's virtual MIDI Out port (the device's MIDI Out socket).
    */
   sysexOut?: number[][];
+  /**
+   * Outgoing CC messages emitted by the handler. The engine writes each
+   * to the mock's virtual MIDI Out port. Handler-explicit emissions are
+   * always written, regardless of input source.
+   */
+  ccOut?: Array<{ controller: number; value: number; channel: number }>;
+  /**
+   * Outgoing program-change messages emitted by the handler. The engine
+   * writes each to the mock's virtual MIDI Out port.
+   */
+  programOut?: Array<{ number: number; channel: number }>;
 }
 
 /**
@@ -140,6 +151,16 @@ export interface MockHandler {
   init(lowerChannel: number, upperChannel: number, label?: string): void;
   /** Process any MIDI message. Returns state to broadcast and/or a log line. */
   onMIDI(msg: MidiMessage): MockHandlerResult;
+  /**
+   * Called when the mock UI fires `{type:"param", name, value, channel?}` for
+   * params that have no CC mapping (typically SysEx-addressed). The handler
+   * MUST encode the named param to MIDI bytes, apply state by routing through
+   * its own `onMIDI`, and return the encoded packet(s) in `sysexOut` / `ccOut`
+   * so the engine can emit them on the device's MIDI Out (panel-knob analogue).
+   *
+   * Models whose UI never sends `{type:"param"}` can leave this unimplemented.
+   */
+  onUIParam?(name: string, value: number | string, channel?: number): MockHandlerResult;
   /** Return the complete current state (for new WebSocket clients) */
   getFullState(includeInventory: boolean): Record<string, any>;
   /** Reload cached data (e.g., backup cache) */

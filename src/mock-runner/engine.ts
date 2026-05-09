@@ -8,7 +8,7 @@
 import { createServer, type Server } from "node:http";
 import { EventEmitter } from "node:events";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { MockHandler, MidiMessage } from "../shared/keyboard-model.js";
+import type { MockHandler, MidiMessage, MockHandlerResult } from "../shared/keyboard-model.js";
 import * as registry from "../shared/mock-registry.js";
 
 const HEARTBEAT_MS = 30_000;
@@ -107,15 +107,20 @@ export class MockEngine extends EventEmitter {
               this.handler.onCacheReload?.();
               this.broadcast(this.handler.getFullState(true));
             } else if (msg.type === "cc") {
-              // UI control → route through handler like a MIDI CC
-              this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel ?? 0 });
+              this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel ?? 0 }, "ui");
             } else if (msg.type === "program") {
-              this.onMIDI({ type: "program", number: msg.number, channel: msg.channel ?? 0 });
+              this.onMIDI({ type: "program", number: msg.number, channel: msg.channel ?? 0 }, "ui");
             } else if (msg.type === "sysex") {
-              this.onMIDI({ type: "sysex", bytes: msg.bytes });
+              this.onMIDI({ type: "sysex", bytes: msg.bytes }, "ui");
             } else if (msg.type === "param") {
-              // UI named parameter (for SysEx-addressed params without CCs)
-              console.log(`UI: ${msg.name} = ${msg.value}`);
+              // SysEx-addressed (or otherwise non-CC) param routed through the
+              // handler's onUIParam so the model encodes the name → MIDI bytes,
+              // applies state, and returns the encoded packet for the engine
+              // to emit on the device's MIDI Out (panel-knob analogue).
+              const result = this.handler.onUIParam
+                ? this.handler.onUIParam(msg.name, msg.value, msg.channel ?? 0)
+                : { log: `UI: ${msg.name} = ${msg.value} (handler has no onUIParam)` };
+              this.applyHandlerResult(result, null);
             }
           } catch { /* ignore */ }
         });
@@ -123,18 +128,20 @@ export class MockEngine extends EventEmitter {
       }
     });
 
-    // MIDI listeners — all input goes through the handler
+    // MIDI listeners — all input goes through the handler. Source is
+    // "external": handler updates state but the engine MUST NOT echo the
+    // inbound message back out (would feedback-loop on bridges/shadows).
     if (this.midiInput) {
       this.midiInput.on("cc", (msg: { controller: number; value: number; channel: number }) => {
-        this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel });
+        this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel }, "external");
       });
 
       this.midiInput.on("program", (msg: { number: number; channel: number }) => {
-        this.onMIDI({ type: "program", number: msg.number, channel: msg.channel });
+        this.onMIDI({ type: "program", number: msg.number, channel: msg.channel }, "external");
       });
 
       this.midiInput.on("sysex" as any, (msg: { bytes: number[] }) => {
-        this.onMIDI({ type: "sysex", bytes: [...msg.bytes] });
+        this.onMIDI({ type: "sysex", bytes: [...msg.bytes] }, "external");
       });
     }
 
@@ -252,18 +259,67 @@ export class MockEngine extends EventEmitter {
 
   // ── Private ──
 
-  private onMIDI(msg: MidiMessage): void {
+  /**
+   * Dispatch a MIDI message through the handler with source-aware routing.
+   *
+   * - `"ui"`: the message originated from a UI WS command (panel-knob
+   *   analogue). After the handler updates state, the engine ALSO writes
+   *   the inbound `cc` / `program` to the device's MIDI Out so external
+   *   listeners see the panel change. SysEx is not auto-echoed for UI
+   *   source — the handler emits sysex explicitly via `result.sysexOut`.
+   * - `"external"`: the message arrived on the virtual MIDI In port. The
+   *   handler updates state but the engine MUST NOT echo back to MIDI
+   *   Out (would feedback-loop on bridges).
+   *
+   * Handler-explicit emissions (`result.sysexOut` / `ccOut` / `programOut`)
+   * are always written to MIDI Out, regardless of source.
+   */
+  private onMIDI(msg: MidiMessage, source: "ui" | "external"): void {
     const result = this.handler.onMIDI(msg);
+    this.applyHandlerResult(result, source === "ui" ? msg : null);
+  }
+
+  /**
+   * Apply a `MockHandlerResult`: broadcast state, log, and emit MIDI to the
+   * device's MIDI Out per the source-aware rule. `uiSource`, when non-null,
+   * is the raw inbound UI-source message to echo on MIDI Out.
+   */
+  private applyHandlerResult(result: MockHandlerResult, uiSource: MidiMessage | null): void {
     if (result.state) this.broadcast(result.state);
     if (result.log) console.log(`MIDI: ${result.log}`);
-    if (result.sysexOut && result.sysexOut.length > 0 && this.midiOutput) {
+    this.emitToMidiOut(result, uiSource);
+  }
+
+  private emitToMidiOut(result: MockHandlerResult, uiSource: MidiMessage | null): void {
+    if (!this.midiOutput) return;
+    if (result.sysexOut) {
       for (const bytes of result.sysexOut) {
-        try {
-          this.midiOutput.send("sysex", bytes);
-        } catch (err) {
-          console.error("Mock virtual output sysex send failed:", err);
-        }
+        try { this.midiOutput.send("sysex", bytes); }
+        catch (err) { console.error("Mock virtual output sysex send failed:", err); }
       }
+    }
+    if (result.ccOut) {
+      for (const cc of result.ccOut) {
+        try { this.midiOutput.send("cc", cc); }
+        catch (err) { console.error("Mock virtual output cc send failed:", err); }
+      }
+    }
+    if (result.programOut) {
+      for (const pc of result.programOut) {
+        try { this.midiOutput.send("program", pc); }
+        catch (err) { console.error("Mock virtual output program send failed:", err); }
+      }
+    }
+    // UI-source echo for bare cc / program (panel-knob analogue). SysEx is
+    // not auto-echoed — handlers that want to re-emit fill `sysexOut`.
+    if (uiSource) {
+      try {
+        if (uiSource.type === "cc") {
+          this.midiOutput.send("cc", { controller: uiSource.controller, value: uiSource.value, channel: uiSource.channel });
+        } else if (uiSource.type === "program") {
+          this.midiOutput.send("program", { number: uiSource.number, channel: uiSource.channel });
+        }
+      } catch (err) { console.error("Mock virtual output UI-echo send failed:", err); }
     }
   }
 
