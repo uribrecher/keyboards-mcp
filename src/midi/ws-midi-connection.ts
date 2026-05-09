@@ -85,7 +85,7 @@ export class WsMidiConnection implements MidiConnection {
   }
 
   onSysEx(_callback: (bytes: number[]) => void): void {
-    // No-op: mock doesn't send SysEx back over WS
+    // No-op in WS mode — see todo #25 for the planned mock-out WS lane.
   }
 
   close(): void {

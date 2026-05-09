@@ -12,5 +12,5 @@ export interface MidiConnection {
     delayMs?: number,
   ): Promise<void>;
   onCC(callback: (cc: number, value: number, channel: number) => void): void;
-  onSysEx?(callback: (bytes: number[]) => void): void;
+  onSysEx(callback: (bytes: number[]) => void): void;
 }
