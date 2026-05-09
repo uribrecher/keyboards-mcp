@@ -59,6 +59,13 @@ export class NordElectro5DDevice extends BaseKeyboardDevice {
     return validateParameterBatch(resolvedKeys, this.state, part, this.parameterMap);
   }
 
+  override getState(_section?: string): ToolResult {
+    return textResult(
+      "Nord MIDI is one-way — get_current_state is not supported on this model. " +
+      "The agent owns its memory of what it set; the hardware itself is the ground truth.",
+    );
+  }
+
   // ── Piano model discovery in listParameters ──
 
   protected override formatParameterExtra(key: string, _param: KeyboardParameter): string[] | null {
