@@ -15,6 +15,7 @@ class StubConnection implements MidiConnection {
 
 describe("Nord Electro 5D — advisory warnings exclude blocked params", () => {
   it("does not emit the vibrato/rotary clash warning when vibrato_enable is blocked", () => {
+    if (!nordModel.createDevice) throw new Error("Nord model is missing createDevice");
     const device = nordModel.createDevice();
     const conn = new StubConnection();
     device.attach(conn);
