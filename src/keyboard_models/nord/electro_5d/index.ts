@@ -80,6 +80,9 @@ const model: KeyboardModel = {
 
   agentSystemPrompt: `KEYBOARD: Nord Electro 5D
 
+STATE & MEMORY:
+The MCP is stateless on parameter values. It does not remember what you set on previous turns. Nord MIDI is one-way (CC out, no query protocol), so \`get_current_state\` is NOT supported on this model — calling it returns an error explaining as much. You own the memory of what you sent: keep notes in your own context if a later step depends on it. The device itself is the ground truth — when in doubt, set the parameter explicitly rather than assuming it carried over.
+
 BI-TIMBRAL MODE:
 The Nord Electro 5D has two parts (Lower and Upper).
 - LAYER MODE (split off): Both parts span the entire keyboard. You CANNOT assign the same engine type to both parts — each layer must use a different engine (e.g., Organ + Piano, Piano + Sample Synth, Organ + Sample Synth).

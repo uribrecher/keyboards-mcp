@@ -79,7 +79,9 @@ tests/
 
 ## Architecture
 
-**Model-delegated design.** MCP tools are thin wrappers — keyboard devices own all business logic (parameter definitions, value encoding, state tracking, backup parsing, mock behavior).
+**Model-delegated design.** MCP tools are thin wrappers — keyboard devices own all business logic (parameter definitions, value encoding, backup parsing, mock behavior).
+
+**The MCP is stateless on parameter values.** The MCP does not shadow what it has sent — there is no per-device key→value cache that persists between tool calls. The agent owns the memory of what it set; the device (real or mock) owns the ground truth. `get_current_state` is per-model: Nord and Prophet-6 cannot satisfy it (one-way MIDI) and return a "not supported" tool result; JUNO-X uses Roland RQ1 to query the device live. See `docs/plans/pending/todo-list.md` items #20 and #21.
 
 ```
 Claude Code <-MCP/stdio-> MCP Server <-MIDI-> Keyboard (or Mock)
@@ -94,7 +96,7 @@ Claude Code <-MCP/stdio-> MCP Server <-MIDI-> Keyboard (or Mock)
 ### Core concepts
 
 - **KeyboardModel** — A type of keyboard (e.g., "Nord Electro 5D"). One per model in the registry. Owns shared definitions (parameter map, system prompt template, backup parsing) and acts as a factory for device instances via `createDevice()`.
-- **KeyboardDevice** — A specific physical unit or mock instance. Owns its MIDI connection, state, backup data, and all tool method implementations. Multiple devices of the same model can coexist.
+- **KeyboardDevice** — A specific physical unit or mock instance. Owns its MIDI connection, backup data, and all tool method implementations. Multiple devices of the same model can coexist. The device does not cache parameter values it has sent — the MCP is stateless on parameter values (see Architecture).
 - **MidiConnection** — Transport interface that devices code against. `MidiManager` implements it. Supports CC, SysEx, NRPN, and batch sends.
 - **MockHandler** — Interface for mock device behavior. Owns ALL state and logic; the engine is just MIDI I/O + WebSocket relay.
 
@@ -120,10 +122,10 @@ Every tool follows the same structure:
 
 Create `src/keyboard_models/<manufacturer>/<model>/` with:
 - `index.ts` — default export implementing `KeyboardModel` with `createDevice()` and optionally `createMockHandler()`
-- `device.ts` — class implementing `KeyboardDevice` (owns connection, state, all tool logic)
+- `device.ts` — class implementing `KeyboardDevice` (owns connection and all tool logic)
 - `midi-map.ts` — `createParameterMap()` with CC definitions, encodings, labels
-- `mock-handler.ts` — optional `MockHandler` implementation (owns all mock state and logic)
-- Optionally: state-manager, backup-parser, backup-cache, `web/` UI directory
+- `mock-handler.ts` — optional `MockHandler` implementation (owns all mock state and logic — the mock IS the source of truth)
+- Optionally: backup-parser, backup-cache, `web/` UI directory
 
 The model is auto-discovered by `model-registry.ts` scanning the filesystem.
 
