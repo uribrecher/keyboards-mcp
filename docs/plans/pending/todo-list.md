@@ -67,26 +67,6 @@ Design questions:
 - Discoverability: keyboard accelerators are fine for power users but the existing `backup` button is the only signal for new operators that the action exists. Whatever replaces it has to be at least as discoverable.
 - Visual: the existing `.console__btn` is a compact graphite button — preserve that idiom or rethink in light of the new tabbed layout.
 
-### 22. MCP-side receive plumbing for SysEx: connect semantics + bridge integration
-
-**Status:** Needs brainstorming.
-
-PR #21 implemented the Roland RQ1 protocol on the JUNO-X mock side and added a virtual MIDI input port (device's MIDI Out socket) to every model mock. **The MCP cannot yet receive on that port.** This todo closes the loop on the receive direction across all models — pure plumbing, no model-specific feature work.
-
-Open design questions:
-
-- **`connect_to_keyboard` arg semantics.** Today `port` means "the device's MIDI In socket (where MCP sends)" and `input_port` is a sidecar for shadow physical-knob mirroring. For queryable models, the MCP needs to listen on the device's MIDI Out. Should `input_port` be promoted to a real receive channel? Auto-resolved from a name pattern? Or rename `port` → `output_port` for clarity?
-- **MCB lease scope.** Today MCB leases the primary output port. MIDI Input opens are exclusive on macOS — should the lease also cover the input direction so two MCPs don't fight over the same device's response stream?
-- **Bridges as the receive-direction primitive.** Today `with_shadow` tees outgoing MIDI from primary → shadow. Could bridges become bidirectional, with a `with_input_bridge` argument forwarding device-output → MCP-input?
-- **Transport options for receive.** Two paths to evaluate:
-  - (a) MCP opens an OS-level MIDI input on the device's MIDI Out port and consumes `input.on("sysex")`. Works for both real hw and mocks. Requires extending `connect_to_keyboard` semantics.
-  - (b) Mock-only: MockEngine spins up a dedicated WebSocket lane for outgoing MIDI, MCP listens there. Real-hw still needs path (a).
-- **`MidiConnection.requestSysEx` API.** Generic request/response correlator (one-shot listener, timeout, matched-only resolution). Belongs on the interface so device classes can use it without knowing the transport.
-
-Out of scope: any model-level feature that uses the receive path (e.g. JUNO-X get_current_state — that's #23, blocked on this).
-
-Useful prior art: `src/midi/midi-manager.ts` `connectInput`, `src/mcb/bridge-registry.ts`, the `with_shadow` flow in `src/tools/connect.ts`. Mock side already done in #21.
-
 ### 23. JUNO-X `get_current_state` via Roland RQ1
 
 **Status:** Blocked on #22.
