@@ -13,7 +13,6 @@ import type { KeyboardParameter } from "../../../shared/types.js";
 import type { ToolResult } from "../../../shared/tool-result.js";
 import { textResult } from "../../../shared/tool-result.js";
 import { BaseKeyboardDevice, type BaseDeviceDeps } from "../../../shared/base-keyboard-device.js";
-import { NordElectro5DState } from "./state-manager.js";
 
 export interface NordDeviceDeps extends BaseDeviceDeps {
   programLoader: ProgramLoaderCapability;
@@ -23,19 +22,7 @@ export interface NordDeviceDeps extends BaseDeviceDeps {
 
 export class NordElectro5DDevice extends BaseKeyboardDevice {
   constructor(model: KeyboardModel, deps: NordDeviceDeps) {
-    super(model, deps, new NordElectro5DState(deps.parameterMap));
-  }
-
-  // ── Per-part CC routing ──
-
-  protected override onIncomingCC(cc: number, value: number, _channel: number): void {
-    const entry = this.parameterMap.getParamByCC(cc);
-    if (!entry) return;
-    this.state.set(
-      entry.key,
-      value,
-      this.parameterMap.isPerPart(entry.key) ? "upper" : undefined,
-    );
+    super(model, deps);
   }
 
   // ── Per-part state routing for setParameters ──

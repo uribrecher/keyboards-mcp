@@ -13,22 +13,16 @@ import { textResult } from "../../../shared/tool-result.js";
 import { buildDT1, addAddresses, packNibbles } from "../../../shared/roland-dt1.js";
 import {
   JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID,
-  SCENE_BASE, SCENE_PART_OFFSETS, PART_NAMES,
-  ENGINE_DISPLAY_NAMES,
+  SCENE_BASE, SCENE_PART_OFFSETS,
 } from "./engines/engine-types.js";
-import { JunoXState } from "./state-manager.js";
 import type { JunoXParameterMap } from "./midi-map.js";
 
 export class JunoXDevice extends BaseKeyboardDevice {
   private junoMap: JunoXParameterMap;
-  private junoState: JunoXState;
 
   constructor(model: KeyboardModel, deps: BaseDeviceDeps) {
-    const junoMap = deps.parameterMap as JunoXParameterMap;
-    const junoState = new JunoXState(junoMap);
-    super(model, deps, junoState);
-    this.junoMap = junoMap;
-    this.junoState = junoState;
+    super(model, deps);
+    this.junoMap = deps.parameterMap as JunoXParameterMap;
   }
 
   /** Parts 1-5 are per-part; all others are global. Default to part "1". */
@@ -56,7 +50,6 @@ export class JunoXDevice extends BaseKeyboardDevice {
       try {
         const midiValue = this.junoMap.resolveValue(found.param, value);
         const statePart = this.resolvePartForParam(found.key, part);
-        const prevMidi = this.junoState.get(found.key, statePart);
 
         if (found.param.sysexAddress !== undefined) {
           // DT1 SysEx path
@@ -83,14 +76,8 @@ export class JunoXDevice extends BaseKeyboardDevice {
           continue;
         }
 
-        this.junoState.set(found.key, midiValue, statePart);
-
         const displayValue = this.junoMap.formatValue(found.param, midiValue);
-        const prevDisplay =
-          prevMidi !== undefined
-            ? this.junoMap.formatValue(found.param, prevMidi)
-            : "unset";
-        results.push(`  ${found.param.name}: ${prevDisplay} → ${displayValue}`);
+        results.push(`  ${found.param.name}: ${displayValue}`);
       } catch (err) {
         errors.push(
           `${found.param.name}: ${err instanceof Error ? err.message : String(err)}`,
@@ -107,19 +94,6 @@ export class JunoXDevice extends BaseKeyboardDevice {
     }
 
     return { content: [{ type: "text", text }] };
-  }
-
-  override listParameters(section?: string): ToolResult {
-    const engines = this.junoState.getAllEngines();
-    const engineLines = PART_NAMES.map(
-      (name, i) => `Part ${name}: ${ENGINE_DISPLAY_NAMES[engines[i]]}`,
-    );
-    const header = "## ACTIVE ENGINES\n" + engineLines.join("\n");
-
-    const base = super.listParameters(section);
-    const baseText = base.content[0]?.text ?? "";
-
-    return textResult(header + "\n\n" + baseText);
   }
 
   override getState(_section?: string): ToolResult {

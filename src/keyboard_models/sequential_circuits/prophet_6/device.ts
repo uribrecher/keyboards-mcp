@@ -7,11 +7,10 @@ import type { KeyboardModel } from "../../../shared/keyboard-model.js";
 import type { ToolResult } from "../../../shared/tool-result.js";
 import { textResult } from "../../../shared/tool-result.js";
 import { BaseKeyboardDevice, type BaseDeviceDeps } from "../../../shared/base-keyboard-device.js";
-import { GenericParameterState } from "../../../shared/parameter-state.js";
 
 export class Prophet6Device extends BaseKeyboardDevice {
   constructor(model: KeyboardModel, deps: BaseDeviceDeps) {
-    super(model, deps, new GenericParameterState([], deps.parameterMap));
+    super(model, deps);
   }
 
   override getState(_section?: string): ToolResult {

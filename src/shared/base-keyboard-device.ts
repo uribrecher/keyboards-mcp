@@ -8,7 +8,6 @@ import type {
   KeyboardModel,
   KeyboardDevice,
   ParameterMap,
-  StateManager,
   BackupData,
   ProgramLoaderCapability,
   SongLoaderCapability,
@@ -31,33 +30,27 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
   backupData?: BackupData;
 
   protected connection: MidiConnection | null = null;
-  protected state: StateManager;
   protected parameterMap: ParameterMap;
   protected programLoader?: ProgramLoaderCapability;
   protected songLoader?: SongLoaderCapability;
   protected systemPromptTemplate?: string;
 
-  constructor(model: KeyboardModel, deps: BaseDeviceDeps, state: StateManager) {
+  constructor(model: KeyboardModel, deps: BaseDeviceDeps) {
     this.model = model;
     this.parameterMap = deps.parameterMap;
     this.programLoader = deps.programLoader;
     this.songLoader = deps.songLoader;
     this.systemPromptTemplate = deps.systemPromptTemplate;
-    this.state = state;
   }
 
   // ── Connection lifecycle ──
 
   attach(connection: MidiConnection): void {
     this.connection = connection;
-    connection.onCC((cc, value, channel) => {
-      this.onIncomingCC(cc, value, channel);
-    });
   }
 
   detach(): void {
     this.connection = null;
-    this.state.reset();
   }
 
   protected requireConnection(): MidiConnection {
@@ -65,13 +58,6 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       throw new Error("Not connected to any MIDI device. Use connect_to_keyboard first.");
     }
     return this.connection;
-  }
-
-  /** Override for model-specific CC routing (e.g., per-part state updates) */
-  protected onIncomingCC(cc: number, value: number, _channel: number): void {
-    const entry = this.parameterMap.getParamByCC(cc);
-    if (!entry) return;
-    this.state.set(entry.key, value);
   }
 
   // ── Tool implementations ──
@@ -171,18 +157,11 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
 
     // Apply.
     for (const entry of applyQueue) {
-      const prevMidi = this.state.get(entry.found.key, entry.statePart);
       if (entry.found.param.cc !== undefined) {
         this.connection!.sendCC(entry.found.param.cc, entry.midiValue);
       }
-      this.state.set(entry.found.key, entry.midiValue, entry.statePart);
-
       const displayValue = this.parameterMap.formatValue(entry.found.param, entry.midiValue);
-      const prevDisplay =
-        prevMidi !== undefined
-          ? this.parameterMap.formatValue(entry.found.param, prevMidi)
-          : "unset";
-      results.push(`  ${entry.found.param.name}: ${prevDisplay} → ${displayValue}`);
+      results.push(`  ${entry.found.param.name}: ${displayValue}`);
     }
 
     let text = "";
@@ -201,8 +180,11 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
     return undefined;
   }
 
-  getState(section?: string): ToolResult {
-    return textResult(this.state.format(section));
+  getState(_section?: string): ToolResult {
+    return textResult(
+      `${this.model.info.displayName} does not implement get_current_state. ` +
+      "The agent owns its memory of what it set.",
+    );
   }
 
   async loadProgram(bank: number, slot: number): Promise<ToolResult> {
