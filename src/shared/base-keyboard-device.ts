@@ -173,7 +173,7 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
     return { content: [{ type: "text", text }] };
   }
 
-  getState(_section?: string): ToolResult {
+  getState(_section?: string): ToolResult | Promise<ToolResult> {
     return textResult(
       `${this.model.info.displayName} does not implement get_current_state. ` +
       "The agent owns its memory of what it set.",

@@ -10,7 +10,8 @@ import type { KeyboardModel } from "../../../shared/keyboard-model.js";
 import { BaseKeyboardDevice, type BaseDeviceDeps } from "../../../shared/base-keyboard-device.js";
 import type { ToolResult } from "../../../shared/tool-result.js";
 import { textResult } from "../../../shared/tool-result.js";
-import { buildDT1, addAddresses, packNibbles } from "../../../shared/roland-dt1.js";
+import { buildDT1, addAddresses, packNibbles, requestRolandValue } from "../../../shared/roland-dt1.js";
+import type { KeyboardParameter } from "../../../shared/types.js";
 import {
   JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID,
   SCENE_BASE, SCENE_PART_OFFSETS,
@@ -96,10 +97,78 @@ export class JunoXDevice extends BaseKeyboardDevice {
     return { content: [{ type: "text", text }] };
   }
 
-  override getState(_section?: string): ToolResult {
-    return textResult(
-      "JUNO-X get_current_state via Roland RQ1 is not yet implemented (planned in todo #21). " +
-      "The agent owns its memory of what it set in the meantime.",
-    );
+  /** Sections that #23 wired to live RQ1 reads. Other sections return a
+   *  "not yet supported" tool result. */
+  private static readonly RQ1_SUPPORTED_SECTIONS: readonly string[] = [
+    "scene-chorus", "scene-delay", "scene-reverb", "scene-drive",
+  ];
+
+  override async getState(section?: string): Promise<ToolResult> {
+    const conn = this.requireConnection();
+
+    const supported = JunoXDevice.RQ1_SUPPORTED_SECTIONS;
+    let sectionsToRead: string[];
+    if (section === undefined) {
+      sectionsToRead = [...supported];
+    } else if (supported.includes(section)) {
+      sectionsToRead = [section];
+    } else {
+      return textResult(
+        `JUNO-X get_current_state is not yet supported for section "${section}". ` +
+        `Currently supported: ${supported.join(", ")}. ` +
+        `Other sections (scene-common, scene-part, scene-modify, partials, etc.) ` +
+        `are tracked as follow-ups beyond this PR.`,
+      );
+    }
+
+    // Look up every param in the requested sections that has a sysexAddress.
+    const paramsToRead: Array<{ key: string; param: KeyboardParameter }> = [];
+    for (const [key, param] of Object.entries(this.parameterMap.params)) {
+      if (!sectionsToRead.includes(param.section)) continue;
+      if (!param.sysexAddress) continue;
+      paramsToRead.push({ key, param });
+    }
+
+    // Fire one RQ1 per param in parallel. Per-param timeouts surface in
+    // the result text but don't fail the whole call.
+    const PER_PARAM_TIMEOUT_MS = 500;
+    const results = await Promise.all(paramsToRead.map(async ({ key, param }) => {
+      const fullAddr = addAddresses(SCENE_BASE, param.sysexAddress!);
+      try {
+        const data = await requestRolandValue(
+          conn, JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, fullAddr,
+          param.sysexSize ?? 1, PER_PARAM_TIMEOUT_MS,
+        );
+        const value = data[0] ?? 0;
+        const display = this.parameterMap.formatValue(param, value);
+        return { key, line: `  ${param.name}: ${display}` };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { key, line: `  ${param.name}: ${/timeout/i.test(msg) ? "timeout" : `error (${msg})`}` };
+      }
+    }));
+
+    if (results.length === 0) {
+      return textResult(`No SysEx-addressed parameters in section "${section ?? "(all)"}".`);
+    }
+
+    // Group by section for readable output.
+    const bySection = new Map<string, string[]>();
+    for (const { key, line } of results) {
+      const sec = this.parameterMap.params[key]!.section;
+      if (!bySection.has(sec)) bySection.set(sec, []);
+      bySection.get(sec)!.push(line);
+    }
+
+    const lines: string[] = ["Current state (live from device):"];
+    for (const sec of sectionsToRead) {
+      const sectionLines = bySection.get(sec);
+      if (!sectionLines) continue;
+      lines.push("");
+      lines.push(`## ${sec}`);
+      lines.push(...sectionLines);
+    }
+
+    return textResult(lines.join("\n"));
   }
 }
