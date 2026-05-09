@@ -131,7 +131,9 @@ The model is auto-discovered by `model-registry.ts` scanning the filesystem.
 
 ### Mock Runner (`src/mock-runner/`)
 
-Electron app: model picker shell -> loads model's web UI. The `MockEngine` is a thin shell (MIDI virtual port + WebSocket server + broadcast). All state and logic lives in the model's `MockHandler`, which receives raw MIDI messages via `onMIDI()` and returns state to broadcast.
+Electron app: model picker shell -> loads model's web UI. The `MockEngine` is a thin shell (two virtual MIDI ports — device's MIDI In and MIDI Out — plus a WebSocket server and a broadcast pump). All state and logic lives in the model's `MockHandler`. The handler receives raw MIDI via `onMIDI(msg)` and named-param UI commands via `onUIParam(name, value, channel?)`, and returns a `MockHandlerResult` with optional `state` (broadcast to UI), `log`, and explicit emissions in `sysexOut`/`ccOut`/`programOut` (written to the device's MIDI Out).
+
+Routing is **source-aware**: the engine's WS handler and MIDI-input listeners both synthesize a `MidiMessage` and feed it through a single `engine.dispatch(msg, source)`, where `source` is `"ui"` (UI WS command) or `"external"` (virtual MIDI In). UI-source bare cc/program is echoed to MIDI Out (panel-knob analogue); external-source is never echoed (would feedback-loop on bridges); handler-explicit emissions are always written. See [docs/mock_runner.md](docs/mock_runner.md#engine-and-handler--runtime-contract) for the full message-flow diagrams and rationale.
 
 ## Key conventions
 

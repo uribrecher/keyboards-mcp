@@ -121,13 +121,13 @@ export class MockEngine extends EventEmitter {
               this.broadcast(this.handler.getFullState(true));
             } else if (msg.type === "cc") {
               console.log(`${this.tag()} WS-IN cc CC=${msg.controller} val=${msg.value} ch=${msg.channel ?? 0}`);
-              this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel ?? 0 }, "ui");
+              this.dispatch({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel ?? 0 }, "ui");
             } else if (msg.type === "program") {
               console.log(`${this.tag()} WS-IN program n=${msg.number} ch=${msg.channel ?? 0}`);
-              this.onMIDI({ type: "program", number: msg.number, channel: msg.channel ?? 0 }, "ui");
+              this.dispatch({ type: "program", number: msg.number, channel: msg.channel ?? 0 }, "ui");
             } else if (msg.type === "sysex") {
               console.log(`${this.tag()} WS-IN ${MockEngine.summarizeSysex(msg.bytes ?? [])}`);
-              this.onMIDI({ type: "sysex", bytes: msg.bytes }, "ui");
+              this.dispatch({ type: "sysex", bytes: msg.bytes }, "ui");
             } else if (msg.type === "param") {
               console.log(`${this.tag()} WS-IN param ${msg.name}=${msg.value} ch=${msg.channel ?? 0}`);
               // SysEx-addressed (or otherwise non-CC) param routed through the
@@ -151,17 +151,17 @@ export class MockEngine extends EventEmitter {
     if (this.midiInput) {
       this.midiInput.on("cc", (msg: { controller: number; value: number; channel: number }) => {
         console.log(`${this.tag()} MIDI-IN cc CC=${msg.controller} val=${msg.value} ch=${msg.channel}`);
-        this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel }, "external");
+        this.dispatch({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel }, "external");
       });
 
       this.midiInput.on("program", (msg: { number: number; channel: number }) => {
         console.log(`${this.tag()} MIDI-IN program n=${msg.number} ch=${msg.channel}`);
-        this.onMIDI({ type: "program", number: msg.number, channel: msg.channel }, "external");
+        this.dispatch({ type: "program", number: msg.number, channel: msg.channel }, "external");
       });
 
       this.midiInput.on("sysex" as any, (msg: { bytes: number[] }) => {
         console.log(`${this.tag()} MIDI-IN ${MockEngine.summarizeSysex([...msg.bytes])}`);
-        this.onMIDI({ type: "sysex", bytes: [...msg.bytes] }, "external");
+        this.dispatch({ type: "sysex", bytes: [...msg.bytes] }, "external");
       });
     }
 
@@ -280,7 +280,9 @@ export class MockEngine extends EventEmitter {
   // ── Private ──
 
   /**
-   * Dispatch a MIDI message through the handler with source-aware routing.
+   * Central dispatcher: feeds a `MidiMessage` (synthesized from a UI WS
+   * command, or read from the virtual MIDI In) into the handler and
+   * routes the result with source-aware emission rules.
    *
    * - `"ui"`: the message originated from a UI WS command (panel-knob
    *   analogue). After the handler updates state, the engine ALSO writes
@@ -294,7 +296,7 @@ export class MockEngine extends EventEmitter {
    * Handler-explicit emissions (`result.sysexOut` / `ccOut` / `programOut`)
    * are always written to MIDI Out, regardless of source.
    */
-  private onMIDI(msg: MidiMessage, source: "ui" | "external"): void {
+  private dispatch(msg: MidiMessage, source: "ui" | "external"): void {
     const result = this.handler.onMIDI(msg);
     this.applyHandlerResult(result, source === "ui" ? msg : null);
   }
