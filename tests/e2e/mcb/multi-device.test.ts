@@ -83,14 +83,14 @@ describe("E2E: multi-device", { concurrency: 1, skip: !!process.env.MOCK_WS_URL 
     assert.match(r2.content[0].text, /osc1_freq/);
   });
 
-  it("targeted get_current_state isolates per-device state", async () => {
+  it("targeted get_current_state returns each model's not-supported message", async () => {
     const r1 = await h.callTool("get_current_state", { device: 1 });
     assert.ok(!r1.isError);
-    assert.match(r1.content[0].text, /Drawbar 1/);
+    assert.match(r1.content[0].text, /Nord MIDI is one-way/i);
 
     const r2 = await h.callTool("get_current_state", { device: 2 });
     assert.ok(!r2.isError);
-    assert.match(r2.content[0].text, /Osc 1 Freq/);
+    assert.match(r2.content[0].text, /Prophet-6.*not supported/i);
   });
 
   it("disconnect device 1 leaves device 2 with its original index", async () => {
