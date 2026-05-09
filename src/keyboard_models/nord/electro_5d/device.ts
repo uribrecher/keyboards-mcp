@@ -13,7 +13,7 @@ import type { KeyboardParameter } from "../../../shared/types.js";
 import type { ToolResult } from "../../../shared/tool-result.js";
 import { textResult } from "../../../shared/tool-result.js";
 import { BaseKeyboardDevice, type BaseDeviceDeps } from "../../../shared/base-keyboard-device.js";
-import { validateParameterBatch } from "./validation.js";
+import { validateParameterBatch, preflightDisabledSections } from "./validation.js";
 import { NordElectro5DState } from "./state-manager.js";
 
 export interface NordDeviceDeps extends BaseDeviceDeps {
@@ -43,6 +43,13 @@ export class NordElectro5DDevice extends BaseKeyboardDevice {
 
   protected override resolvePartForParam(key: string, part?: string): string | undefined {
     return this.parameterMap.isPerPart(key) ? (part ?? "upper") : undefined;
+  }
+
+  protected override preflightBatch(
+    resolvedKeys: Array<{ key: string; value: number | string }>,
+    _part: string,
+  ): { errors: string[]; blockedKeys: Set<string> } {
+    return preflightDisabledSections(resolvedKeys, this.state, this.parameterMap);
   }
 
   protected override validateAfterSet(

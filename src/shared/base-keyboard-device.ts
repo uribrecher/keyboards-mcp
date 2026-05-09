@@ -143,7 +143,16 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
     const results: string[] = [];
     const errors: string[] = [];
     const resolvedKeys: Array<{ key: string; value: number | string }> = [];
+    type ApplyEntry = {
+      found: { key: string; param: KeyboardParameter };
+      midiValue: number;
+      value: number | string;
+      statePart: string | undefined;
+    };
+    const applyQueue: ApplyEntry[] = [];
 
+    // Phase 1: resolve parameters without applying. Resolution failures go
+    // straight to errors.
     for (const { name, value } of params) {
       const found = this.parameterMap.findParam(name);
       if (!found) {
@@ -154,18 +163,8 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       try {
         const midiValue = this.parameterMap.resolveValue(found.param, value);
         const statePart = this.resolvePartForParam(found.key, part);
-        const prevMidi = this.state.get(found.key, statePart);
-
-        if (found.param.cc !== undefined) this.connection!.sendCC(found.param.cc, midiValue);
-        this.state.set(found.key, midiValue, statePart);
+        applyQueue.push({ found, midiValue, value, statePart });
         resolvedKeys.push({ key: found.key, value });
-
-        const displayValue = this.parameterMap.formatValue(found.param, midiValue);
-        const prevDisplay =
-          prevMidi !== undefined
-            ? this.parameterMap.formatValue(found.param, prevMidi)
-            : "unset";
-        results.push(`  ${found.param.name}: ${prevDisplay} → ${displayValue}`);
       } catch (err) {
         errors.push(
           `${found.param.name}: ${err instanceof Error ? err.message : String(err)}`,
@@ -173,7 +172,31 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       }
     }
 
+    // Phase 2: preflight — let the model refuse changes (e.g. params in a
+    // disabled section). Blocked keys must NOT be sent to the device.
+    const preflight = this.preflightBatch(resolvedKeys, part ?? "upper");
+
+    // Phase 3: apply non-blocked params.
+    for (const entry of applyQueue) {
+      if (preflight.blockedKeys.has(entry.found.key)) continue;
+      const prevMidi = this.state.get(entry.found.key, entry.statePart);
+      if (entry.found.param.cc !== undefined) {
+        this.connection!.sendCC(entry.found.param.cc, entry.midiValue);
+      }
+      this.state.set(entry.found.key, entry.midiValue, entry.statePart);
+
+      const displayValue = this.parameterMap.formatValue(entry.found.param, entry.midiValue);
+      const prevDisplay =
+        prevMidi !== undefined
+          ? this.parameterMap.formatValue(entry.found.param, prevMidi)
+          : "unset";
+      results.push(`  ${entry.found.param.name}: ${prevDisplay} → ${displayValue}`);
+    }
+
+    // Phase 4: post-apply advisory warnings.
     const warnings = this.validateAfterSet(resolvedKeys, part ?? "upper");
+
+    if (preflight.errors.length > 0) errors.push(...preflight.errors);
 
     let text = "";
     if (results.length > 0) {
@@ -196,7 +219,19 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
     return undefined;
   }
 
-  /** Override to return validation warnings after setParameters. */
+  /**
+   * Override to refuse parameter changes before they are sent to the device.
+   * Keys returned in `blockedKeys` are skipped during the apply phase, and
+   * `errors` are surfaced in the tool result. Default: no blocking.
+   */
+  protected preflightBatch(
+    _resolvedKeys: Array<{ key: string; value: number | string }>,
+    _part: string,
+  ): { errors: string[]; blockedKeys: Set<string> } {
+    return { errors: [], blockedKeys: new Set() };
+  }
+
+  /** Override to return advisory warnings after setParameters has applied. */
   protected validateAfterSet(
     _resolvedKeys: Array<{ key: string; value: number | string }>,
     _part: string,
