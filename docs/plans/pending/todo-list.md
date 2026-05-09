@@ -4,12 +4,6 @@
 
 ## Tasks
 
-### 10. Bidirectional mock/MCP state reconciliation via RQ1 [BRAINSTORM]
-
-**Status:** Needs brainstorming — architectural design required before planning.
-
-The MCP device currently tracks only outgoing state (what it sent). The mock handler has its own state (including UI changes). These can diverge. The Roland RQ1 (Data Request 1) protocol allows querying the device for current parameter values. Design a system where `get_current_state` can query the mock/real hardware for the actual state, not just the MCP's local cache. This affects shared interfaces (`MidiConnection.onSysEx`, async request/response over MIDI) and could benefit all models, not just JUNO-X.
-
 ### 11. Full JUNO chorus mode sub-parameters
 
 **Status:** Ready to plan.
@@ -72,4 +66,42 @@ Design questions:
 - Should the buttons be pane-scoped (live with their respective pane body) or always-visible (then how do they not creep back into the tab strip)?
 - Discoverability: keyboard accelerators are fine for power users but the existing `backup` button is the only signal for new operators that the action exists. Whatever replaces it has to be at least as discoverable.
 - Visual: the existing `.console__btn` is a compact graphite button — preserve that idiom or rethink in light of the new tabbed layout.
+
+### 20. Drop StateManager / shadow / disabled-section preflight (stateless-MCP pivot, PR A)
+
+**Status:** Ready to plan.
+
+Pivot the MCP from "shadow what we sent + lean on it for preflight rules" to "the MCP is stateless; the agent owns its memory of what it sent." Concrete demolition:
+
+- Remove `src/shared/parameter-state.ts` (`GenericParameterState`).
+- Remove `src/keyboard_models/nord/electro_5d/state-manager.ts` (`NordElectro5DState` with preset-drawbar routing).
+- Remove `src/keyboard_models/nord/electro_5d/validation.ts`'s `preflightDisabledSections` and the `preflightBatch` override on `NordElectro5DDevice`. Real Nord hw silently no-ops on disabled-section CCs anyway, so the strict block was always belt-and-suspenders. Keep `validateParameterBatch` (the advisory warnings) — it's a pure function over the incoming batch, no state needed.
+- Remove the `state` field and `set/get/reset/format/getBySection/getAll` plumbing from `KeyboardDevice` / `BaseKeyboardDevice` — the device no longer keeps a per-key cache.
+- `setParameters` loses its `prev → new` diff in the result text; just show the new value.
+- `get_current_state` becomes per-model:
+  - **Nord:** return "Nord MIDI is one-way — `get_current_state` is not supported on this model. The agent owns its memory of what it set."
+  - **Prophet-6:** same as Nord (one-way via CC; no implemented query path).
+  - **JUNO-X:** stub now ("not yet implemented — see PR B"), real implementation lands in #21.
+- Update each model's `agentSystemPrompt` to tell the agent: track your own changes; do not assume `get_current_state` returns ground truth on Nord/Prophet-6.
+- Delete the now-meaningless tests: `tests/unit/nord-electro-5d/disabled-section-warnings.test.ts` (the blocking half of it), `tests/unit/nord-electro-5d/blocked-warning-filter.test.ts`, `tests/e2e/get-state.test.ts` (rewrite or delete — depends on shadow staying populated).
+- Update `tests/e2e/multi-model.test.ts` to expect the new per-model `get_current_state` behavior.
+
+Out of scope: the JUNO-X RQ1 implementation (#21).
+
+### 21. JUNO-X get_current_state via Roland RQ1 (stateless-MCP pivot, PR B)
+
+**Status:** Needs brainstorming — depends on #20 landing first.
+
+Implement JUNO-X's `get_current_state` by issuing a Roland Data Request 1 (RQ1) sysex to the device, awaiting the matching DT1 response, and rendering it as the tool result. Real JUNO-X hardware speaks this natively; the JUNO-X mock has to start emitting it too.
+
+Design surfaces to figure out before planning:
+
+- **Request/response correlation over MIDI.** RQ1 is async — the response comes back as a DT1 sysex on the device's MIDI input some milliseconds later. Need a request-id-or-address-keyed promise table, a timeout, and graceful handling of dropped responses. Probably belongs in `MidiConnection` as a generic `requestSysEx(req, matchFn, timeout)` helper, with the JUNO-X device using it.
+- **Address scoping.** RQ1 takes a (start address, size) pair. We probably want a small set of canonical reads — "current scene", "selected part tone", maybe a per-section reader. Decide whether `get_current_state` reads everything or a section.
+- **JUNO-X mock needs a MIDI _output_ port.** Today the mock receives MIDI in but doesn't emit any back; for the MCP to listen for RQ1 responses against the mock the same way it would against real hw, the mock has to expose a virtual MIDI output port (Roland RTPMidi virtual port) and write DT1 responses to it. The MCP-side input listener (`MidiManager.connectInput`) is already wired in `connect.ts` — we just need the mock to publish a port name and the MCB / connect path to plumb it through.
+- **Mock-side state source.** The JUNO-X mock has full state in its `MockHandler`. Wire RQ1 → look up the addressed bytes → emit DT1.
+- **Render.** DT1 bytes need to be decoded back to parameter values via the JUNO-X parameter map. Reuse the same encoding helpers used to send DT1 in the first place.
+- **Error paths.** Timeout: tool returns "no response from device — check that JUNO-X is connected and listening." Malformed response: tool returns "got a malformed DT1 — see logs." Don't fall back to a stale shadow (we don't have one any more — that's the point).
+
+Useful prior art in this repo: `src/shared/roland-dt1.ts` (DT1 encoder), `src/midi/midi-manager.ts` (connection + sysex send/receive), `src/keyboard_models/roland/juno_x/midi-map.ts`.
 

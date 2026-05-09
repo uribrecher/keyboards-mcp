@@ -23,6 +23,9 @@ const model: KeyboardModel = {
 
   agentSystemPrompt: `KEYBOARD: Roland JUNO-X
 
+STATE & MEMORY:
+The MCP is stateless on parameter values — it does not shadow what was sent. Unlike Nord and Prophet-6, the JUNO-X is queryable: \`get_current_state\` issues Roland Data Request 1 (RQ1) sysex and renders the live response from the device. Treat that as the ground truth for "what is on the device right now" — including changes you didn't make (front-panel knob turns, scene loads). You still own the memory of intent across turns; use \`get_current_state\` to verify, not to remember.
+
 The JUNO-X is a 5-part multi-timbral synthesizer with four distinct sound engines, a classic JUNO panel interface, and a scene-based patch system.
 
 ENGINES:
