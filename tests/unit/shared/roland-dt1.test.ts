@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { buildDT1, buildRQ1, parseRQ1 } from "../../../src/shared/roland-dt1.js";
 
-const JUNO_X_MODEL_ID = { bytes: [0x00, 0x00, 0x00, 0x00, 0x12] } as const;
+const JUNO_X_MODEL_ID = { bytes: [0x00, 0x00, 0x00, 0x00, 0x12] };
 
 describe("parseRQ1", () => {
   it("decodes a valid RQ1 message into address + size", () => {
