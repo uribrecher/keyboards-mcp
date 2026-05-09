@@ -1,6 +1,14 @@
 /**
- * Nord Electro 5D parameter validation warnings.
- * Extracted from set-parameters.ts — these are hardware-specific constraints.
+ * Nord Electro 5D parameter validation.
+ *
+ * Two flavors:
+ *   - {@link validateParameterBatch} returns advisory warnings (engine collisions,
+ *     shared piano/sample, vibrato/rotary clash, organ preset routing hint).
+ *   - {@link preflightDisabledSections} returns blocking errors + the set of
+ *     parameter keys to refuse: setting parameters in a section that is currently
+ *     off (effects, engine not selected on any enabled part, vibrato_type while
+ *     vibrato is off) is an error, not a warning. The caller MUST skip applying
+ *     any key in `blockedKeys`.
  */
 
 import type { StateManager, ParameterMap } from "../../../shared/keyboard-model.js";
@@ -112,142 +120,173 @@ export function validateParameterBatch(
     }
   }
 
-  // ── Disabled-section rule ──
-  // Warn when a parameter is set in a section that is currently disabled.
-  // Uses post-batch state (so flipping the enable flag in the same batch suppresses the warning).
-  {
-    const ALWAYS_ACTIVE = new Set(["global", "parts"]);
+  return warnings;
+}
 
-    // Map: section key → ordered display name.
-    const SECTION_DISPLAY: Record<string, string> = {
-      organ: "Organ engine",
-      piano: "Piano engine",
-      sample_synth: "Sample Synth engine",
-      effect1: "Effect 1",
-      effect2: "Effect 2",
-      reverb: "Reverb",
-      delay: "Delay",
-      eq: "EQ",
-      amp: "Amp/Speaker",
-      rotary: "Rotary/Speaker",
-    };
-    const SECTION_ORDER = [
-      "organ", "piano", "sample_synth",
-      "effect1", "effect2", "reverb", "delay", "eq", "amp", "rotary",
-    ];
+/**
+ * Block parameter changes whose section is currently disabled.
+ *
+ * Uses post-batch state — flipping the gate in the same batch un-blocks the
+ * dependent params.
+ *
+ * Returns the set of param keys that the caller must skip when applying, plus
+ * one ERROR message per disabled section / per disabled gate-param.
+ */
+export function preflightDisabledSections(
+  parameters: Array<{ key: string; value: number | string }>,
+  state: StateManager,
+  parameterMap: ParameterMap,
+  targetPart: string,
+): { errors: string[]; blockedKeys: Set<string> } {
+  const errors: string[] = [];
+  const blockedKeys = new Set<string>();
 
-    // Effect-style sections gated by an `_enable` key. The amp section and
-    // the rotary section share `spkr_comp_enable` — when the speaker/comp
-    // block is off, neither the amp model nor the rotary speed has any
-    // audible effect.
-    const ENABLE_KEY: Record<string, string> = {
-      effect1: "effect1_enable",
-      effect2: "effect2_enable",
-      reverb: "reverb_enable",
-      delay: "delay_enable",
-      eq: "eq_enable",
-      amp: "spkr_comp_enable",
-      rotary: "spkr_comp_enable",
-    };
-    const SELF_CONTROL_KEYS = new Set([
-      ...Object.values(ENABLE_KEY),
-      "part_lower_engine_select",
-      "part_upper_engine_select",
-    ]);
+  const ALWAYS_ACTIVE = new Set(["global", "parts"]);
 
-    // Post-batch view: start from current state, then overlay the batch.
-    // part_*_enable defaults to On (1) on hardware; treat undefined as enabled.
-    const postBatch: Record<string, number | undefined> = {};
-    const POST_BATCH_KEYS = [
-      ...Object.values(ENABLE_KEY),
-      "part_lower_engine_select", "part_upper_engine_select",
-      "part_lower_enable", "part_upper_enable",
-    ];
-    for (const k of POST_BATCH_KEYS) {
-      postBatch[k] = state.get(k);
-    }
-    for (const { key, value } of parameters) {
-      if (key in postBatch) {
-        const param = parameterMap.params[key];
-        if (param) postBatch[key] = parameterMap.resolveValue(param, value);
-      }
-    }
+  const SECTION_DISPLAY: Record<string, string> = {
+    organ: "Organ engine",
+    piano: "Piano engine",
+    sample_synth: "Sample Synth engine",
+    effect1: "Effect 1",
+    effect2: "Effect 2",
+    reverb: "Reverb",
+    delay: "Delay",
+    eq: "EQ",
+    amp: "Amp/Speaker",
+    rotary: "Rotary/Speaker",
+  };
+  const SECTION_ORDER = [
+    "organ", "piano", "sample_synth",
+    "effect1", "effect2", "reverb", "delay", "eq", "amp", "rotary",
+  ];
 
-    // Resolve engine label → MIDI value via the engine-select param itself.
-    const engineParam = parameterMap.params["part_upper_engine_select"];
-    const engineMidi: Record<string, number | undefined> = {
-      organ: engineParam ? parameterMap.resolveValue(engineParam, "Organ") : undefined,
-      piano: engineParam ? parameterMap.resolveValue(engineParam, "Piano") : undefined,
-      sample_synth: engineParam ? parameterMap.resolveValue(engineParam, "Sample Synth") : undefined,
-    };
+  // The amp section and the rotary section share `spkr_comp_enable` — when the
+  // speaker/comp block is off, neither the amp model nor the rotary speed has
+  // any audible effect.
+  const ENABLE_KEY: Record<string, string> = {
+    effect1: "effect1_enable",
+    effect2: "effect2_enable",
+    reverb: "reverb_enable",
+    delay: "delay_enable",
+    eq: "eq_enable",
+    amp: "spkr_comp_enable",
+    rotary: "spkr_comp_enable",
+  };
+  const SELF_CONTROL_KEYS = new Set([
+    ...Object.values(ENABLE_KEY),
+    "part_lower_engine_select",
+    "part_upper_engine_select",
+  ]);
 
-    // Build the disabled set.
-    const disabled = new Set<string>();
-    for (const [section, enableKey] of Object.entries(ENABLE_KEY)) {
-      const v = postBatch[enableKey];
-      if (v === undefined || v === 0) disabled.add(section);
-    }
-    const lower = postBatch["part_lower_engine_select"];
-    const upper = postBatch["part_upper_engine_select"];
-    const lowerEnabled = postBatch["part_lower_enable"] !== 0;
-    const upperEnabled = postBatch["part_upper_enable"] !== 0;
-    for (const eng of ["organ", "piano", "sample_synth"] as const) {
-      const target = engineMidi[eng];
-      if (target === undefined) continue;
-      const onLower = lower !== undefined && lower === target && lowerEnabled;
-      const onUpper = upper !== undefined && upper === target && upperEnabled;
-      if (!onLower && !onUpper) disabled.add(eng);
-    }
-
-    // Walk the batch, record disabled sections that are touched.
-    const touched = new Set<string>();
-    for (const { key } of parameters) {
-      if (SELF_CONTROL_KEYS.has(key)) continue;
+  // Post-batch view: start from current state, then overlay the batch.
+  // part_*_enable defaults to On (1) on hardware; treat undefined as enabled.
+  // Per-part keys (e.g. vibrato_enable) route via targetPart — the whole
+  // setParameters batch shares one part argument, so the same part applies
+  // to both the state read and any in-batch overlay.
+  const postBatch: Record<string, number | undefined> = {};
+  const POST_BATCH_KEYS = [
+    ...Object.values(ENABLE_KEY),
+    "part_lower_engine_select", "part_upper_engine_select",
+    "part_lower_enable", "part_upper_enable",
+    "vibrato_enable",
+  ];
+  for (const k of POST_BATCH_KEYS) {
+    const param = parameterMap.params[k];
+    postBatch[k] = param?.perPart ? state.get(k, targetPart) : state.get(k);
+  }
+  for (const { key, value } of parameters) {
+    if (key in postBatch) {
       const param = parameterMap.params[key];
-      if (!param) continue;
-      const section = param.section;
-      if (ALWAYS_ACTIVE.has(section)) continue;
-      if (disabled.has(section)) touched.add(section);
-    }
-
-    for (const section of SECTION_ORDER) {
-      if (!touched.has(section)) continue;
-      const display = SECTION_DISPLAY[section];
-      let hint: string;
-      if (section === "organ" || section === "piano" || section === "sample_synth") {
-        const engineName = section === "sample_synth" ? "Sample Synth"
-          : section === "piano" ? "Piano" : "Organ";
-        hint = `you select ${engineName} on a part AND that part is enabled (part_lower_enable/part_upper_enable)`;
-      } else {
-        hint = `you set ${ENABLE_KEY[section]} = on`;
-      }
-      warnings.push(
-        `WARNING: ${display} is currently disabled. The parameter(s) you set will have no audible effect until ${hint}.`,
-      );
+      if (param) postBatch[key] = parameterMap.resolveValue(param, value);
     }
   }
 
+  // Resolve engine label → MIDI value via the engine-select param itself.
+  const engineParam = parameterMap.params["part_upper_engine_select"];
+  const engineMidi: Record<string, number | undefined> = {
+    organ: engineParam ? parameterMap.resolveValue(engineParam, "Organ") : undefined,
+    piano: engineParam ? parameterMap.resolveValue(engineParam, "Piano") : undefined,
+    sample_synth: engineParam ? parameterMap.resolveValue(engineParam, "Sample Synth") : undefined,
+  };
+
+  // Build the disabled section set. We only block when we have observed the
+  // gate as explicitly off; undefined means "unknown" (no state pulled yet) and
+  // we err on the side of letting the change through.
+  const disabled = new Set<string>();
+  for (const [section, enableKey] of Object.entries(ENABLE_KEY)) {
+    if (postBatch[enableKey] === 0) disabled.add(section);
+  }
+  const lower = postBatch["part_lower_engine_select"];
+  const upper = postBatch["part_upper_engine_select"];
+  const lowerEnabled = postBatch["part_lower_enable"] !== 0;
+  const upperEnabled = postBatch["part_upper_enable"] !== 0;
+  // Engine sections: only block when BOTH parts have an observed engine
+  // selection AND neither one selects this engine on an enabled part. If
+  // either part's engine is unknown, we can't be sure → don't block.
+  if (lower !== undefined && upper !== undefined) {
+    for (const eng of ["organ", "piano", "sample_synth"] as const) {
+      const target = engineMidi[eng];
+      if (target === undefined) continue;
+      const onLower = lower === target && lowerEnabled;
+      const onUpper = upper === target && upperEnabled;
+      if (!onLower && !onUpper) disabled.add(eng);
+    }
+  }
+
+  // Walk the batch: collect the keys touched per disabled section and mark
+  // them as blocked.
+  const touchedKeys = new Map<string, string[]>();
+  for (const { key } of parameters) {
+    if (SELF_CONTROL_KEYS.has(key)) continue;
+    const param = parameterMap.params[key];
+    if (!param) continue;
+    const section = param.section;
+    if (ALWAYS_ACTIVE.has(section)) continue;
+    if (!disabled.has(section)) continue;
+    blockedKeys.add(key);
+    if (!touchedKeys.has(section)) touchedKeys.set(section, []);
+    touchedKeys.get(section)!.push(parameterMap.params[key]?.name ?? key);
+  }
+
+  for (const section of SECTION_ORDER) {
+    const names = touchedKeys.get(section);
+    if (!names) continue;
+    const display = SECTION_DISPLAY[section];
+    let hint: string;
+    if (section === "organ" || section === "piano" || section === "sample_synth") {
+      const engineName = section === "sample_synth" ? "Sample Synth"
+        : section === "piano" ? "Piano" : "Organ";
+      hint = `select ${engineName} on a part AND make sure that part is enabled (part_lower_enable / part_upper_enable)`;
+    } else {
+      hint = `set ${ENABLE_KEY[section]} = on`;
+    }
+    errors.push(
+      `ERROR: ${display} is currently disabled — refusing to change ${names.join(", ")}. ` +
+      `${hint.charAt(0).toUpperCase()}${hint.slice(1)} first, then retry.`,
+    );
+  }
+
   // ── Per-parameter sub-rule: vibrato ──
-  // The organ section is a coarse gate (warns when no part has Organ selected).
-  // Vibrato has its own enable inside the organ; warn separately when a vibrato
-  // parameter is touched while vibrato_enable is off in post-batch state.
+  // Vibrato has its own enable inside the organ; block vibrato_type only when
+  // we have observed vibrato_enable as explicitly off.
   {
     const VIBRATO_PARAMS = new Set(["vibrato_type"]);
-    let vibratoEnabled = state.get("vibrato_enable");
-    for (const { key, value } of parameters) {
-      if (key !== "vibrato_enable") continue;
-      const param = parameterMap.params[key];
-      if (param) vibratoEnabled = parameterMap.resolveValue(param, value);
-    }
-    if (vibratoEnabled === undefined || vibratoEnabled === 0) {
-      const touched = parameters.some(({ key }) => VIBRATO_PARAMS.has(key));
-      if (touched) {
-        warnings.push(
-          "WARNING: Vibrato is currently disabled. The vibrato parameter(s) you set will have no audible effect until you set vibrato_enable = on.",
+    const vibratoEnabled = postBatch["vibrato_enable"];
+    if (vibratoEnabled === 0) {
+      const touched: string[] = [];
+      for (const { key } of parameters) {
+        if (!VIBRATO_PARAMS.has(key)) continue;
+        blockedKeys.add(key);
+        touched.push(parameterMap.params[key]?.name ?? key);
+      }
+      if (touched.length > 0) {
+        errors.push(
+          `ERROR: Vibrato is currently disabled — refusing to change ${touched.join(", ")}. ` +
+          `Set vibrato_enable = on first, then retry.`,
         );
       }
     }
   }
 
-  return warnings;
+  return { errors, blockedKeys };
 }
