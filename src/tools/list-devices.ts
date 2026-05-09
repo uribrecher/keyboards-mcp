@@ -15,10 +15,12 @@ const MockRegistrySchema = z.object({
   stale: z.boolean(),
 });
 
+// A pool marker is a *reference* to a pool entry, not a copy of its fields.
+// Consumers needing label/model resolve via `index` against `is_connected`'s
+// device list. Keeping the marker minimal avoids sync issues (e.g. label
+// drift when MidiManager.connectMockWs gets reset by connectForward).
 const PoolMarkerSchema = z.object({
   index: z.number(),
-  model: z.string(),
-  label: z.string().optional(),
   role: z.enum(["output", "input", "forward"]),
 });
 
@@ -92,12 +94,11 @@ export function registerListDevices(server: McpServer, pool: DevicePool): void {
       for (const entry of pool.list()) {
         const eports = entry.ports;
         if (!eports) continue;
-        const baseMarker = { index: entry.index, model: entry.device.model.info.displayName, label: entry.device.label };
-        if (eports.output) pushMarker(outputMarkers, eports.output, { ...baseMarker, role: "output" });
+        if (eports.output) pushMarker(outputMarkers, eports.output, { index: entry.index, role: "output" });
         if (eports.forward && eports.forward !== eports.output) {
-          pushMarker(outputMarkers, eports.forward, { ...baseMarker, role: "forward" });
+          pushMarker(outputMarkers, eports.forward, { index: entry.index, role: "forward" });
         }
-        if (eports.input) pushMarker(inputMarkers, eports.input, { ...baseMarker, role: "input" });
+        if (eports.input) pushMarker(inputMarkers, eports.input, { index: entry.index, role: "input" });
       }
 
       const structuredContent = {
