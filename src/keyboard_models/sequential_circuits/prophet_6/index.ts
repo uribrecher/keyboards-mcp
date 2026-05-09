@@ -23,6 +23,9 @@ const model: KeyboardModel = {
 
   agentSystemPrompt: `KEYBOARD: Sequential Circuits Prophet-6
 
+STATE & MEMORY:
+The MCP is stateless on parameter values. \`get_current_state\` is NOT supported on the Prophet-6 — there is no implemented query path back from the device. You own the memory of what you sent: keep notes in your own context if a later step depends on a previously-set parameter. The hardware itself is the ground truth — when in doubt, set the parameter explicitly rather than assuming it carried over.
+
 The Prophet-6 is a 6-voice polyphonic analog synthesizer with a classic subtractive synthesis signal path.
 
 SIGNAL PATH:
