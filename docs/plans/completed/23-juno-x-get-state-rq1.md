@@ -8,7 +8,7 @@
 
 **Out of scope:** per-part RQ1 reads (separate todo), ZCore / RD-piano partials, scene-modify section, scene-common/part. Those extend the read list later without touching transport.
 
-**Architecture:** `JunoXDevice.getState` becomes async and uses `requestRolandValue` (from #22) per-param. Reads run in parallel via `Promise.allSettled` so one param's timeout doesn't block the others. Response text formats each param via the existing `parameterMap.formatValue` helper.
+**Architecture:** `JunoXDevice.getState` becomes async and uses `requestRolandValue` (from #22) per-param. Reads run in parallel via `Promise.all` with a per-param try/catch — one param's timeout (or any error) surfaces as inline text in the result and doesn't block the rest. Response text formats each param via the existing `parameterMap.formatValue` helper.
 
 **Tech Stack:** TypeScript 5.5+, `node:test` + `node:assert`. No new dependencies.
 
@@ -26,7 +26,7 @@
 | `src/keyboard_models/roland/juno_x/index.ts` | modify | Update `agentSystemPrompt` — replace "not yet implemented (planned in todo #21)" with actual usage guidance. |
 | `CLAUDE.md` | modify | Update the "MCP is stateless" Architecture section to reflect that JUNO-X `get_current_state` actually queries the device live (was "todo #21"). |
 | `tests/unit/juno-x/get-state.test.ts` | modify | Replace the stub-message tests with the real-behavior tests using a fake `MidiConnection`: queries the right RQ1s, decodes responses, handles per-param timeouts, returns "not supported for section X" for unsupported sections. |
-| `tests/integration/juno-x-get-state.test.ts` | new | Local-only integration test (skip in WS-mode CI): spawn JUNO-X mock, set chorus_switch/level via DT1, call MCP `get_current_state`, assert the rendered text contains the live values. |
+| `tests/e2e/mcb/juno-x-get-state.test.ts` | new | E2E test (skip in WS-mode CI): spawns JUNO-X mock + MCB + MCP via `MultiDeviceHarness`, sets chorus values via `set_parameters`, calls `get_current_state`, asserts the rendered text contains the live values. (Originally planned as an integration test using `TestHarness`, but `connect_to_keyboard` requires a running MCB — moved to e2e/mcb during execution.) |
 
 ---
 
@@ -308,89 +308,94 @@ git commit -m "feat(juno-x): get_current_state via Roland RQ1 (todo #23)"
 
 ---
 
-## Task 3: Integration test — RQ1 round-trip via MCP
+## Task 3: E2E test — RQ1 round-trip via MCP + MCB
 
 **Files:**
-- Test: `tests/integration/juno-x-get-state.test.ts` (new)
+- Test: `tests/e2e/mcb/juno-x-get-state.test.ts` (new)
 
-End-to-end: spawn JUNO-X mock locally, set known scene-effect values via `set_parameters` (which sends DT1 to the mock), then call `get_current_state` and assert the rendered text contains the live values.
+End-to-end via `MultiDeviceHarness` (which spawns its own MCB + MCP + mock): set known scene-effect values via `set_parameters` (sends DT1 to the mock), then call `get_current_state` and assert the rendered text contains the live values.
+
+**Plan deviation noted:** the original spec proposed an integration test using `TestHarness`. During execution, `connect_to_keyboard` was found to require a running MCB (it claims a lease via the broker). Switched to `MultiDeviceHarness` which provisions a per-test MCB, and moved the file from `tests/integration/` → `tests/e2e/mcb/` to match the rest of the MCB-bearing e2e suite.
 
 - [ ] **Step 1: Write the test**
 
-Create `tests/integration/juno-x-get-state.test.ts`:
+Create `tests/e2e/mcb/juno-x-get-state.test.ts`:
 
 ```ts
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import { strict as assert } from "node:assert";
-import { TestHarness } from "../helpers/test-harness.js";
+import { MultiDeviceHarness } from "../../helpers/multi-device-harness.js";
 
 const IS_DOCKER_WS_MODE = !!process.env.MOCK_WS_URL;
+const JUNO_WS = 5710;
 
-describe("JUNO-X get_current_state — live RQ1 read", { concurrency: 1, skip: IS_DOCKER_WS_MODE }, () => {
-  it("returns the live values for scene-chorus after a set_parameters", async () => {
-    const h = await TestHarness.start({ model: "roland-juno-x", wsPort: 5700 });
-    try {
-      const conn = await h.callTool("connect_to_keyboard", {
-        port: "Roland JUNO-X Mock",
-        model: "roland-juno-x",
-      });
-      assert.ok(!conn.isError, `connect failed: ${conn.content[0].text}`);
+let h: MultiDeviceHarness;
 
-      // Set chorus_switch=ON, chorus_type=JUNO Chorus, chorus_level=80.
-      const set = await h.callTool("set_parameters", {
-        parameters: [
-          { name: "chorus_switch", value: 1 },
-          { name: "chorus_type", value: 9 },
-          { name: "chorus_level", value: 80 },
-        ],
-      });
-      assert.ok(!set.isError, `set_parameters failed: ${set.content[0].text}`);
+describe("E2E: JUNO-X get_current_state — live RQ1 read", { concurrency: 1, skip: IS_DOCKER_WS_MODE }, () => {
+  before(async () => {
+    h = await MultiDeviceHarness.start({
+      mocks: [{ model: "roland-juno-x", wsPort: JUNO_WS }],
+    });
+  });
 
-      // Now read live via RQ1.
-      const state = await h.callTool("get_current_state", { section: "scene-chorus" });
-      assert.ok(!state.isError, `get_current_state failed: ${state.content[0].text}`);
-      const text = state.content[0].text;
-      assert.match(text, /Chorus Switch.*ON/i, `expected Chorus Switch ON in: ${text}`);
-      assert.match(text, /Chorus Type.*JUNO Chorus/, `expected Chorus Type JUNO Chorus in: ${text}`);
-      assert.match(text, /Chorus Level.*80/, `expected Chorus Level 80 in: ${text}`);
-    } finally {
-      await h.stop();
-    }
+  after(async () => {
+    if (h) await h.stop();
+  });
+
+  it("returns live values for scene-chorus after set_parameters", async () => {
+    const conn = await h.callTool("connect_to_keyboard", {
+      port: "Roland JUNO-X Mock",
+      model: "roland-juno-x",
+    });
+    assert.ok(!conn.isError, `connect failed: ${conn.content[0].text}`);
+
+    const set = await h.callTool("set_parameters", {
+      parameters: [
+        { name: "chorus_switch", value: 1 },
+        { name: "chorus_type", value: 9 },
+        { name: "chorus_level", value: 80 },
+      ],
+    });
+    assert.ok(!set.isError, `set_parameters failed: ${set.content[0].text}`);
+
+    const state = await h.callTool("get_current_state", { section: "scene-chorus" });
+    assert.ok(!state.isError, `get_current_state failed: ${state.content[0].text}`);
+    const text = state.content[0].text;
+    assert.match(text, /Chorus Switch.*ON/i, `expected Chorus Switch ON in: ${text}`);
+    assert.match(text, /Chorus Type.*JUNO Chorus/, `expected Chorus Type JUNO Chorus in: ${text}`);
+    assert.match(text, /Chorus Level.*80/, `expected Chorus Level 80 in: ${text}`);
+
+    await h.callTool("disconnect_from_keyboard");
   });
 
   it("returns 'not yet supported' for an unsupported section", async () => {
-    const h = await TestHarness.start({ model: "roland-juno-x", wsPort: 5701 });
-    try {
-      const conn = await h.callTool("connect_to_keyboard", {
-        port: "Roland JUNO-X Mock",
-        model: "roland-juno-x",
-      });
-      assert.ok(!conn.isError);
+    const conn = await h.callTool("connect_to_keyboard", {
+      port: "Roland JUNO-X Mock",
+      model: "roland-juno-x",
+    });
+    assert.ok(!conn.isError);
 
-      const state = await h.callTool("get_current_state", { section: "scene-modify" });
-      assert.match(state.content[0].text, /not yet supported.*scene-modify/i);
-    } finally {
-      await h.stop();
-    }
+    const state = await h.callTool("get_current_state", { section: "scene-modify" });
+    assert.match(state.content[0].text, /not yet supported.*scene-modify/i);
+
+    await h.callTool("disconnect_from_keyboard");
   });
 });
 ```
 
-- [ ] **Step 2: Run the integration test**
+- [ ] **Step 2: Run the E2E test**
 
 ```bash
-npx tsx --test tests/integration/juno-x-get-state.test.ts 2>&1 | tail -10
+npx tsx --test tests/e2e/mcb/juno-x-get-state.test.ts 2>&1 | tail -10
 ```
 
 Expected: PASS — both cases.
 
-If the first test fails because the mock doesn't have time to register / DT1 hasn't propagated, add a small `await new Promise(r => setTimeout(r, 100))` after `connect_to_keyboard` and before `set_parameters`, mirroring the pattern in other integration tests. Don't add a sleep before the `get_current_state` call — `requestRolandValue` already awaits the matching response.
-
 - [ ] **Step 3: Commit**
 
 ```bash
-git add tests/integration/juno-x-get-state.test.ts
-git commit -m "test(integration): JUNO-X get_current_state live RQ1 round-trip (todo #23)"
+git add tests/e2e/mcb/juno-x-get-state.test.ts
+git commit -m "test(e2e): JUNO-X get_current_state live RQ1 round-trip (todo #23)"
 ```
 
 ---
@@ -533,9 +538,9 @@ Use `superpowers:finishing-a-development-branch` to handle CI failures and Copil
 | Widen `getState` to allow async return | Task 1 |
 | Replace stub with RQ1 query for scene-effect sections | Task 2 |
 | Decode DT1 responses + render | Task 2 |
-| Per-param timeout, malformed handling | Task 2 (per-param try/catch surfaces in result text) |
+| Per-param timeout handling | Task 2 (per-param try/catch surfaces in result text). **Malformed-DT1 handling NOT covered separately** — `requestRolandValue` silently ignores DT1s that fail to parse, so a malformed response surfaces as a timeout rather than a distinct error. Adequate for the failure modes seen in practice; if more granular reporting is wanted, that's a future enhancement to `requestRolandValue` (or `parseDT1`). |
 | Unsupported-section message | Task 2 |
-| Integration test (real-MIDI mock round-trip) | Task 3 |
+| E2E test (mock RQ1 round-trip via MCP+MCB) | Task 3 |
 | `agentSystemPrompt` + `CLAUDE.md` updates | Task 4 |
 | Strike #23 from todo, move plan | Task 5 |
 
