@@ -142,17 +142,15 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
 
     const results: string[] = [];
     const errors: string[] = [];
-    const resolvedKeys: Array<{ key: string; value: number | string }> = [];
     type ApplyEntry = {
       found: { key: string; param: KeyboardParameter };
       midiValue: number;
-      value: number | string;
       statePart: string | undefined;
     };
     const applyQueue: ApplyEntry[] = [];
 
-    // Phase 1: resolve parameters without applying. Resolution failures go
-    // straight to errors.
+    // Resolve parameters without applying. Resolution failures go straight
+    // to errors.
     for (const { name, value } of params) {
       const found = this.parameterMap.findParam(name);
       if (!found) {
@@ -163,8 +161,7 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       try {
         const midiValue = this.parameterMap.resolveValue(found.param, value);
         const statePart = this.resolvePartForParam(found.key, part);
-        applyQueue.push({ found, midiValue, value, statePart });
-        resolvedKeys.push({ key: found.key, value });
+        applyQueue.push({ found, midiValue, statePart });
       } catch (err) {
         errors.push(
           `${found.param.name}: ${err instanceof Error ? err.message : String(err)}`,
@@ -172,13 +169,8 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       }
     }
 
-    // Phase 2: preflight — let the model refuse changes (e.g. params in a
-    // disabled section). Blocked keys must NOT be sent to the device.
-    const preflight = this.preflightBatch(resolvedKeys, part ?? "upper");
-
-    // Phase 3: apply non-blocked params.
+    // Apply.
     for (const entry of applyQueue) {
-      if (preflight.blockedKeys.has(entry.found.key)) continue;
       const prevMidi = this.state.get(entry.found.key, entry.statePart);
       if (entry.found.param.cc !== undefined) {
         this.connection!.sendCC(entry.found.param.cc, entry.midiValue);
@@ -193,54 +185,20 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       results.push(`  ${entry.found.param.name}: ${prevDisplay} → ${displayValue}`);
     }
 
-    // Phase 4: post-apply advisory warnings. Skip keys that the preflight
-    // refused — they were never sent, so warnings about them would mislead.
-    const appliedKeys = preflight.blockedKeys.size === 0
-      ? resolvedKeys
-      : resolvedKeys.filter((k) => !preflight.blockedKeys.has(k.key));
-    const warnings = this.validateAfterSet(appliedKeys, part ?? "upper");
-
-    if (preflight.errors.length > 0) errors.push(...preflight.errors);
-
     let text = "";
     if (results.length > 0) {
       text += "Parameters set:\n" + results.join("\n");
-    }
-    if (warnings.length > 0) {
-      text += (text ? "\n\n" : "") + warnings.join("\n");
     }
     if (errors.length > 0) {
       text += (text ? "\n\n" : "") + "Errors:\n" + errors.join("\n");
     }
 
-    const result: ToolResult = { content: [{ type: "text", text }] };
-    if (warnings.length > 0) result.warnings = warnings;
-    return result;
+    return { content: [{ type: "text", text }] };
   }
 
   /** Override for per-part state routing. Return undefined for global-only models. */
   protected resolvePartForParam(_key: string, _part?: string): string | undefined {
     return undefined;
-  }
-
-  /**
-   * Override to refuse parameter changes before they are sent to the device.
-   * Keys returned in `blockedKeys` are skipped during the apply phase, and
-   * `errors` are surfaced in the tool result. Default: no blocking.
-   */
-  protected preflightBatch(
-    _resolvedKeys: Array<{ key: string; value: number | string }>,
-    _part: string,
-  ): { errors: string[]; blockedKeys: Set<string> } {
-    return { errors: [], blockedKeys: new Set() };
-  }
-
-  /** Override to return advisory warnings after setParameters has applied. */
-  protected validateAfterSet(
-    _resolvedKeys: Array<{ key: string; value: number | string }>,
-    _part: string,
-  ): string[] {
-    return [];
   }
 
   getState(section?: string): ToolResult {
