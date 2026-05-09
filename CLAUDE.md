@@ -81,7 +81,7 @@ tests/
 
 **Model-delegated design.** MCP tools are thin wrappers — keyboard devices own all business logic (parameter definitions, value encoding, backup parsing, mock behavior).
 
-**The MCP is stateless on parameter values.** The MCP does not shadow what it has sent — there is no per-device key→value cache that persists between tool calls. The agent owns the memory of what it set; the device (real or mock) owns the ground truth. `get_current_state` is per-model: Nord and Prophet-6 cannot satisfy it (one-way MIDI) and return a "not supported" tool result; JUNO-X uses Roland RQ1 to query the device live. See `docs/plans/pending/todo-list.md` items #20 and #21.
+**The MCP is stateless on parameter values.** The MCP does not shadow what it has sent — there is no per-device key→value cache that persists between tool calls. The agent owns the memory of what it set; the device (real or mock) owns the ground truth. `get_current_state` is per-model: Nord and Prophet-6 cannot satisfy it (one-way MIDI) and return a "not supported" tool result; JUNO-X uses Roland RQ1 to query the device live and returns actual device values for scene-effect sections (`scene-chorus`, `scene-delay`, `scene-reverb`, `scene-drive`). See `docs/plans/completed/21-juno-x-rq1-get-state.md`, `22-mcp-sysex-receive.md`, and `23-juno-x-get-state-rq1.md` for the layered implementation across mock RQ1 protocol, MCP-side receive, and the live query.
 
 ```
 Claude Code <-MCP/stdio-> MCP Server <-MIDI-> Keyboard (or Mock)

@@ -67,23 +67,6 @@ Design questions:
 - Discoverability: keyboard accelerators are fine for power users but the existing `backup` button is the only signal for new operators that the action exists. Whatever replaces it has to be at least as discoverable.
 - Visual: the existing `.console__btn` is a compact graphite button — preserve that idiom or rethink in light of the new tabbed layout.
 
-### 23. JUNO-X `get_current_state` via Roland RQ1
-
-**Status:** Blocked on #22.
-
-Replace the JUNO-X `get_current_state` stub (added in PR #65) with a real RQ1-based query. The mock side is already in place from #21 (it parses RQ1 and emits DT1 responses); the MCP-side receive path is in place from #22.
-
-Scope:
-- Issue RQ1s for the addressed sections (start with scene-effects: chorus, delay, reverb, drive). Use the `MidiConnection.requestSysEx` API from #22.
-- Decode the DT1 responses via the JUNO-X parameter map (the same address → param key/encoding lookups already used by `set_parameters`).
-- Render the live values as the tool result.
-- Map errors to tool-result text — timeout: "no response from JUNO-X (RQ1 timeout); is the device connected?". Malformed: "got a malformed DT1 — see logs."
-- Update JUNO-X `agentSystemPrompt` and `CLAUDE.md` to reflect that RQ1 actually works (today both say "not yet implemented").
-
-Out of scope: per-part RQ1 reads, ZCore / RD-piano per-part details, scene-modify section. Those are explicit follow-ups beyond #23 once the four scene-effects sections work end-to-end.
-
-Useful prior art: `docs/plans/completed/21-juno-x-rq1-get-state.md` (mock side), `src/keyboard_models/roland/juno_x/scene-params.ts` (addresses), `src/shared/roland-dt1.ts` (`buildRQ1`, `parseDT1`, `addAddresses`, `packNibbles`).
-
 ### 24. UI-driven mock MIDI emission
 
 **Status:** Needs design.
@@ -149,4 +132,39 @@ Scope:
 Out of scope (separate todo if needed): the receive path on real hardware over a *bridge* (e.g. someone wants to listen for DT1 via a bridge tee instead of direct connection). Today's bridges are one-way (master out → shadow in); making them bidirectional or adding a separate input bridge is its own design work.
 
 Useful prior art: `src/midi/ws-midi-connection.ts` (existing send-only WS impl), `src/mock-runner/engine.ts` (existing WS server + virtual MIDI Out fan-out from #21), `tests/helpers/test-harness.ts` (CI/Docker WS-mode infrastructure).
+
+### 26. JUNO-X mock — RQ1 per-part address routing
+
+**Status:** Needs design.
+
+#21 implemented RQ1→DT1 round-trip on the JUNO-X mock, but the handler only reads from `sceneGlobal` — the scene-level state map (chorus/delay/reverb/drive). Per-part data (engine params per part: ADSR, filter, oscillator, LFO, etc.) lives in `parts[partIdx].sceneParams`. An RQ1 to a per-part address (`01:1X:00:00` where X = part 0..4) currently returns zeros from the mock.
+
+To extend RQ1 support to per-part addresses:
+
+- **Recognize per-part address prefix.** Address byte 1 in `0x10..0x14` selects a part (mirroring how the existing DT1 path routes scene-part writes).
+- **Route lookup to `parts[partIdx].sceneParams`** instead of `sceneGlobal`.
+- **Engine-aware decoding (third complication).** Each part can run a different engine (Analog Synth / ZEN-Core / JUNO-X Model / RD Piano). The same byte at the same per-part offset means different things depending on the active engine. The mock's per-part state is keyed by SysEx address only — the engine context is implicit in which params have been set. For RQ1 reads, returning the raw byte is fine (decoding happens MCP-side, where the param map drives `formatValue`); but writes need to know the engine to pick the right param map. Document the read-only-no-engine-dispatch path explicitly.
+
+Tests: extend `tests/unit/juno-x/mock-rq1.test.ts` with per-part address cases — DT1 write to part 0 + RQ1 read returns the same byte; cross-part isolation (write to part 0 doesn't show on part 1).
+
+Out of scope: ZEN-Core multi-partial RQ1 (each ZCore part has 4 partials; the partial address space is its own ladder under the part). Tracked separately if needed.
+
+Useful prior art: `src/keyboard_models/roland/juno_x/mock-handler.ts` `handleSysEx` (DT1 path already routes to `parts[partIdx].sceneParams` via address byte 1 check at lines 250–262), `src/keyboard_models/roland/juno_x/engines/engine-types.ts` (`SCENE_PART_OFFSETS`).
+
+### 27. JUNO-X `get_current_state` — per-part scope
+
+**Status:** Blocked on #26.
+
+Today's `JunoXDevice.getState` (#23) only reads scene-effect sections. Engine params (ENV, FILTER, OSC, AMP, LFO, the partial sections, RD-piano sections) are per-part and require the per-part RQ1 path — blocked on #26.
+
+Scope when #26 lands:
+
+- Add `part` arg to `get_current_state` so the agent can target part 1..5.
+- For per-part sections (ENV, FILTER, OSC, AMP, LFO, PERFORMANCE, PARTIAL-1..4, TONE-COMMON, RD-TONE, RD-SYMRESO), compute the per-part address as `SCENE_BASE + SCENE_PART_OFFSETS[partIdx] + param.sysexAddress` (the same formula `setParameters` already uses for per-part DT1 writes).
+- Issue RQ1s in parallel via `requestRolandValue`, render grouped by section.
+- Engine-awareness: the active engine on the target part determines which sections are meaningful. Either query the part's `tone_type` first to pick the read list, or read all engines' sections and label irrelevant ones as "engine-not-active." Decide during planning.
+
+Out of scope: scene-modify (per-part offsets within scene-modify section), scene-common (always-active globals — could land alongside scene-effects in a small follow-up).
+
+Useful prior art: `docs/plans/completed/23-juno-x-get-state-rq1.md` (scene-effects scope), `src/keyboard_models/roland/juno_x/device.ts` `setParameters` (per-part address calculation already in place), `src/keyboard_models/roland/juno_x/engines/engine-types.ts` (`SCENE_PART_OFFSETS`, `PART_NAMES`, `JunoXEngine`).
 

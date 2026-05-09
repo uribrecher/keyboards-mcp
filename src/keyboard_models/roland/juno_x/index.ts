@@ -24,7 +24,7 @@ const model: KeyboardModel = {
   agentSystemPrompt: `KEYBOARD: Roland JUNO-X
 
 STATE & MEMORY:
-The MCP is stateless on parameter values — it does not shadow what was sent. The JUNO-X is queryable in principle via Roland Data Request 1 (RQ1) sysex, but \`get_current_state\` is NOT yet implemented (planned in todo #21) — calling it today returns a stub message. Until then, you own the memory of what you sent across turns; the device itself is the ground truth — when in doubt, set the parameter explicitly rather than assuming it carried over.
+The MCP is stateless on parameter values — it does not shadow what was sent. The JUNO-X is queryable via Roland Data Request 1 (RQ1) sysex: \`get_current_state\` issues live RQ1s and renders the device's actual values. Currently supports the scene-effect sections — \`scene-chorus\`, \`scene-delay\`, \`scene-reverb\`, \`scene-drive\`. Other sections (scene-common, scene-part, scene-modify, partials, etc.) return a "not yet supported" message; those are explicit follow-ups. Treat the response as ground truth for "what is on the device right now" — including changes you didn't make (front-panel knob turns, scene loads). Use \`get_current_state\` to verify, not to remember; you still own intent across turns.
 
 The JUNO-X is a 5-part multi-timbral synthesizer with four distinct sound engines, a classic JUNO panel interface, and a scene-based patch system.
 

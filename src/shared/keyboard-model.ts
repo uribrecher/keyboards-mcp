@@ -187,7 +187,7 @@ export interface KeyboardDevice {
     params: Array<{ name: string; value: number | string }>,
     part?: string,
   ): ToolResult;
-  getState(section?: string): ToolResult;
+  getState(section?: string): ToolResult | Promise<ToolResult>;
   loadProgram(bank: number, slot: number): ToolResult | Promise<ToolResult>;
   loadSong(
     bank: number,
