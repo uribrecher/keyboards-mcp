@@ -54,6 +54,18 @@ export class MockEngine extends EventEmitter {
     this.actualPortName = opts.portName;
   }
 
+  /** Identity tag for log lines: `[portName:label]`. */
+  private tag(): string {
+    return `[${this.actualPortName}:${this.opts.label ?? "_default"}]`;
+  }
+
+  /** Compact one-line summary of a sysex packet — head + tail bytes. */
+  private static summarizeSysex(bytes: number[]): string {
+    const head = bytes.slice(0, 4).map(b => b.toString(16).padStart(2, "0")).join(" ");
+    const tail = bytes.length > 5 ? ` .. ${bytes[bytes.length - 1].toString(16).padStart(2, "0")}` : "";
+    return `sysex ${bytes.length} bytes [${head}${tail}]`;
+  }
+
   async start(): Promise<void> {
     // Init handler with channel config and per-instance backup label
     this.handler.init(this.opts.lowerChannel, this.opts.upperChannel, this.opts.label);
@@ -85,11 +97,11 @@ export class MockEngine extends EventEmitter {
 
       if (isMcp) {
         this.mcpClients.add(ws);
-        console.log("MCP server connected via WebSocket");
+        console.log(`${this.tag()} MCP server connected via WebSocket`);
         this.broadcastMcpStatus();
         ws.on("close", () => {
           this.mcpClients.delete(ws);
-          console.log("MCP server disconnected");
+          console.log(`${this.tag()} MCP server disconnected`);
           this.broadcastMcpStatus();
         });
       } else {
@@ -104,15 +116,20 @@ export class MockEngine extends EventEmitter {
           try {
             const msg = JSON.parse(String(raw));
             if (msg.type === "reload-cache") {
+              console.log(`${this.tag()} WS-IN reload-cache`);
               this.handler.onCacheReload?.();
               this.broadcast(this.handler.getFullState(true));
             } else if (msg.type === "cc") {
+              console.log(`${this.tag()} WS-IN cc CC=${msg.controller} val=${msg.value} ch=${msg.channel ?? 0}`);
               this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel ?? 0 }, "ui");
             } else if (msg.type === "program") {
+              console.log(`${this.tag()} WS-IN program n=${msg.number} ch=${msg.channel ?? 0}`);
               this.onMIDI({ type: "program", number: msg.number, channel: msg.channel ?? 0 }, "ui");
             } else if (msg.type === "sysex") {
+              console.log(`${this.tag()} WS-IN ${MockEngine.summarizeSysex(msg.bytes ?? [])}`);
               this.onMIDI({ type: "sysex", bytes: msg.bytes }, "ui");
             } else if (msg.type === "param") {
+              console.log(`${this.tag()} WS-IN param ${msg.name}=${msg.value} ch=${msg.channel ?? 0}`);
               // SysEx-addressed (or otherwise non-CC) param routed through the
               // handler's onUIParam so the model encodes the name → MIDI bytes,
               // applies state, and returns the encoded packet for the engine
@@ -133,28 +150,31 @@ export class MockEngine extends EventEmitter {
     // inbound message back out (would feedback-loop on bridges/shadows).
     if (this.midiInput) {
       this.midiInput.on("cc", (msg: { controller: number; value: number; channel: number }) => {
+        console.log(`${this.tag()} MIDI-IN cc CC=${msg.controller} val=${msg.value} ch=${msg.channel}`);
         this.onMIDI({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel }, "external");
       });
 
       this.midiInput.on("program", (msg: { number: number; channel: number }) => {
+        console.log(`${this.tag()} MIDI-IN program n=${msg.number} ch=${msg.channel}`);
         this.onMIDI({ type: "program", number: msg.number, channel: msg.channel }, "external");
       });
 
       this.midiInput.on("sysex" as any, (msg: { bytes: number[] }) => {
+        console.log(`${this.tag()} MIDI-IN ${MockEngine.summarizeSysex([...msg.bytes])}`);
         this.onMIDI({ type: "sysex", bytes: [...msg.bytes] }, "external");
       });
     }
 
     return new Promise<void>((resolve) => {
       this.httpServer!.listen(this.opts.wsPort, () => {
-        console.log(`Mock device ready`);
+        console.log(`${this.tag()} Mock device ready`);
         if (this.opts.noMidi) {
-          console.log(`  MIDI: disabled (WS-only mode)`);
+          console.log(`${this.tag()}   MIDI: disabled (WS-only mode)`);
         } else {
-          console.log(`  MIDI port: "${this.opts.portName}" (virtual)`);
+          console.log(`${this.tag()}   MIDI port: "${this.actualPortName}" (virtual)`);
         }
-        console.log(`  Lower channel: ${this.opts.lowerChannel}, Upper channel: ${this.opts.upperChannel}`);
-        console.log(`  WebSocket: ws://localhost:${this.opts.wsPort}`);
+        console.log(`${this.tag()}   Lower channel: ${this.opts.lowerChannel}, Upper channel: ${this.opts.upperChannel}`);
+        console.log(`${this.tag()}   WebSocket: ws://localhost:${this.opts.wsPort}`);
         this.publishToRegistry();
         resolve();
       });
@@ -286,7 +306,7 @@ export class MockEngine extends EventEmitter {
    */
   private applyHandlerResult(result: MockHandlerResult, uiSource: MidiMessage | null): void {
     if (result.state) this.broadcast(result.state);
-    if (result.log) console.log(`MIDI: ${result.log}`);
+    if (result.log) console.log(`${this.tag()} ${result.log}`);
     this.emitToMidiOut(result, uiSource);
   }
 
@@ -294,20 +314,23 @@ export class MockEngine extends EventEmitter {
     if (!this.midiOutput) return;
     if (result.sysexOut) {
       for (const bytes of result.sysexOut) {
+        console.log(`${this.tag()} MIDI-OUT ${MockEngine.summarizeSysex(bytes)}`);
         try { this.midiOutput.send("sysex", bytes); }
-        catch (err) { console.error("Mock virtual output sysex send failed:", err); }
+        catch (err) { console.error(`${this.tag()} MIDI-OUT sysex send failed:`, err); }
       }
     }
     if (result.ccOut) {
       for (const cc of result.ccOut) {
+        console.log(`${this.tag()} MIDI-OUT cc CC=${cc.controller} val=${cc.value} ch=${cc.channel}`);
         try { this.midiOutput.send("cc", cc); }
-        catch (err) { console.error("Mock virtual output cc send failed:", err); }
+        catch (err) { console.error(`${this.tag()} MIDI-OUT cc send failed:`, err); }
       }
     }
     if (result.programOut) {
       for (const pc of result.programOut) {
+        console.log(`${this.tag()} MIDI-OUT program n=${pc.number} ch=${pc.channel}`);
         try { this.midiOutput.send("program", pc); }
-        catch (err) { console.error("Mock virtual output program send failed:", err); }
+        catch (err) { console.error(`${this.tag()} MIDI-OUT program send failed:`, err); }
       }
     }
     // UI-source echo for bare cc / program (panel-knob analogue). SysEx is
@@ -315,11 +338,13 @@ export class MockEngine extends EventEmitter {
     if (uiSource) {
       try {
         if (uiSource.type === "cc") {
+          console.log(`${this.tag()} MIDI-OUT (ui-echo) cc CC=${uiSource.controller} val=${uiSource.value} ch=${uiSource.channel}`);
           this.midiOutput.send("cc", { controller: uiSource.controller, value: uiSource.value, channel: uiSource.channel });
         } else if (uiSource.type === "program") {
+          console.log(`${this.tag()} MIDI-OUT (ui-echo) program n=${uiSource.number} ch=${uiSource.channel}`);
           this.midiOutput.send("program", { number: uiSource.number, channel: uiSource.channel });
         }
-      } catch (err) { console.error("Mock virtual output UI-echo send failed:", err); }
+      } catch (err) { console.error(`${this.tag()} MIDI-OUT (ui-echo) send failed:`, err); }
     }
   }
 
