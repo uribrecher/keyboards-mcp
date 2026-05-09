@@ -156,13 +156,34 @@ export function parseDT1(sysex: number[], modelId: RolandModelId): DT1Message | 
 }
 
 export interface RQ1Message {
-  address: number[];  // 4 bytes
-  size: number[];     // 4 bytes (nibble-encoded byte count)
+  /** Echoed back from the incoming SysEx so a DT1 response can address the same client. */
+  deviceId: number;
+  /** 4-byte address (7-bit per byte). */
+  address: number[];
+  /** 4-byte size field. Use {@link decodeRolandSize} to convert to a byte count. */
+  size: number[];
+}
+
+/**
+ * Decode a Roland 4-byte size field into a byte count.
+ *
+ * The wire format is 4 x 7-bit bytes, MSB-first. Total addressable size
+ * is 28 bits (≈256 MB), well beyond any real DT1 read.
+ *
+ * NOT to be confused with `unpackNibbles`, which is for DT1 *data* fields
+ * that pack a single nibble per byte. Size and address fields use the
+ * 7-bits-per-byte encoding instead; this helper is the right one for them.
+ */
+export function decodeRolandSize(bytes: number[]): number {
+  return ((bytes[0] & 0x7F) << 21)
+    | ((bytes[1] & 0x7F) << 14)
+    | ((bytes[2] & 0x7F) << 7)
+    | (bytes[3] & 0x7F);
 }
 
 /**
  * Parse incoming SysEx bytes as a Roland RQ1 (Data Request 1) message.
- * Returns address + size if valid RQ1 for the given model, null otherwise.
+ * Returns deviceId + address + size if valid RQ1 for the given model, null otherwise.
  * Verifies: manufacturer=0x41, model ID match, command=0x11, checksum.
  */
 export function parseRQ1(sysex: number[], modelId: RolandModelId): RQ1Message | null {
@@ -173,7 +194,7 @@ export function parseRQ1(sysex: number[], modelId: RolandModelId): RQ1Message | 
   let i = 0;
   if (sysex[i++] !== SYSEX_START) return null;
   if (sysex[i++] !== ROLAND_ID) return null;
-  i++; // device id — accept any
+  const deviceId = sysex[i++];
   for (const b of modelId.bytes) {
     if (sysex[i++] !== b) return null;
   }
@@ -190,7 +211,7 @@ export function parseRQ1(sysex: number[], modelId: RolandModelId): RQ1Message | 
   const expectedChecksum = rolandChecksum([...address, ...size]);
   if (receivedChecksum !== expectedChecksum) return null;
 
-  return { address, size };
+  return { deviceId, address, size };
 }
 
 /**

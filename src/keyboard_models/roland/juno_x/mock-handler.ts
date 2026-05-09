@@ -7,7 +7,7 @@
 
 import type { MidiMessage, MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
-import { parseDT1, parseRQ1, buildDT1, addAddresses, unpackNibbles } from "../../../shared/roland-dt1.js";
+import { parseDT1, parseRQ1, buildDT1, addAddresses, decodeRolandSize } from "../../../shared/roland-dt1.js";
 import { JUNO_X_MODEL_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
 import { createAnalogSynthParams } from "./engines/analog-synth.js";
 import { createZCoreParams } from "./engines/zcore.js";
@@ -239,15 +239,16 @@ export function createJunoXMockHandler(): MockHandler {
     // receive plumbing lands (todo #22) and getState is wired (todo #23).
     const rq1 = parseRQ1(bytes, JUNO_X_MODEL_ID);
     if (rq1) {
-      const sizeBytes = unpackNibbles(rq1.size);
+      const sizeBytes = decodeRolandSize(rq1.size);
       const baseKey = addrKey(rq1.address);
       const data: number[] = [];
       for (let i = 0; i < sizeBytes; i++) {
         data.push(sceneGlobal[`${baseKey}[${i}]`] ?? 0);
       }
-      const dt1Response = buildDT1(JUNO_X_MODEL_ID, 0x10, rq1.address, data);
+      // Echo the requester's device ID so clients filtering by ID match.
+      const dt1Response = buildDT1(JUNO_X_MODEL_ID, rq1.deviceId, rq1.address, data);
       return {
-        log: `RQ1: addr=${baseKey} size=${sizeBytes} → DT1 ${data.join(",")}`,
+        log: `RQ1: addr=${baseKey} size=${sizeBytes} dev=0x${rq1.deviceId.toString(16)} → DT1 ${data.join(",")}`,
         sysexOut: [dt1Response],
       };
     }

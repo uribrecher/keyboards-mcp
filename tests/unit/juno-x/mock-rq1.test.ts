@@ -47,4 +47,26 @@ describe("JUNO-X mock RQ1 → DT1 round-trip", () => {
     const result = handler.onMIDI({ type: "sysex", bytes: setMsg });
     assert.equal(result.sysexOut, undefined);
   });
+
+  it("decodes RQ1 sizes > 15 bytes correctly (regression for nibble-vs-7bit confusion)", () => {
+    // Size 16 in 4x 7-bit encoding = [0,0,0,0x10]. With nibble decoding this
+    // would erroneously become 0; with 7-bit decoding it's 16.
+    const reqMsg = buildRQ1(JUNO_X_MODEL_ID, DEVICE_ID, CHORUS_SWITCH_ADDR, [0x00, 0x00, 0x00, 0x10]);
+    const result = handler.onMIDI({ type: "sysex", bytes: reqMsg });
+
+    assert.ok(result.sysexOut);
+    const parsed = parseDT1(result.sysexOut![0], JUNO_X_MODEL_ID);
+    assert.equal(parsed!.data.length, 16, "expected 16 data bytes for size=16");
+  });
+
+  it("echoes the RQ1 device ID in the DT1 response", () => {
+    const customDevId = 0x42;
+    const reqMsg = buildRQ1(JUNO_X_MODEL_ID, customDevId, CHORUS_SWITCH_ADDR, [0x00, 0x00, 0x00, 0x01]);
+    const result = handler.onMIDI({ type: "sysex", bytes: reqMsg });
+
+    assert.ok(result.sysexOut);
+    // The DT1 byte sequence: F0 41 <devId> <modelId..> 12 <addr..> <data..> <chk> F7
+    // Device ID is at index 2.
+    assert.equal(result.sysexOut![0][2], customDevId, "DT1 must echo the RQ1 device ID");
+  });
 });
