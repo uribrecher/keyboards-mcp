@@ -138,4 +138,11 @@ export class JunoXDevice extends BaseKeyboardDevice {
 
     return textResult(header + "\n\n" + baseText);
   }
+
+  override getState(_section?: string): ToolResult {
+    return textResult(
+      "JUNO-X get_current_state via Roland RQ1 is not yet implemented (planned in todo #21). " +
+      "The agent owns its memory of what it set in the meantime.",
+    );
+  }
 }
