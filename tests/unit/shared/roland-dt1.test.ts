@@ -8,6 +8,7 @@ const JUNO_X_MODEL_ID = { bytes: [0x00, 0x00, 0x00, 0x00, 0x12] };
 interface FakeConn extends MidiConnection {
   _fireSysEx(bytes: number[]): void;
   readonly _lastSent: number[] | null;
+  readonly _listenerCount: number;
 }
 
 function makeFakeConn(): FakeConn {
@@ -17,9 +18,16 @@ function makeFakeConn(): FakeConn {
     sendCC() {}, sendProgramChange() {}, sendNRPN() {},
     async sendCCBatch() {}, onCC() {},
     sendSysEx(bytes: number[]) { lastSent = bytes; },
-    onSysEx(cb) { listeners.push(cb); },
-    _fireSysEx(bytes: number[]) { for (const cb of listeners) cb([...bytes]); },
+    onSysEx(cb) {
+      listeners.push(cb);
+      return () => {
+        const idx = listeners.indexOf(cb);
+        if (idx >= 0) listeners.splice(idx, 1);
+      };
+    },
+    _fireSysEx(bytes: number[]) { for (const cb of [...listeners]) cb([...bytes]); },
     get _lastSent() { return lastSent; },
+    get _listenerCount() { return listeners.length; },
   } as FakeConn;
 }
 
@@ -131,5 +139,42 @@ describe("requestRolandValue", () => {
     conn._fireSysEx(dt1);
     const data = await promise;
     assert.deepStrictEqual(data, [0x42]);
+  });
+
+  it("ignores DT1 messages from a different device ID", async () => {
+    const conn = makeFakeConn();
+    const promise = requestRolandValue(conn, JUNO_X_MODEL_ID, DEVICE_ID, ADDR, 1, 100);
+
+    // Same address, different device ID — must be ignored.
+    const otherDevDt1 = buildDT1(JUNO_X_MODEL_ID, 0x42, ADDR, [0x99]);
+    conn._fireSysEx(otherDevDt1);
+
+    // Same address AND matching device ID — resolves.
+    const ourDt1 = buildDT1(JUNO_X_MODEL_ID, DEVICE_ID, ADDR, [0x07]);
+    conn._fireSysEx(ourDt1);
+
+    const data = await promise;
+    assert.deepStrictEqual(data, [0x07]);
+  });
+
+  it("unsubscribes the listener on resolve", async () => {
+    const conn = makeFakeConn();
+    const promise = requestRolandValue(conn, JUNO_X_MODEL_ID, DEVICE_ID, ADDR, 1, 100);
+    assert.equal(conn._listenerCount, 1, "expected one listener while pending");
+
+    const dt1 = buildDT1(JUNO_X_MODEL_ID, DEVICE_ID, ADDR, [0x42]);
+    conn._fireSysEx(dt1);
+    await promise;
+
+    assert.equal(conn._listenerCount, 0, "expected listener to be unsubscribed after resolve");
+  });
+
+  it("unsubscribes the listener on timeout", async () => {
+    const conn = makeFakeConn();
+    await assert.rejects(
+      requestRolandValue(conn, JUNO_X_MODEL_ID, DEVICE_ID, ADDR, 1, 30),
+      /timeout/i,
+    );
+    assert.equal(conn._listenerCount, 0, "expected listener to be unsubscribed after timeout");
   });
 });

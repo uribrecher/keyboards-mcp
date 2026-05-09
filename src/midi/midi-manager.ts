@@ -215,9 +215,14 @@ export class MidiManager implements MidiConnection {
   }
 
   /** MidiConnection interface: register a SysEx listener.
-   *  Fires for every SysEx received on the connected input port. */
-  onSysEx(callback: (bytes: number[]) => void): void {
+   *  Fires for every SysEx received on the connected input port. Returns
+   *  an unsubscribe function. */
+  onSysEx(callback: (bytes: number[]) => void): () => void {
     this.onSysExCallbacks.push(callback);
+    return () => {
+      const idx = this.onSysExCallbacks.indexOf(callback);
+      if (idx >= 0) this.onSysExCallbacks.splice(idx, 1);
+    };
   }
 
   setOnCC(callback: (msg: { controller: number; value: number; channel: number }) => void): void {
@@ -268,9 +273,20 @@ export class MidiManager implements MidiConnection {
 
     for (const type of messageTypes) {
       this.input.on(type as any, (msg: any) => {
-        // Forward to shadow if connected (the bridge half)
+        // Forward to shadow if connected (the bridge half).
+        // SysEx is special: easymidi's Output.send("sysex", ...) takes a
+        // raw byte array (matching how MidiManager.sendSysEx invokes it).
+        // The Input event payload for sysex is `{bytes: number[]}`, so
+        // unwrap before forwarding.
         if (this.forwardOutput) {
-          try { this.forwardOutput.send(type as any, msg); } catch {}
+          try {
+            if (type === "sysex") {
+              const bytes: number[] = [...(msg.bytes ?? [])];
+              this.forwardOutput.send("sysex" as any, bytes as any);
+            } else {
+              this.forwardOutput.send(type as any, msg);
+            }
+          } catch {}
         }
 
         // Fire MCP-side callbacks (the MCP-listen half)

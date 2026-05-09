@@ -12,5 +12,11 @@ export interface MidiConnection {
     delayMs?: number,
   ): Promise<void>;
   onCC(callback: (cc: number, value: number, channel: number) => void): void;
-  onSysEx(callback: (bytes: number[]) => void): void;
+  /**
+   * Register a SysEx listener. Returns an unsubscribe function that the
+   * caller is expected to invoke when no longer interested. Failing to
+   * unsubscribe is a leak — repeated registrations grow the listener
+   * list unbounded.
+   */
+  onSysEx(callback: (bytes: number[]) => void): () => void;
 }

@@ -27,32 +27,44 @@ const SCENE_BASE = [0x01, 0x00, 0x00, 0x00];
 const CHORUS_SWITCH_OFFSET = [0x00, 0x50, 0x00, 0x00];
 const CHORUS_SWITCH_ADDR = addAddresses(SCENE_BASE, CHORUS_SWITCH_OFFSET);
 
+let nextPort = 5610;
+
+/** Poll the mock-registry until an entry for `wsPort` appears, up to deadline. */
+async function waitForRegistryEntry(wsPort: number, deadlineMs = 2000): Promise<string> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < deadlineMs) {
+    const entry = readActive().find((e) => e.wsPort === wsPort);
+    if (entry) return entry.midiPort;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error(`mock at wsPort ${wsPort} did not register within ${deadlineMs}ms`);
+}
+
 describe("MCP sysex receive: RQ1 round-trip via real MIDI", { concurrency: 1, skip: IS_DOCKER_WS_MODE }, () => {
   it("sends RQ1, receives DT1 with the stored value", async () => {
     // easymidi is lazily loaded — initialize before opening any MIDI ports.
     await initMidiBackend();
 
-    const mock = await MockProcess.start({ model: "roland-juno-x", wsPort: 5610 });
+    const mock = await MockProcess.start({ model: "roland-juno-x", wsPort: nextPort++ });
     try {
-      // Wait for the mock to register its MIDI ports + publish to the
-      // shared mock-registry, then look up the actual OS port name (Core
-      // MIDI suffixes duplicates so it may differ from the default).
-      await new Promise((r) => setTimeout(r, 300));
-      const entry = readActive().find((e) => e.wsPort === mock.wsPort);
-      assert.ok(entry, `expected mock at wsPort ${mock.wsPort} to be registered`);
-      const portName = entry.midiPort;
+      // Mock has already received initial state via waitForState in start();
+      // poll the registry for the actual OS port name (Core MIDI suffixes
+      // duplicates).
+      const portName = await waitForRegistryEntry(mock.wsPort);
 
       const midi = new MidiManager();
       midi.connect(portName);
       midi.connectInput(portName);
 
-      // Pre-set chorus_switch=1 via DT1 so we have something non-default to read.
+      // Pre-set chorus_switch=1 via DT1 so we have something non-default
+      // to read. Send the RQ1 via requestRolandValue — the helper waits
+      // until the matching DT1 arrives, so we don't need a fixed sleep
+      // before the request; the mock's RQ1 handler is synchronous and
+      // the OS-level MIDI loopback is fast enough.
       const setMsg = buildDT1(JUNO_X_MODEL_ID, 0x10, CHORUS_SWITCH_ADDR, [0x01]);
       midi.sendSysEx(setMsg);
-      await new Promise((r) => setTimeout(r, 50));
 
-      // Now query via RQ1.
-      const data = await requestRolandValue(midi, JUNO_X_MODEL_ID, 0x10, CHORUS_SWITCH_ADDR, 1, 500);
+      const data = await requestRolandValue(midi, JUNO_X_MODEL_ID, 0x10, CHORUS_SWITCH_ADDR, 1, 1000);
       assert.deepStrictEqual(data, [0x01], "expected chorus_switch=1 from RQ1 round-trip");
 
       midi.disconnect();

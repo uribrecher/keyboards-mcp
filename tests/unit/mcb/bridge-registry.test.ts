@@ -173,18 +173,16 @@ describe("BridgeRegistry", () => {
       );
     });
 
-    it("rejects making a mock both the master of one bridge and the shadow of another", () => {
-      // mockB is the shadow of bridge1; trying to use mockB as master of
-      // bridge2 should fail master-port-conflict (existing rule). This is
-      // important now that #21 makes mock-as-primary common.
+    it("rejects reusing a mock as the master of a second bridge (master-port-conflict)", () => {
+      // A port can only be the master of ONE bridge (data flows from
+      // master to shadow — duplicating wouldn't make physical sense).
+      // First bridge claims mockB as master OK; second bridge using
+      // mockB as master fails. Note: a port CAN be both a shadow target
+      // (bridge1.shadow=mockB) AND the master of a different bridge
+      // (bridge2.master=mockB), as the chain test below exercises.
       const r = new BridgeRegistry();
       r.add("dev-A", "mockA", "mockB");
-      // Wait — this is allowed: bridge2's master is mockB, which IS the
-      // shadow of bridge1. The walker would catch the cycle if this closed
-      // back. Trying as a separate cycle test:
-      r.add("dev-B", "mockB", "mockC");
-      // Linear; no cycle. Above is fine. But trying to USE mockB as a
-      // master twice fails:
+      r.add("dev-B", "mockB", "mockC"); // mockB is shadow of A, master of B — OK.
       assert.throws(
         () => r.add("dev-C", "mockB", "mockD"),
         /master-port-conflict/,
