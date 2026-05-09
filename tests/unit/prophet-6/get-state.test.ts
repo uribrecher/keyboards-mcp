@@ -6,7 +6,7 @@ describe("Prophet-6 get_current_state", () => {
   it("returns 'not supported' message — no implemented query path", () => {
     const device = prophetModel.createDevice!();
     const result = device.getState();
-    assert.equal(result.isError, undefined);
+    assert.ok(!result.isError);
     const text = result.content[0].text;
     assert.match(text, /not supported/i);
     assert.match(text, /Prophet-6/i);

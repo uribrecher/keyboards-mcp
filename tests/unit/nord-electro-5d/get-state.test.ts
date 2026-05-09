@@ -6,7 +6,7 @@ describe("Nord Electro 5D get_current_state", () => {
   it("returns 'not supported' message — Nord MIDI is one-way", () => {
     const device = nordModel.createDevice!();
     const result = device.getState();
-    assert.equal(result.isError, undefined);
+    assert.ok(!result.isError);
     const text = result.content[0].text;
     assert.match(text, /not supported/i);
     assert.match(text, /Nord MIDI is one-way/i);

@@ -122,7 +122,7 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
 
   setParameters(
     params: Array<{ name: string; value: number | string }>,
-    part?: string,
+    _part?: string,
   ): ToolResult {
     this.requireConnection();
 
@@ -131,7 +131,6 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
     type ApplyEntry = {
       found: { key: string; param: KeyboardParameter };
       midiValue: number;
-      statePart: string | undefined;
     };
     const applyQueue: ApplyEntry[] = [];
 
@@ -146,8 +145,7 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
 
       try {
         const midiValue = this.parameterMap.resolveValue(found.param, value);
-        const statePart = this.resolvePartForParam(found.key, part);
-        applyQueue.push({ found, midiValue, statePart });
+        applyQueue.push({ found, midiValue });
       } catch (err) {
         errors.push(
           `${found.param.name}: ${err instanceof Error ? err.message : String(err)}`,
@@ -173,11 +171,6 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
     }
 
     return { content: [{ type: "text", text }] };
-  }
-
-  /** Override for per-part state routing. Return undefined for global-only models. */
-  protected resolvePartForParam(_key: string, _part?: string): string | undefined {
-    return undefined;
   }
 
   getState(_section?: string): ToolResult {

@@ -25,12 +25,6 @@ export class NordElectro5DDevice extends BaseKeyboardDevice {
     super(model, deps);
   }
 
-  // ── Per-part state routing for setParameters ──
-
-  protected override resolvePartForParam(key: string, part?: string): string | undefined {
-    return this.parameterMap.isPerPart(key) ? (part ?? "upper") : undefined;
-  }
-
   override getState(_section?: string): ToolResult {
     return textResult(
       "Nord MIDI is one-way — get_current_state is not supported on this model. " +

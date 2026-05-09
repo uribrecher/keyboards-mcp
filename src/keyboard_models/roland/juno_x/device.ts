@@ -26,7 +26,7 @@ export class JunoXDevice extends BaseKeyboardDevice {
   }
 
   /** Parts 1-5 are per-part; all others are global. Default to part "1". */
-  protected override resolvePartForParam(key: string, part?: string): string | undefined {
+  private resolvePartForParam(key: string, part?: string): string | undefined {
     if (!this.parameterMap.isPerPart(key)) return undefined;
     return part ?? "1";
   }
