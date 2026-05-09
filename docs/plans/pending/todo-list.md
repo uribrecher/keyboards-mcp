@@ -67,23 +67,6 @@ Design questions:
 - Discoverability: keyboard accelerators are fine for power users but the existing `backup` button is the only signal for new operators that the action exists. Whatever replaces it has to be at least as discoverable.
 - Visual: the existing `.console__btn` is a compact graphite button — preserve that idiom or rethink in light of the new tabbed layout.
 
-### 23. JUNO-X `get_current_state` via Roland RQ1
-
-**Status:** Blocked on #22.
-
-Replace the JUNO-X `get_current_state` stub (added in PR #65) with a real RQ1-based query. The mock side is already in place from #21 (it parses RQ1 and emits DT1 responses); the MCP-side receive path is in place from #22.
-
-Scope:
-- Issue RQ1s for the addressed sections (start with scene-effects: chorus, delay, reverb, drive). Use the `MidiConnection.requestSysEx` API from #22.
-- Decode the DT1 responses via the JUNO-X parameter map (the same address → param key/encoding lookups already used by `set_parameters`).
-- Render the live values as the tool result.
-- Map errors to tool-result text — timeout: "no response from JUNO-X (RQ1 timeout); is the device connected?". Malformed: "got a malformed DT1 — see logs."
-- Update JUNO-X `agentSystemPrompt` and `CLAUDE.md` to reflect that RQ1 actually works (today both say "not yet implemented").
-
-Out of scope: per-part RQ1 reads, ZCore / RD-piano per-part details, scene-modify section. Those are explicit follow-ups beyond #23 once the four scene-effects sections work end-to-end.
-
-Useful prior art: `docs/plans/completed/21-juno-x-rq1-get-state.md` (mock side), `src/keyboard_models/roland/juno_x/scene-params.ts` (addresses), `src/shared/roland-dt1.ts` (`buildRQ1`, `parseDT1`, `addAddresses`, `packNibbles`).
-
 ### 24. UI-driven mock MIDI emission
 
 **Status:** Needs design.
