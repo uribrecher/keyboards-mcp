@@ -67,52 +67,6 @@ Design questions:
 - Discoverability: keyboard accelerators are fine for power users but the existing `backup` button is the only signal for new operators that the action exists. Whatever replaces it has to be at least as discoverable.
 - Visual: the existing `.console__btn` is a compact graphite button — preserve that idiom or rethink in light of the new tabbed layout.
 
-### 24. UI-driven mock MIDI emission
-
-**Status:** Needs design.
-
-When the JUNO-X mock UI (Electron mock-runner web UI) is manipulated by mouse — knob clicks, drag-to-rotate, button presses — the mock should emit the corresponding MIDI message (CC, SysEx) on the virtual MIDI input port added in #21 (the device's MIDI Out socket). This mirrors real hardware: turning a knob on the panel emits MIDI on the device's MIDI Out for downstream listeners.
-
-#### Today's flow
-
-When the UI sends a `{type: "cc", controller, value, channel}` WebSocket message, MockEngine routes it as `this.onMIDI({type: "cc", ...})` — the SAME entry point used for external MIDI input arriving on the virtual Output port (the device's MIDI In socket). The handler updates internal state and broadcasts to UI clients. **No MIDI is emitted on the device's MIDI Out.**
-
-#### What needs to change
-
-The engine must, on receipt of a UI-sourced WS message, do BOTH:
-1. Update internal state (call the handler — existing path).
-2. Write the same MIDI bytes to the virtual MIDI input port (the device's MIDI Out — new path).
-
-#### ⚠️ Echo-loop trap to design around
-
-There's a subtle architectural hazard: today's engine doesn't distinguish "this CC came from UI" from "this CC came in over external MIDI." Both flow through `this.onMIDI({type: "cc", ...})` on the SAME path. If we naively make the engine "fan every onMIDI call to the MIDI output port too," we get an immediate echo loop the moment a real external MIDI source (or another mock, or the MCP itself) sends a CC into the mock's MIDI In:
-
-```
-External MIDI in → engine.onMIDI(cc) → midiOutput.send(cc)
-  → loops back into anything listening on the device's MIDI Out
-  → in worst case, into the same mock's MIDI In via a bridge → infinite loop
-```
-
-The fix is to keep "where this came from" out of the handler and resolve it at the engine routing layer:
-
-- **UI-sourced** WS messages → engine writes to `midiOutput` directly (the hw analogue of "panel knob turned"), AND calls handler to update state.
-- **External-MIDI-sourced** events (arriving on `midiInput.on("cc"|"program"|"sysex")`) → engine ONLY calls the handler. Does NOT write to `midiOutput` — that would echo what we just received.
-- **Handler-explicit emissions** via `MockHandlerResult.ccOut` / `sysexOut` (e.g. JUNO-X RQ1→DT1 response from #21) → engine writes to `midiOutput`. The handler decided to emit; that's not an echo.
-
-In other words, **routing decisions live in the engine**, keyed off the source of the inbound message. The handler stays source-agnostic. Echo-loops happen when source-agnostic routing meets a feedback path; we prevent that by making source-aware routing explicit and only at the boundary.
-
-#### Scope when this lands
-
-- Add `MockHandlerResult.ccOut?: Array<{controller, value, channel}>` (and possibly `programOut?` for completeness — match the existing `MidiMessage` types). Naming: `*Out` = mock-emits-this, mirroring `sysexOut` from #21.
-- Engine extends `onMIDI` fan-out to write `ccOut` (and `programOut`) packets via `midiOutput.send("cc", ...)`.
-- Engine adds a UI-source path that ALSO writes the inbound CC/sysex to `midiOutput` (separate from the handler-explicit `ccOut` mechanism).
-- UI side: knob/button widgets already send `{type:"cc"}` etc. — likely no client-side changes needed beyond verifying the existing message format.
-- Tests: unit-test the engine's source-aware routing (UI source → MIDI out, external source → no MIDI out).
-
-#### Why this matters
-
-Once a real external MIDI source can also drive the mock (hw + mock pair via a bridge — todo #22 territory), getting the routing wrong becomes a hard-to-debug runtime feedback loop. Documenting the trap here means the next implementer designs around it instead of discovering it the hard way.
-
 ### 25. WS-mode SysEx receive — second WebSocket lane for outgoing MIDI
 
 **Status:** Needs design.
@@ -167,4 +121,40 @@ Scope when #26 lands:
 Out of scope: scene-modify (per-part offsets within scene-modify section), scene-common (always-active globals — could land alongside scene-effects in a small follow-up).
 
 Useful prior art: `docs/plans/completed/23-juno-x-get-state-rq1.md` (scene-effects scope), `src/keyboard_models/roland/juno_x/device.ts` `setParameters` (per-part address calculation already in place), `src/keyboard_models/roland/juno_x/engines/engine-types.ts` (`SCENE_PART_OFFSETS`, `PART_NAMES`, `JunoXEngine`).
+
+### 28. JUNO-X chorus type — UI ↔ state propagation bug
+
+**Status:** Needs investigation.
+
+Observed during #24 local testing: clicking a chorus mode button on jino's UI causes chorus_switch to propagate correctly (verifiable via shadow mock junio's UI lighting up the chorus group), but chorus *type* (the algorithm selector — JUNO Chorus, etc., 0..9 at `01:50:00:01`) does NOT propagate properly.
+
+This is distinct from the wiring fix shipped in #24:
+- The `{type:"param"}` UI message → `MockHandler.onUIParam` → DT1 → state path is now correct generally.
+- The bridge from primary → shadow is verified working for delay_switch, reverb_switch, drive_switch.
+- chorus_switch propagates.
+- chorus *type* (the algorithm) still misbehaves — symptom unclear without further repro.
+
+Likely culprits to investigate:
+- The chorus mode buttons on the UI emit `chorus_mode` (param name doesn't exist server-side — see todo #11) rather than `chorus_type`. So clicking a mode button never sends the actual chorus_type DT1, even when the user expected "select JUNO Chorus" semantics.
+- The chorus *type* selector (a separate dropdown control, distinct from the mode buttons) may not have a syncSceneGlobalUI mirror — `syncSceneGlobalUI` in `web/app.js` only mirrors switch-toggle buttons today.
+- Possible UI selector listening on a different state path (CC vs scene-global SysEx).
+
+Scope when picked up:
+- Reproduce: change Chorus Type via jino's selector dropdown → verify junio's selector updates.
+- If selector mirrors are missing, extend `syncSceneGlobalUI` to read `01:50:00:01[0]` for chorus_type and update the selector.
+- If chorus_mode buttons should route to chorus_type semantically (e.g. "JUNO Chorus" on click), wire that mapping. Otherwise wait for #11 (full chorus mode sub-parameter set) which will give chorus_mode a proper home.
+
+Useful prior art: `src/keyboard_models/roland/juno_x/scene-params.ts` (chorus_type at offset `00:50:00:01`), `src/keyboard_models/roland/juno_x/web/app.js` (`syncSceneGlobalUI`, `initChorusButtons`), todo #11.
+
+### 29. JUNO-X drive button — click does nothing
+
+**Status:** Needs investigation.
+
+Observed during #24 local testing: clicking the "DRV" button on jino's UI doesn't toggle anything. Delay and Reverb buttons in the same FX cluster work correctly; only Drive is broken.
+
+Likely culprits:
+- Markup mismatch: HTML may have `data-fx="drv"` but `FX_PARAMS` map in `web/app.js:260` uses `drive: "drive_switch"`. If the data attribute is `drv` instead of `drive`, the lookup misses and no UI param is sent.
+- Or `tog-btn` class missing on the drive button — `initFxButtons` selects `button.tog-btn[data-fx]`.
+
+Quick fix is likely a one-character HTML change.
 
