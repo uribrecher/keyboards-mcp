@@ -18,7 +18,6 @@ import {
 } from "./engines/engine-types.js";
 import { JunoXState } from "./state-manager.js";
 import type { JunoXParameterMap } from "./midi-map.js";
-import { validateParameterBatch } from "./validation.js";
 
 export class JunoXDevice extends BaseKeyboardDevice {
   private junoMap: JunoXParameterMap;
@@ -46,7 +45,6 @@ export class JunoXDevice extends BaseKeyboardDevice {
 
     const results: string[] = [];
     const errors: string[] = [];
-    const resolvedKeys: Array<{ key: string; value: number | string }> = [];
 
     for (const { name, value } of params) {
       const found = this.junoMap.findParam(name);
@@ -86,7 +84,6 @@ export class JunoXDevice extends BaseKeyboardDevice {
         }
 
         this.junoState.set(found.key, midiValue, statePart);
-        resolvedKeys.push({ key: found.key, value });
 
         const displayValue = this.junoMap.formatValue(found.param, midiValue);
         const prevDisplay =
@@ -101,29 +98,15 @@ export class JunoXDevice extends BaseKeyboardDevice {
       }
     }
 
-    const warnings = this.validateAfterSet(resolvedKeys, part ?? "1");
-
     let text = "";
     if (results.length > 0) {
       text += "Parameters set:\n" + results.join("\n");
-    }
-    if (warnings.length > 0) {
-      text += (text ? "\n\n" : "") + warnings.join("\n");
     }
     if (errors.length > 0) {
       text += (text ? "\n\n" : "") + "Errors:\n" + errors.join("\n");
     }
 
-    const result: ToolResult = { content: [{ type: "text", text }] };
-    if (warnings.length > 0) result.warnings = warnings;
-    return result;
-  }
-
-  protected override validateAfterSet(
-    resolvedKeys: Array<{ key: string; value: number | string }>,
-    part: string,
-  ): string[] {
-    return validateParameterBatch(resolvedKeys, this.state, part, this.parameterMap);
+    return { content: [{ type: "text", text }] };
   }
 
   override listParameters(section?: string): ToolResult {
