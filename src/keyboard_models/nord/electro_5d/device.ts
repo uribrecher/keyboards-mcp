@@ -13,8 +13,6 @@ import type { KeyboardParameter } from "../../../shared/types.js";
 import type { ToolResult } from "../../../shared/tool-result.js";
 import { textResult } from "../../../shared/tool-result.js";
 import { BaseKeyboardDevice, type BaseDeviceDeps } from "../../../shared/base-keyboard-device.js";
-import { validateParameterBatch, preflightDisabledSections } from "./validation.js";
-import { NordElectro5DState } from "./state-manager.js";
 
 export interface NordDeviceDeps extends BaseDeviceDeps {
   programLoader: ProgramLoaderCapability;
@@ -24,39 +22,14 @@ export interface NordDeviceDeps extends BaseDeviceDeps {
 
 export class NordElectro5DDevice extends BaseKeyboardDevice {
   constructor(model: KeyboardModel, deps: NordDeviceDeps) {
-    super(model, deps, new NordElectro5DState(deps.parameterMap));
+    super(model, deps);
   }
 
-  // ── Per-part CC routing ──
-
-  protected override onIncomingCC(cc: number, value: number, _channel: number): void {
-    const entry = this.parameterMap.getParamByCC(cc);
-    if (!entry) return;
-    this.state.set(
-      entry.key,
-      value,
-      this.parameterMap.isPerPart(entry.key) ? "upper" : undefined,
+  override getState(_section?: string): ToolResult {
+    return textResult(
+      "Nord MIDI is one-way — get_current_state is not supported on this model. " +
+      "The agent owns its memory of what it set; the hardware itself is the ground truth.",
     );
-  }
-
-  // ── Per-part state routing for setParameters ──
-
-  protected override resolvePartForParam(key: string, part?: string): string | undefined {
-    return this.parameterMap.isPerPart(key) ? (part ?? "upper") : undefined;
-  }
-
-  protected override preflightBatch(
-    resolvedKeys: Array<{ key: string; value: number | string }>,
-    part: string,
-  ): { errors: string[]; blockedKeys: Set<string> } {
-    return preflightDisabledSections(resolvedKeys, this.state, this.parameterMap, part);
-  }
-
-  protected override validateAfterSet(
-    resolvedKeys: Array<{ key: string; value: number | string }>,
-    part: string,
-  ): string[] {
-    return validateParameterBatch(resolvedKeys, this.state, part, this.parameterMap);
   }
 
   // ── Piano model discovery in listParameters ──

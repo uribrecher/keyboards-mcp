@@ -8,7 +8,6 @@ import type {
   KeyboardModel,
   KeyboardDevice,
   ParameterMap,
-  StateManager,
   BackupData,
   ProgramLoaderCapability,
   SongLoaderCapability,
@@ -31,33 +30,27 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
   backupData?: BackupData;
 
   protected connection: MidiConnection | null = null;
-  protected state: StateManager;
   protected parameterMap: ParameterMap;
   protected programLoader?: ProgramLoaderCapability;
   protected songLoader?: SongLoaderCapability;
   protected systemPromptTemplate?: string;
 
-  constructor(model: KeyboardModel, deps: BaseDeviceDeps, state: StateManager) {
+  constructor(model: KeyboardModel, deps: BaseDeviceDeps) {
     this.model = model;
     this.parameterMap = deps.parameterMap;
     this.programLoader = deps.programLoader;
     this.songLoader = deps.songLoader;
     this.systemPromptTemplate = deps.systemPromptTemplate;
-    this.state = state;
   }
 
   // ── Connection lifecycle ──
 
   attach(connection: MidiConnection): void {
     this.connection = connection;
-    connection.onCC((cc, value, channel) => {
-      this.onIncomingCC(cc, value, channel);
-    });
   }
 
   detach(): void {
     this.connection = null;
-    this.state.reset();
   }
 
   protected requireConnection(): MidiConnection {
@@ -65,13 +58,6 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       throw new Error("Not connected to any MIDI device. Use connect_to_keyboard first.");
     }
     return this.connection;
-  }
-
-  /** Override for model-specific CC routing (e.g., per-part state updates) */
-  protected onIncomingCC(cc: number, value: number, _channel: number): void {
-    const entry = this.parameterMap.getParamByCC(cc);
-    if (!entry) return;
-    this.state.set(entry.key, value);
   }
 
   // ── Tool implementations ──
@@ -136,23 +122,20 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
 
   setParameters(
     params: Array<{ name: string; value: number | string }>,
-    part?: string,
+    _part?: string,
   ): ToolResult {
     this.requireConnection();
 
     const results: string[] = [];
     const errors: string[] = [];
-    const resolvedKeys: Array<{ key: string; value: number | string }> = [];
     type ApplyEntry = {
       found: { key: string; param: KeyboardParameter };
       midiValue: number;
-      value: number | string;
-      statePart: string | undefined;
     };
     const applyQueue: ApplyEntry[] = [];
 
-    // Phase 1: resolve parameters without applying. Resolution failures go
-    // straight to errors.
+    // Resolve parameters without applying. Resolution failures go straight
+    // to errors.
     for (const { name, value } of params) {
       const found = this.parameterMap.findParam(name);
       if (!found) {
@@ -162,9 +145,7 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
 
       try {
         const midiValue = this.parameterMap.resolveValue(found.param, value);
-        const statePart = this.resolvePartForParam(found.key, part);
-        applyQueue.push({ found, midiValue, value, statePart });
-        resolvedKeys.push({ key: found.key, value });
+        applyQueue.push({ found, midiValue });
       } catch (err) {
         errors.push(
           `${found.param.name}: ${err instanceof Error ? err.message : String(err)}`,
@@ -172,79 +153,31 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       }
     }
 
-    // Phase 2: preflight — let the model refuse changes (e.g. params in a
-    // disabled section). Blocked keys must NOT be sent to the device.
-    const preflight = this.preflightBatch(resolvedKeys, part ?? "upper");
-
-    // Phase 3: apply non-blocked params.
+    // Apply.
     for (const entry of applyQueue) {
-      if (preflight.blockedKeys.has(entry.found.key)) continue;
-      const prevMidi = this.state.get(entry.found.key, entry.statePart);
       if (entry.found.param.cc !== undefined) {
         this.connection!.sendCC(entry.found.param.cc, entry.midiValue);
       }
-      this.state.set(entry.found.key, entry.midiValue, entry.statePart);
-
       const displayValue = this.parameterMap.formatValue(entry.found.param, entry.midiValue);
-      const prevDisplay =
-        prevMidi !== undefined
-          ? this.parameterMap.formatValue(entry.found.param, prevMidi)
-          : "unset";
-      results.push(`  ${entry.found.param.name}: ${prevDisplay} → ${displayValue}`);
+      results.push(`  ${entry.found.param.name}: ${displayValue}`);
     }
-
-    // Phase 4: post-apply advisory warnings. Skip keys that the preflight
-    // refused — they were never sent, so warnings about them would mislead.
-    const appliedKeys = preflight.blockedKeys.size === 0
-      ? resolvedKeys
-      : resolvedKeys.filter((k) => !preflight.blockedKeys.has(k.key));
-    const warnings = this.validateAfterSet(appliedKeys, part ?? "upper");
-
-    if (preflight.errors.length > 0) errors.push(...preflight.errors);
 
     let text = "";
     if (results.length > 0) {
       text += "Parameters set:\n" + results.join("\n");
     }
-    if (warnings.length > 0) {
-      text += (text ? "\n\n" : "") + warnings.join("\n");
-    }
     if (errors.length > 0) {
       text += (text ? "\n\n" : "") + "Errors:\n" + errors.join("\n");
     }
 
-    const result: ToolResult = { content: [{ type: "text", text }] };
-    if (warnings.length > 0) result.warnings = warnings;
-    return result;
+    return { content: [{ type: "text", text }] };
   }
 
-  /** Override for per-part state routing. Return undefined for global-only models. */
-  protected resolvePartForParam(_key: string, _part?: string): string | undefined {
-    return undefined;
-  }
-
-  /**
-   * Override to refuse parameter changes before they are sent to the device.
-   * Keys returned in `blockedKeys` are skipped during the apply phase, and
-   * `errors` are surfaced in the tool result. Default: no blocking.
-   */
-  protected preflightBatch(
-    _resolvedKeys: Array<{ key: string; value: number | string }>,
-    _part: string,
-  ): { errors: string[]; blockedKeys: Set<string> } {
-    return { errors: [], blockedKeys: new Set() };
-  }
-
-  /** Override to return advisory warnings after setParameters has applied. */
-  protected validateAfterSet(
-    _resolvedKeys: Array<{ key: string; value: number | string }>,
-    _part: string,
-  ): string[] {
-    return [];
-  }
-
-  getState(section?: string): ToolResult {
-    return textResult(this.state.format(section));
+  getState(_section?: string): ToolResult {
+    return textResult(
+      `${this.model.info.displayName} does not implement get_current_state. ` +
+      "The agent owns its memory of what it set.",
+    );
   }
 
   async loadProgram(bank: number, slot: number): Promise<ToolResult> {
