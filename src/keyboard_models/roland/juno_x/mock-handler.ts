@@ -7,13 +7,14 @@
 
 import type { MidiMessage, MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
-import { parseDT1, parseRQ1, buildDT1, addAddresses, decodeRolandSize } from "../../../shared/roland-dt1.js";
-import { JUNO_X_MODEL_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
+import { parseDT1, parseRQ1, buildDT1, addAddresses, decodeRolandSize, packNibbles } from "../../../shared/roland-dt1.js";
+import { JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
 import { createAnalogSynthParams } from "./engines/analog-synth.js";
 import { createZCoreParams } from "./engines/zcore.js";
 import { createJunoXModelParams } from "./engines/juno-x-model.js";
 import { createRDPianoParams } from "./engines/rd-piano.js";
 import { createSceneParams } from "./scene-params.js";
+import { createParameterMap } from "./midi-map.js";
 
 // ── Internal part state ──
 
@@ -125,6 +126,7 @@ export function createJunoXMockHandler(): MockHandler {
   const ccLookup: Map<number, string> = buildCcLookup();
   const engineCcLookups = buildEngineCcLookups();
   const sysexLookup: Map<string, string> = buildSysexLookup();
+  const paramMap = createParameterMap();
 
   function initParts(lowerChannel: number, upperChannel: number): void {
     channels = [lowerChannel, upperChannel, 2, 3, 4];
@@ -297,6 +299,48 @@ export function createJunoXMockHandler(): MockHandler {
     return { log: `DT1: ${label} = ${data.join(",")} (not routed)` };
   }
 
+  function handleUIParam(name: string, value: number | string, channel: number): MockHandlerResult {
+    const found = paramMap.findParam(name);
+    if (!found) {
+      return { log: `UI: unknown param "${name}"` };
+    }
+
+    const midiValue = paramMap.resolveValue(found.param, value);
+
+    // SysEx-addressed param → encode as DT1, route through own onMIDI to update state.
+    if (found.param.sysexAddress !== undefined) {
+      const partIdx = Math.max(0, channel | 0);
+      let fullAddress: number[];
+      if (found.param.perPart) {
+        const partOffset = SCENE_PART_OFFSETS[partIdx] ?? SCENE_PART_OFFSETS[0];
+        fullAddress = addAddresses(addAddresses(SCENE_BASE, partOffset), found.param.sysexAddress);
+      } else {
+        fullAddress = addAddresses(SCENE_BASE, found.param.sysexAddress);
+      }
+      const sysexSize = found.param.sysexSize ?? 1;
+      const data = sysexSize > 1 ? packNibbles(midiValue, sysexSize * 2) : [midiValue];
+      const dt1 = buildDT1(JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, fullAddress, data);
+      const inner = handleSysEx(dt1);
+      return {
+        ...inner,
+        sysexOut: [dt1],
+        log: `UI: ${found.param.name} = ${midiValue} → DT1 @ ${addrKey(fullAddress)}`,
+      };
+    }
+
+    // CC-mapped param → emit CC, route through own onMIDI to update state.
+    if (found.param.cc !== undefined) {
+      const inner = handleCC(found.param.cc, midiValue, channel);
+      return {
+        ...inner,
+        ccOut: [{ controller: found.param.cc, value: midiValue, channel }],
+        log: `UI: ${found.param.name} = ${midiValue} → CC${found.param.cc} (ch${channel})`,
+      };
+    }
+
+    return { log: `UI: ${found.param.name} has no transport address (no sysexAddress or cc)` };
+  }
+
   // ── MockHandler implementation ──
 
   const handler: MockHandler = {
@@ -313,6 +357,10 @@ export function createJunoXMockHandler(): MockHandler {
         case "sysex":
           return handleSysEx(msg.bytes);
       }
+    },
+
+    onUIParam(name: string, value: number | string, channel?: number): MockHandlerResult {
+      return handleUIParam(name, value, channel ?? 0);
     },
 
     getFullState(_includeInventory: boolean): Record<string, any> {
@@ -339,6 +387,10 @@ export class JunoXMockHandler implements MockHandler {
 
   onMIDI(msg: MidiMessage): MockHandlerResult {
     return this.inner.onMIDI(msg);
+  }
+
+  onUIParam(name: string, value: number | string, channel?: number): MockHandlerResult {
+    return this.inner.onUIParam!(name, value, channel);
   }
 
   getFullState(includeInventory: boolean): Record<string, any> {
