@@ -67,27 +67,6 @@ Design questions:
 - Discoverability: keyboard accelerators are fine for power users but the existing `backup` button is the only signal for new operators that the action exists. Whatever replaces it has to be at least as discoverable.
 - Visual: the existing `.console__btn` is a compact graphite button — preserve that idiom or rethink in light of the new tabbed layout.
 
-### 20. Drop StateManager / shadow / disabled-section preflight (stateless-MCP pivot, PR A)
-
-**Status:** Ready to plan.
-
-Pivot the MCP from "shadow what we sent + lean on it for preflight rules" to "the MCP is stateless; the agent owns its memory of what it sent." Concrete demolition:
-
-- Remove `src/shared/parameter-state.ts` (`GenericParameterState`).
-- Remove `src/keyboard_models/nord/electro_5d/state-manager.ts` (`NordElectro5DState` with preset-drawbar routing).
-- Remove `src/keyboard_models/nord/electro_5d/validation.ts`'s `preflightDisabledSections` and the `preflightBatch` override on `NordElectro5DDevice`. Real Nord hw silently no-ops on disabled-section CCs anyway, so the strict block was always belt-and-suspenders. Keep `validateParameterBatch` (the advisory warnings) — it's a pure function over the incoming batch, no state needed.
-- Remove the `state` field and `set/get/reset/format/getBySection/getAll` plumbing from `KeyboardDevice` / `BaseKeyboardDevice` — the device no longer keeps a per-key cache.
-- `setParameters` loses its `prev → new` diff in the result text; just show the new value.
-- `get_current_state` becomes per-model:
-  - **Nord:** return "Nord MIDI is one-way — `get_current_state` is not supported on this model. The agent owns its memory of what it set."
-  - **Prophet-6:** same as Nord (one-way via CC; no implemented query path).
-  - **JUNO-X:** stub now ("not yet implemented — see PR B"), real implementation lands in #21.
-- Update each model's `agentSystemPrompt` to tell the agent: track your own changes; do not assume `get_current_state` returns ground truth on Nord/Prophet-6.
-- Delete the now-meaningless tests: `tests/unit/nord-electro-5d/disabled-section-warnings.test.ts` (the blocking half of it), `tests/unit/nord-electro-5d/blocked-warning-filter.test.ts`, `tests/e2e/get-state.test.ts` (rewrite or delete — depends on shadow staying populated).
-- Update `tests/e2e/multi-model.test.ts` to expect the new per-model `get_current_state` behavior.
-
-Out of scope: the JUNO-X RQ1 implementation (#21).
-
 ### 21. JUNO-X get_current_state via Roland RQ1 (stateless-MCP pivot, PR B)
 
 **Status:** Needs brainstorming — depends on #20 landing first.

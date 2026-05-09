@@ -51,17 +51,6 @@ export interface ParameterMap {
   isPerPart(key: string): boolean;
 }
 
-// ── State manager ──
-
-export interface StateManager {
-  set(paramKey: string, midiValue: number, part?: string): void;
-  get(paramKey: string, part?: string): number | undefined;
-  getAll(part?: string): Record<string, number>;
-  getBySection(section: string, part?: string): Record<string, number>;
-  reset(): void;
-  format(section?: string): string;
-}
-
 // ── Optional capabilities ──
 
 export interface BackupCapability {

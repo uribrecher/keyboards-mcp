@@ -62,17 +62,21 @@ describe("E2E: three concurrent mocks (plan #6)", { concurrency: 1, skip: !!proc
   it("targeted set_parameters never leaks across devices", async () => {
     if (!trio) throw new Error("harness missing");
 
-    await trio.callTool("set_parameters", { device: 1, parameters: [{ name: "drawbar_1", value: 8 }] });
-    await trio.callTool("set_parameters", { device: 2, parameters: [{ name: "as_env_attack", value: 100 }] });
-    await trio.callTool("set_parameters", { device: 3, parameters: [{ name: "osc1_freq", value: 60 }] });
+    // Each set_parameters call surfaces only the param it set on its target
+    // device; the cross-device check that used to read shadow state via
+    // get_current_state is no longer meaningful (MCP is stateless on params).
+    const r1 = await trio.callTool("set_parameters", { device: 1, parameters: [{ name: "drawbar_1", value: 8 }] });
+    assert.ok(!r1.isError);
+    assert.match(r1.content[0].text, /Drawbar 1/);
+    assert.doesNotMatch(r1.content[0].text, /Osc 1 Freq/);
 
-    const s1 = await trio.callTool("get_current_state", { device: 1 });
-    assert.match(s1.content[0].text, /Drawbar 1/);
-    assert.doesNotMatch(s1.content[0].text, /Osc 1 Freq/);
+    const r2 = await trio.callTool("set_parameters", { device: 2, parameters: [{ name: "as_env_attack", value: 100 }] });
+    assert.ok(!r2.isError);
 
-    const s3 = await trio.callTool("get_current_state", { device: 3 });
-    assert.match(s3.content[0].text, /Osc 1 Freq/);
-    assert.doesNotMatch(s3.content[0].text, /Drawbar 1/);
+    const r3 = await trio.callTool("set_parameters", { device: 3, parameters: [{ name: "osc1_freq", value: 60 }] });
+    assert.ok(!r3.isError);
+    assert.match(r3.content[0].text, /Osc 1 Freq/);
+    assert.doesNotMatch(r3.content[0].text, /Drawbar 1/);
   });
 
   it("disconnect one device — others stay live with stable indices", async () => {
