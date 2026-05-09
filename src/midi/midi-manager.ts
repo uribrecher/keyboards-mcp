@@ -52,6 +52,7 @@ export class MidiManager implements MidiConnection {
   private mockWs: WebSocket | null = null;
   private onCCCallback: ((msg: { controller: number; value: number; channel: number }) => void) | null = null;
   private onProgramChangeCallback: ((msg: { number: number; channel: number }) => void) | null = null;
+  private onSysExCallbacks: Array<(bytes: number[]) => void> = [];
   private onMockDisconnectCallback: (() => void) | null = null;
   private onMockLabelCallback: ((label: string) => void) | null = null;
   private channel: Channel = 0;
@@ -213,9 +214,10 @@ export class MidiManager implements MidiConnection {
     this.setOnCC((msg) => callback(msg.controller, msg.value, msg.channel));
   }
 
-  /** MidiConnection interface: register a SysEx listener (stub — requires input port) */
-  onSysEx(_callback: (bytes: number[]) => void): void {
-    // SysEx input listening not yet implemented — requires input port handling
+  /** MidiConnection interface: register a SysEx listener.
+   *  Fires for every SysEx received on the connected input port. */
+  onSysEx(callback: (bytes: number[]) => void): void {
+    this.onSysExCallbacks.push(callback);
   }
 
   setOnCC(callback: (msg: { controller: number; value: number; channel: number }) => void): void {
@@ -262,20 +264,23 @@ export class MidiManager implements MidiConnection {
     this.connectedInputPortName = targetPort.name;
 
     // Set up message forwarding and callbacks
-    const messageTypes = ["noteon", "noteoff", "poly aftertouch", "cc", "program", "channel aftertouch", "pitch"] as const;
+    const messageTypes = ["noteon", "noteoff", "poly aftertouch", "cc", "program", "channel aftertouch", "pitch", "sysex"] as const;
 
     for (const type of messageTypes) {
       this.input.on(type as any, (msg: any) => {
-        // Forward to mock device if connected
+        // Forward to shadow if connected (the bridge half)
         if (this.forwardOutput) {
           try { this.forwardOutput.send(type as any, msg); } catch {}
         }
 
-        // Fire callbacks
+        // Fire MCP-side callbacks (the MCP-listen half)
         if (type === "cc" && this.onCCCallback) {
           this.onCCCallback(msg);
         } else if (type === "program" && this.onProgramChangeCallback) {
           this.onProgramChangeCallback(msg);
+        } else if (type === "sysex") {
+          const bytes: number[] = [...(msg.bytes ?? [])];
+          for (const cb of this.onSysExCallbacks) cb(bytes);
         }
       });
     }
