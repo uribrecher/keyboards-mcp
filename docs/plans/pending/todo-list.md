@@ -150,3 +150,23 @@ In other words, **routing decisions live in the engine**, keyed off the source o
 
 Once a real external MIDI source can also drive the mock (hw + mock pair via a bridge — todo #22 territory), getting the routing wrong becomes a hard-to-debug runtime feedback loop. Documenting the trap here means the next implementer designs around it instead of discovering it the hard way.
 
+### 25. WS-mode SysEx receive — second WebSocket lane for outgoing MIDI
+
+**Status:** Needs design.
+
+#21 added a virtual MIDI Out port on every model mock; #22 wired the MCP-side real-MIDI receive path. CI/Docker mode (where `MOCK_WS_URL` is set and real MIDI is unavailable) currently has no symmetric receive path — `WsMidiConnection.onSysEx` is still a no-op.
+
+To close that gap, mirror the real-MIDI approach over WebSockets. The user's directive from the #22 brainstorm (paraphrased): *similar to the output direction's env var, we can have an env var that picks real MIDI vs WS for receive.*
+
+Scope:
+- **MockEngine: second WS server.** Per the "port for port" decision recorded in earlier #21 brainstorm — each MIDI direction maps to its own WS port. Existing WS keeps its mixed role (UI state + UI commands + MCP status); new WS is dedicated to outgoing-from-mock MIDI events. On every `MockHandlerResult.sysexOut`, broadcast `{type:"sysex", bytes}` only on the new server.
+- **mock-registry**: add `wsOutPort` field alongside the existing `wsPort`.
+- **MCB manifest**: surface `primary.wsOutPort` from the mock-registry entry.
+- **`WsMidiConnection`**: take a second URL; listen there for `{type:"sysex"}`; fire `onSysEx`.
+- **`connect.ts`**: plumb `manifest.primary.wsOutPort` into the WS-mode `WsMidiConnection.connect` call. Add `MOCK_WS_OUT_URL` env var for direct-WS-mode usage in tests.
+- **CI integration test** for RQ1 round-trip in WS mode.
+
+Out of scope (separate todo if needed): the receive path on real hardware over a *bridge* (e.g. someone wants to listen for DT1 via a bridge tee instead of direct connection). Today's bridges are one-way (master out → shadow in); making them bidirectional or adding a separate input bridge is its own design work.
+
+Useful prior art: `src/midi/ws-midi-connection.ts` (existing send-only WS impl), `src/mock-runner/engine.ts` (existing WS server + virtual MIDI Out fan-out from #21), `tests/helpers/test-harness.ts` (CI/Docker WS-mode infrastructure).
+
