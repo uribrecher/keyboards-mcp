@@ -48,7 +48,7 @@ The **midi-connections-broker (MCB)** is a separate long-running process that ow
 | `src/keyboard_models/` | Pluggable keyboard models (`<manufacturer>/<model>/`) |
 | `src/midi/` | MIDI I/O manager (implements MidiConnection) |
 | `src/mcb/` | midi-connections-broker — lease registry, session manager, HTTP-over-UDS API |
-| `src/mock-runner/` | Thin Electron mock engine — delegates all logic to model's MockHandler |
+| `src/mock-runner/` | Thin Electron mock engine — virtual MIDI In/Out + WS, source-aware routing; delegates all model logic to `MockHandler` (see [docs/mock_runner.md](docs/mock_runner.md#engine-and-handler--runtime-contract)) |
 | `docs/plans/` | Implementation plans (numbered by execution order) |
 
 ### Adding a new keyboard model
@@ -115,7 +115,7 @@ Once connected, the following tools are available:
 | `disconnect_from_keyboard` | Disconnect from the keyboard |
 | `is_connected` | Check connection status |
 | `set_parameters` | Change one or more parameters by name and value |
-| `get_current_state` | Get all current parameter values |
+| `get_current_state` | Read current parameter values from the device. Per-model: Nord and Prophet-6 return "not supported" (one-way MIDI); JUNO-X uses Roland RQ1 to query the device live for scene-effect sections (chorus/delay/reverb/drive). |
 | `list_parameters` | List all controllable parameters with ranges and labels |
 | `list_programs` | Browse stored programs from backup inventory (filter by name or bank) |
 | `list_songs` | Browse set list songs from backup inventory (filter by name or bank) |

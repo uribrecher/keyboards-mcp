@@ -154,11 +154,188 @@ Tests use this via `tests/helpers/mock-process.ts` (headless spawn + WebSocket a
 |---|---|
 | `src/mock-runner/main.ts` | Electron main — owns tabs, engines, file menu, IPC |
 | `src/mock-runner/cli.ts` | Headless entry point |
-| `src/mock-runner/engine.ts` | `MockEngine` — MIDI virtual port + WebSocket server + broadcast |
+| `src/mock-runner/engine.ts` | `MockEngine` — MIDI virtual ports + WebSocket server + broadcast + source-aware routing |
 | `src/mock-runner/preload.cjs` | Exposes `mockRunnerAPI` to the shell |
 | `src/mock-runner/shell/index.html` | Tab bar, slot, console, backup-picker modal |
 | `src/mock-runner/shell/app.js` | Tab routing, chat console, backup flow, dirty/title sync |
 | `src/mock-runner/shell/chooser.html` | Model picker iframe |
 | `src/shared/mockrack-format.ts` | `.mockrack` schema, parse, atomic write |
-| `src/keyboard_models/<mfr>/<model>/mock-handler.ts` | Per-model state, MIDI handling, `getFullState` / `setFullState` |
+| `src/keyboard_models/<mfr>/<model>/mock-handler.ts` | Per-model state, MIDI handling, `onUIParam`, `getFullState` / `setFullState` |
 | `src/keyboard_models/<mfr>/<model>/web/` | Per-model UI loaded into the tab iframe |
+
+## Engine and handler — runtime contract
+
+The mock runner has two collaborators: a **MockEngine** (transport) and a per-model **MockHandler** (logic). Knowing where the boundary is — and why the routing has the shape it does — saves a lot of head-scratching when a feature crosses both.
+
+### Topology
+
+Each tab spawns one `MockEngine` with one `MockHandler`. The engine owns transport; the handler owns model semantics.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                         MockEngine (transport)                         │
+│   - WebSocket server   - Virtual MIDI ports   - Source-aware routing   │
+│   - Broadcasts state   - Knows nothing about params or encoding        │
+└────────────────────────────────────────────────────────────────────────┘
+         ▲                                    ▲                ▲
+         │ WS                                 │ MIDI In        │ MIDI Out
+         │                                    │ (apps→device)  │ (device→apps)
+         ▼                                    ▼                ▼
+   ┌──────────┐  ┌──────────┐         ┌────────────┐    ┌────────────┐
+   │ UI client│  │MCP-status│         │ External   │    │ External   │
+   │ (browser)│  │ client   │         │ MIDI src   │    │ MIDI sink  │
+   └──────────┘  └──────────┘         │ (MCP, real │    │ (MCP, real │
+                                      │ kbd, bridge│    │ kbd, bridge│
+                                      └────────────┘    └────────────┘
+
+        engine ⇄ handler  (in-process method calls only)
+                 ▼
+   ┌────────────────────────────────────────────────────────────────┐
+   │                   MockHandler (model logic)                    │
+   │  - Owns ALL state: sceneGlobal, parts[], params, mode, etc.    │
+   │  - Knows the parameter map: name → CC / sysexAddress           │
+   │  - Knows encoding: chorus_switch=1 → DT1 bytes [F0..F7]        │
+   │  - Returns MockHandlerResult: { state?, log?, sysexOut?,       │
+   │                                  ccOut?, programOut? }         │
+   └────────────────────────────────────────────────────────────────┘
+```
+
+The engine creates two virtual MIDI ports per tab (the device's MIDI In, where apps write to it; the device's MIDI Out, where apps read from it) and one WebSocket server (UI clients + an MCP-status lane).
+
+### Responsibility split
+
+| Concern                                | Engine | Handler |
+|----------------------------------------|:------:|:-------:|
+| Virtual MIDI In / Out lifecycle        |   ✓    |         |
+| WebSocket server + clients             |   ✓    |         |
+| Decide *whether* to emit on MIDI Out   |   ✓    |         |
+| Broadcast state JSON to UI clients     |   ✓    |         |
+| Parameter map (name → CC / sysex addr) |        |    ✓    |
+| Encoding (value → wire bytes)          |        |    ✓    |
+| State updates (sceneGlobal, parts)     |        |    ✓    |
+| Decide *what* MIDI to emit             |        |    ✓    |
+
+The engine is a dumb pipe + router. The handler is the model brain.
+
+### Source-aware routing rule
+
+Every inbound MIDI message has a source: a UI WS command, or external MIDI on the virtual MIDI In. Routing is keyed off that source so a real external MIDI source can drive the mock without echoing back through bridges and looping.
+
+```
+┌─────────────────────────────────────────────┐
+│ engine.onMIDI(msg, source)                  │
+│                                             │
+│ result = handler.onMIDI(msg)                │
+│                                             │
+│ ALWAYS emit:  result.sysexOut/ccOut/        │
+│               programOut  →  MIDI Out       │
+│                                             │
+│ if source === "ui":                         │
+│     ALSO echo bare msg → MIDI Out           │
+│ else:  /* external — never echo */          │
+└─────────────────────────────────────────────┘
+```
+
+The asymmetry is deliberate. UI is a closed-loop source (the user already knows about it; echoing out so external listeners can mirror is the panel-knob analogue). External MIDI is the open loop — anything we emit could come back through a bridge and into our own MIDI In.
+
+### The four message flows
+
+#### Flow 1 — UI moves a CC slider
+
+```
+UI ──{type:"cc",controller,value,channel}──► engine.WS
+                                              │
+                                              ▼
+                              engine.onMIDI(msg, source="ui")
+                                              │
+                                              ├──► handler.onMIDI(msg)
+                                              │      └─ updates state, returns {state}
+                                              │
+                                              ├──► engine.broadcast(result.state) ──► UI
+                                              │
+                                              └──► midiOutput.send("cc", msg)  ──► External MIDI sink
+                                                   (UI-source echo: panel-knob analogue)
+```
+
+#### Flow 2 — UI clicks a SysEx-addressed param button
+
+For params with no CC (e.g. JUNO-X chorus mode, FX switches), the UI sends `{type:"param",name,value}`. The engine doesn't know how to encode named params, so it delegates:
+
+```
+UI ──{type:"param",name:"chorus_switch",value:1}──► engine.WS
+                                                     │
+                                                     ▼
+                                       engine calls handler.onUIParam("chorus_switch", 1)
+                                                     │
+                                                     ├─ handler looks up param in scene-params
+                                                     ├─ handler encodes value → DT1 bytes
+                                                     ├─ handler.onMIDI({sysex: DT1})    ◄── self-call
+                                                     │     └─ writes sceneGlobal[addr]=1
+                                                     │
+                                                     └─ returns { state, sysexOut: [DT1] }
+                                                     │
+                       ┌─────────────────────────────┘
+                       ▼
+       engine.broadcast(state) ──► UI       (state update visible)
+       midiOutput.send("sysex", DT1) ──► External MIDI sink
+                                         (handler-explicit emission)
+```
+
+The handler emits the encoded packet via `result.sysexOut`. The engine does NOT additionally echo the inbound `{type:"param"}` because there is no inbound MIDI message to echo — only a name+value pair.
+
+#### Flow 3 — External MIDI sends a CC (must NOT echo back)
+
+```
+External MIDI src ──CC──► virtual MIDI In ──► engine.midiInput.on("cc")
+                                              │
+                                              ▼
+                              engine.onMIDI(msg, source="external")
+                                              │
+                                              ├──► handler.onMIDI(msg)
+                                              │      └─ updates state, returns {state}
+                                              │
+                                              ├──► engine.broadcast(result.state) ──► UI
+                                              │
+                                              └──► [skipped] no echo to midiOutput
+                                                   ────── reason: feedback loop ────────
+                                                   if we echoed, a bridge that fans out
+                                                   would route this CC straight back into
+                                                   our own MIDI In → infinite loop
+```
+
+#### Flow 4 — External RQ1 SysEx (handler explicitly chooses to respond)
+
+```
+MCP RQ1 ──sysex──► virtual MIDI In ──► engine.midiInput.on("sysex")
+                                        │
+                                        ▼
+                        engine.onMIDI(msg, source="external")
+                                        │
+                                        ├──► handler.onMIDI(msg)
+                                        │      └─ recognizes RQ1 → reads sceneGlobal
+                                        │      └─ returns { sysexOut: [DT1 response], log }
+                                        │
+                                        └──► midiOutput.send("sysex", DT1) ──► External MIDI sink
+                                             (handler-explicit emission — always emitted
+                                              regardless of source; the handler decided
+                                              to respond, so it's not an echo)
+```
+
+### Tagged debug logs
+
+Every engine log line carries `[<actualPortName>:<label>]` and a direction tag — `WS-IN`, `MIDI-IN`, `MIDI-OUT`, or `MIDI-OUT (ui-echo)`. Sysex is summarized as `sysex N bytes [F0 41 10 .. F7]`. Two mocks sharing one stdout (e.g. a primary + shadow setup with a bridge) become readable: a UI click on the primary should produce a `MIDI-OUT` line on the primary and a corresponding `MIDI-IN` line on the shadow.
+
+### Why the complexity, and could it be simpler?
+
+The routing has three real cases that demand distinct handling:
+
+1. **Inbound mirror** — UI cc/program echoed to MIDI Out so external listeners see the "panel knob".
+2. **Handler-explicit emission** — handler decides to send (RQ1→DT1 reply, or onUIParam encoding a named param). Always emitted regardless of inbound source.
+3. **No echo for external source** — required to prevent feedback loops over bridges.
+
+A few simplifications have been considered and rejected:
+
+- **Push the source flag into `handler.onMIDI(msg, source)` and let the handler return everything to emit.** Cleaner engine (one rule: emit `result.{ccOut, sysexOut, programOut}`), but every model would have to repeat "if source is ui, also include msg in ccOut" — copy-paste tax across handlers, and the engine's panel-knob mirror is a generic concept, not a per-model decision.
+- **Synthesize a `MidiMessage` from `onUIParam` and route it back through `onMIDI(msg, "ui")`.** Would unify the `{type:"param"}` path with the cc/program echo path. But UI-source sysex would then auto-echo too, and we don't have a use case that needs that today — the symmetry is appealing but premature.
+
+The current design is "small set of explicit rules at one boundary". If a future feature pushes a fourth case in, that's the moment to revisit.
