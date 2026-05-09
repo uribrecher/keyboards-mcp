@@ -155,6 +155,44 @@ export function parseDT1(sysex: number[], modelId: RolandModelId): DT1Message | 
   return { address, data };
 }
 
+export interface RQ1Message {
+  address: number[];  // 4 bytes
+  size: number[];     // 4 bytes (nibble-encoded byte count)
+}
+
+/**
+ * Parse incoming SysEx bytes as a Roland RQ1 (Data Request 1) message.
+ * Returns address + size if valid RQ1 for the given model, null otherwise.
+ * Verifies: manufacturer=0x41, model ID match, command=0x11, checksum.
+ */
+export function parseRQ1(sysex: number[], modelId: RolandModelId): RQ1Message | null {
+  // F0 41 <dev> <modelId> 11 <addr:4> <size:4> <checksum> F7
+  const expectedLen = 1 + 1 + 1 + modelId.bytes.length + 1 + 4 + 4 + 1 + 1;
+  if (sysex.length !== expectedLen) return null;
+
+  let i = 0;
+  if (sysex[i++] !== SYSEX_START) return null;
+  if (sysex[i++] !== ROLAND_ID) return null;
+  i++; // device id — accept any
+  for (const b of modelId.bytes) {
+    if (sysex[i++] !== b) return null;
+  }
+  if (sysex[i++] !== CMD_RQ1) return null;
+
+  const address = sysex.slice(i, i + 4);
+  i += 4;
+  const size = sysex.slice(i, i + 4);
+  i += 4;
+
+  const receivedChecksum = sysex[i++];
+  if (sysex[i] !== SYSEX_END) return null;
+
+  const expectedChecksum = rolandChecksum([...address, ...size]);
+  if (receivedChecksum !== expectedChecksum) return null;
+
+  return { address, size };
+}
+
 /**
  * Add two 4-byte Roland addresses. Each byte wraps at 0x7F (& 0x7F).
  */
