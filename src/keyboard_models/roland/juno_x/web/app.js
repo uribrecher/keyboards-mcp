@@ -63,6 +63,58 @@ function handleState(data) {
     updateEngineSelect(partData);
     updatePartParams(partData);
   }
+
+  // Mirror scene-global FX switches into the UI button states. This is
+  // what makes a shadow mock's UI track the primary's panel changes when
+  // an external DT1 arrives over the bridge.
+  if (data.sceneGlobal) {
+    syncSceneGlobalUI(data.sceneGlobal);
+  }
+}
+
+// ── Scene-global FX state → UI button mirror ──
+
+const SCENE_FX_ADDR = {
+  chorus_switch: "01:50:00:00[0]",
+  delay_switch:  "01:51:00:00[0]",
+  reverb_switch: "01:52:00:00[0]",
+  drive_switch:  "01:53:00:00[0]",
+};
+
+function syncSceneGlobalUI(sceneGlobal) {
+  // Chorus mode buttons: switch off → OFF; switch on → first non-OFF
+  // button (mode disambiguation is blocked on todo #11 wiring chorus_mode).
+  const chorusOn = (sceneGlobal[SCENE_FX_ADDR.chorus_switch] ?? 0) > 0;
+  const chorusButtons = document.querySelectorAll("button.fx-chorus[data-mode]");
+  let alreadyActive = false;
+  for (const b of chorusButtons) {
+    if (b.classList.contains("active") && b.dataset.mode !== "OFF") {
+      alreadyActive = true;
+      break;
+    }
+  }
+  for (const b of chorusButtons) {
+    const isOff = b.dataset.mode === "OFF";
+    if (chorusOn) {
+      // Keep an existing non-OFF active button; otherwise activate "I".
+      if (alreadyActive) {
+        b.classList.toggle("active", b.classList.contains("active") && !isOff);
+      } else {
+        b.classList.toggle("active", b.dataset.mode === "I");
+      }
+    } else {
+      b.classList.toggle("active", isOff);
+    }
+  }
+
+  // FX toggle buttons (delay/reverb/drive)
+  for (const el of document.querySelectorAll("button.tog-btn[data-fx]")) {
+    const fx = el.dataset.fx;
+    const addrKey = SCENE_FX_ADDR[fx + "_switch"];
+    if (!addrKey) continue;
+    const isOn = (sceneGlobal[addrKey] ?? 0) > 0;
+    el.classList.toggle("active", isOn);
+  }
 }
 
 // ── Engine selector ──
