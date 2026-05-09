@@ -217,13 +217,22 @@ The engine creates two virtual MIDI ports per tab (the device's MIDI In, where a
 
 The engine is a dumb pipe + router. The handler is the model brain.
 
+### The dispatcher
+
+Two collaborators between the engine's edges and the handler:
+
+- The **WS handler** parses a UI command (`{type:"cc",...}`, `{type:"program",...}`, `{type:"sysex",...}`) and synthesizes a `MidiMessage` from it.
+- The **midiInput listeners** receive raw bytes on the virtual MIDI In and produce the same `MidiMessage` shape.
+
+Both feed `engine.dispatch(msg, source)` — a single private method on `MockEngine`. Despite the `MidiMessage` shape, a UI cc isn't really MIDI — it's a UI command synthesized into the same shape so the handler doesn't have to care about the source. The dispatcher is also where the source-aware emission rule lives. Note: `{type:"param"}` UI commands take a different path (see Flow 2 below) — they don't fit the `MidiMessage` shape and the handler must encode them.
+
 ### Source-aware routing rule
 
-Every inbound MIDI message has a source: a UI WS command, or external MIDI on the virtual MIDI In. Routing is keyed off that source so a real external MIDI source can drive the mock without echoing back through bridges and looping.
+Every dispatch carries a source tag: a UI WS command (`"ui"`), or external MIDI on the virtual MIDI In (`"external"`). Routing is keyed off that source so a real external MIDI source can drive the mock without echoing back through bridges and looping.
 
 ```
 ┌─────────────────────────────────────────────┐
-│ engine.onMIDI(msg, source)                  │
+│ engine.dispatch(msg, source)                │
 │                                             │
 │ result = handler.onMIDI(msg)                │
 │                                             │
@@ -243,10 +252,11 @@ The asymmetry is deliberate. UI is a closed-loop source (the user already knows 
 #### Flow 1 — UI moves a CC slider
 
 ```
-UI ──{type:"cc",controller,value,channel}──► engine.WS
-                                              │
+UI ──{type:"cc",controller,value,channel}──► engine.WS handler
+                                              │ parses JSON, synthesizes
+                                              │ MidiMessage {type:"cc",...}
                                               ▼
-                              engine.onMIDI(msg, source="ui")
+                              engine.dispatch(msg, source="ui")
                                               │
                                               ├──► handler.onMIDI(msg)
                                               │      └─ updates state, returns {state}
@@ -259,11 +269,12 @@ UI ──{type:"cc",controller,value,channel}──► engine.WS
 
 #### Flow 2 — UI clicks a SysEx-addressed param button
 
-For params with no CC (e.g. JUNO-X chorus mode, FX switches), the UI sends `{type:"param",name,value}`. The engine doesn't know how to encode named params, so it delegates:
+For params with no CC (e.g. JUNO-X chorus mode, FX switches), the UI sends `{type:"param",name,value}`. The engine doesn't know how to encode named params, so it bypasses `dispatch` entirely and calls a different handler entry point:
 
 ```
-UI ──{type:"param",name:"chorus_switch",value:1}──► engine.WS
-                                                     │
+UI ──{type:"param",name:"chorus_switch",value:1}──► engine.WS handler
+                                                     │ recognizes the "param" branch,
+                                                     │ skips dispatch, calls onUIParam
                                                      ▼
                                        engine calls handler.onUIParam("chorus_switch", 1)
                                                      │
@@ -281,15 +292,15 @@ UI ──{type:"param",name:"chorus_switch",value:1}──► engine.WS
                                          (handler-explicit emission)
 ```
 
-The handler emits the encoded packet via `result.sysexOut`. The engine does NOT additionally echo the inbound `{type:"param"}` because there is no inbound MIDI message to echo — only a name+value pair.
+The handler emits the encoded packet via `result.sysexOut`. The engine does NOT additionally echo the inbound `{type:"param"}` because there is no `MidiMessage` to echo — only a name+value pair, which the handler already turned into the DT1 it returned.
 
 #### Flow 3 — External MIDI sends a CC (must NOT echo back)
 
 ```
 External MIDI src ──CC──► virtual MIDI In ──► engine.midiInput.on("cc")
-                                              │
+                                              │ wraps as MidiMessage
                                               ▼
-                              engine.onMIDI(msg, source="external")
+                              engine.dispatch(msg, source="external")
                                               │
                                               ├──► handler.onMIDI(msg)
                                               │      └─ updates state, returns {state}
@@ -307,9 +318,9 @@ External MIDI src ──CC──► virtual MIDI In ──► engine.midiInput.o
 
 ```
 MCP RQ1 ──sysex──► virtual MIDI In ──► engine.midiInput.on("sysex")
-                                        │
+                                        │ wraps as MidiMessage
                                         ▼
-                        engine.onMIDI(msg, source="external")
+                        engine.dispatch(msg, source="external")
                                         │
                                         ├──► handler.onMIDI(msg)
                                         │      └─ recognizes RQ1 → reads sceneGlobal
