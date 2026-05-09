@@ -67,23 +67,6 @@ Design questions:
 - Discoverability: keyboard accelerators are fine for power users but the existing `backup` button is the only signal for new operators that the action exists. Whatever replaces it has to be at least as discoverable.
 - Visual: the existing `.console__btn` is a compact graphite button — preserve that idiom or rethink in light of the new tabbed layout.
 
-### 21. JUNO-X get_current_state via Roland RQ1 (stateless-MCP pivot, PR B)
-
-**Status:** Needs brainstorming — depends on #20 landing first.
-
-Implement JUNO-X's `get_current_state` by issuing a Roland Data Request 1 (RQ1) sysex to the device, awaiting the matching DT1 response, and rendering it as the tool result. Real JUNO-X hardware speaks this natively; the JUNO-X mock has to start emitting it too.
-
-Design surfaces to figure out before planning:
-
-- **Request/response correlation over MIDI.** RQ1 is async — the response comes back as a DT1 sysex on the device's MIDI input some milliseconds later. Need a request-id-or-address-keyed promise table, a timeout, and graceful handling of dropped responses. Probably belongs in `MidiConnection` as a generic `requestSysEx(req, matchFn, timeout)` helper, with the JUNO-X device using it.
-- **Address scoping.** RQ1 takes a (start address, size) pair. We probably want a small set of canonical reads — "current scene", "selected part tone", maybe a per-section reader. Decide whether `get_current_state` reads everything or a section.
-- **JUNO-X mock needs a MIDI _output_ port.** Today the mock receives MIDI in but doesn't emit any back; for the MCP to listen for RQ1 responses against the mock the same way it would against real hw, the mock has to expose a virtual MIDI output port (Roland RTPMidi virtual port) and write DT1 responses to it. The MCP-side input listener (`MidiManager.connectInput`) is already wired in `connect.ts` — we just need the mock to publish a port name and the MCB / connect path to plumb it through.
-- **Mock-side state source.** The JUNO-X mock has full state in its `MockHandler`. Wire RQ1 → look up the addressed bytes → emit DT1.
-- **Render.** DT1 bytes need to be decoded back to parameter values via the JUNO-X parameter map. Reuse the same encoding helpers used to send DT1 in the first place.
-- **Error paths.** Timeout: tool returns "no response from device — check that JUNO-X is connected and listening." Malformed response: tool returns "got a malformed DT1 — see logs." Don't fall back to a stale shadow (we don't have one any more — that's the point).
-
-Useful prior art in this repo: `src/shared/roland-dt1.ts` (DT1 encoder), `src/midi/midi-manager.ts` (connection + sysex send/receive), `src/keyboard_models/roland/juno_x/midi-map.ts`.
-
 ### 22. MCP-side receive plumbing for SysEx: connect semantics + bridge integration
 
 **Status:** Needs brainstorming.
