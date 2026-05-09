@@ -7,8 +7,7 @@
 
 import type { MidiMessage, MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
-import { parseDT1 } from "../../../shared/roland-dt1.js";
-import { addAddresses } from "../../../shared/roland-dt1.js";
+import { parseDT1, parseRQ1, buildDT1, addAddresses, unpackNibbles } from "../../../shared/roland-dt1.js";
 import { JUNO_X_MODEL_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
 import { createAnalogSynthParams } from "./engines/analog-synth.js";
 import { createZCoreParams } from "./engines/zcore.js";
@@ -234,6 +233,25 @@ export function createJunoXMockHandler(): MockHandler {
   }
 
   function handleSysEx(bytes: number[]): MockHandlerResult {
+    // Try RQ1 first — if it matches, respond with a DT1 carrying the
+    // requested bytes from our scene state. Real JUNO-X hardware does the
+    // same; we mirror that so the MCP can use get_current_state once the
+    // receive plumbing lands (todo #22) and getState is wired (todo #23).
+    const rq1 = parseRQ1(bytes, JUNO_X_MODEL_ID);
+    if (rq1) {
+      const sizeBytes = unpackNibbles(rq1.size);
+      const baseKey = addrKey(rq1.address);
+      const data: number[] = [];
+      for (let i = 0; i < sizeBytes; i++) {
+        data.push(sceneGlobal[`${baseKey}[${i}]`] ?? 0);
+      }
+      const dt1Response = buildDT1(JUNO_X_MODEL_ID, 0x10, rq1.address, data);
+      return {
+        log: `RQ1: addr=${baseKey} size=${sizeBytes} → DT1 ${data.join(",")}`,
+        sysexOut: [dt1Response],
+      };
+    }
+
     const dt1 = parseDT1(bytes, JUNO_X_MODEL_ID);
     if (!dt1) {
       return { log: `SysEx (${bytes.length} bytes) — not a JUNO-X DT1, ignored` };
