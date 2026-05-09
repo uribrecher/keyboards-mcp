@@ -8,6 +8,8 @@
  * Default device ID: 0x10 (broadcast: 0x7F)
  */
 
+import type { MidiConnection } from "./midi-connection.js";
+
 // Internal constants
 const SYSEX_START = 0xF0;
 const SYSEX_END = 0xF7;
@@ -219,4 +221,60 @@ export function parseRQ1(sysex: number[], modelId: RolandModelId): RQ1Message | 
  */
 export function addAddresses(base: number[], offset: number[]): number[] {
   return base.map((b, i) => (b + (offset[i] ?? 0)) & 0x7F);
+}
+
+/**
+ * Send a Roland RQ1 SysEx and await the matching DT1 response.
+ *
+ * Resolves with the DT1 data bytes when a DT1 arrives whose address equals
+ * `address`. Rejects with a timeout error if no matching DT1 arrives within
+ * `timeoutMs`. Non-DT1 SysEx and DT1s with mismatched addresses are
+ * silently ignored — they may be unrelated traffic on the bus.
+ *
+ * The one-shot `onSysEx` listener registered here is NOT explicitly
+ * unsubscribed — the {@link MidiConnection} interface doesn't expose an
+ * unsubscribe today. The listener checks a `resolved` flag and no-ops
+ * after the promise settles, so leftover registrations are harmless. If
+ * a future high-frequency caller materializes, extend MidiConnection
+ * with subscribe/unsubscribe semantics — but YAGNI for now.
+ */
+export async function requestRolandValue(
+  conn: MidiConnection,
+  modelId: RolandModelId,
+  deviceId: number,
+  address: number[],
+  size: number,
+  timeoutMs: number,
+): Promise<number[]> {
+  return new Promise<number[]>((resolve, reject) => {
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      reject(new Error(
+        `requestRolandValue: timeout after ${timeoutMs}ms ` +
+        `(addr=${address.map((b) => b.toString(16).padStart(2, "0")).join(":")})`,
+      ));
+    }, timeoutMs);
+
+    conn.onSysEx((bytes) => {
+      if (resolved) return;
+      const dt1 = parseDT1(bytes, modelId);
+      if (!dt1) return;
+      if (!dt1.address.every((b, i) => b === address[i])) return;
+      resolved = true;
+      clearTimeout(timer);
+      resolve(dt1.data);
+    });
+
+    // Encode size as 4 x 7-bit bytes (MSB-first), matching the wire
+    // format produced by buildRQ1.
+    const sizeBytes = [
+      (size >> 21) & 0x7F,
+      (size >> 14) & 0x7F,
+      (size >> 7) & 0x7F,
+      size & 0x7F,
+    ];
+    conn.sendSysEx(buildRQ1(modelId, deviceId, address, sizeBytes));
+  });
 }
