@@ -42,4 +42,8 @@ contextBridge.exposeInMainWorld("mockRunnerAPI", {
   onMountTab: (cb) => ipcRenderer.on("file:mount-tab", (_e, payload) => cb(payload)),
   onEventLog: (cb) => ipcRenderer.on("menu:event-log", (_e, payload) => cb(payload)),
   onEventLogClear: (cb) => ipcRenderer.on("menu:event-log-clear", () => cb()),
+
+  // Todo #5 — per-tab MIDI traffic forwarded from each tab's MockEngine.
+  // Payload shape: { tabId, ts, direction, kind, ...kindSpecificFields }.
+  onMidiEvent: (cb) => ipcRenderer.on("midi:event", (_e, payload) => cb(payload)),
 });

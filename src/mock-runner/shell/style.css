@@ -411,16 +411,17 @@ body.bay--resizing iframe { pointer-events: none; }
     radial-gradient(ellipse 80% 60% at 50% 0%, rgba(255,255,255,0.025) 0%, transparent 60%),
     var(--c-shell);
   overflow: hidden;
-  /* tiny inset so iframe content has visible edge against chassis */
-  padding: 6px 6px 6px 8px;
+  /* tiny inset so iframe content has visible edge against chassis.
+   * Bottom is taller to clear the MIDI status strip pinned below. */
+  padding: 6px 6px 30px 8px;
 }
 
 .slot iframe {
   position: absolute;
-  inset: 6px 6px 6px 8px;       /* match .slot padding */
+  inset: 6px 6px 30px 8px;      /* match .slot padding */
   display: block;
   width: calc(100% - 14px);
-  height: calc(100% - 12px);
+  height: calc(100% - 36px);
   border: 1px solid var(--c-edge);
   background: #000;
   border-radius: 2px;
@@ -457,6 +458,123 @@ body.bay--resizing iframe { pointer-events: none; }
 .slot__empty-msg {
   padding: 18px 0;
   letter-spacing: 0.6em;
+}
+
+/* ═════════════ Slot MIDI strip ═════════════
+ *
+ * Pinned-bottom thin status bar inside the slot. Single line, latest
+ * event only. Phosphor-amber for inbound (◂ IN), green for outbound
+ * (▸ OUT) — leaning on the chassis lamp palette so the strip reads as
+ * a piece of the rack rather than chrome.
+ */
+
+.slot__midi {
+  position: absolute;
+  left: 8px;
+  right: 6px;
+  bottom: 6px;
+  height: 22px;
+  display: grid;
+  grid-template-columns: 14px 36px 88px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.015) 0%, rgba(0,0,0,0.35) 100%),
+    var(--c-chassis-low);
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  font-family: "IBM Plex Mono", "Roboto Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--c-text-dim);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.025),
+    inset 0 0 0 1px rgba(0,0,0,0.4);
+  /* Subtle horizontal scan-line to read as a small instrument readout. */
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.02) 0px,
+      rgba(255,255,255,0.02) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    linear-gradient(180deg, rgba(255,255,255,0.015) 0%, rgba(0,0,0,0.35) 100%);
+  background-color: var(--c-chassis-low);
+  transition: color .25s ease;
+}
+
+.slot__midi-glyph {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  text-align: center;
+  color: var(--c-text-faint);
+  text-shadow: 0 0 4px transparent;
+  transition: color .2s, text-shadow .2s;
+}
+
+.slot__midi-dir {
+  letter-spacing: 0.15em;
+  color: var(--c-text-faint);
+  text-transform: uppercase;
+  transition: color .2s;
+}
+
+.slot__midi-time {
+  color: var(--c-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.slot__midi-body {
+  color: var(--c-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inbound: amber phosphor (matches the chassis lamp). */
+.slot__midi[data-state="in"] .slot__midi-glyph,
+.slot__midi[data-state="in"] .slot__midi-dir {
+  color: var(--c-amber);
+  text-shadow: 0 0 6px var(--c-amber-glow);
+}
+.slot__midi[data-state="in"] .slot__midi-body {
+  color: var(--c-text);
+}
+
+/* Outbound: green (the rack's "transmit" lamp tone). */
+.slot__midi[data-state="out"] .slot__midi-glyph,
+.slot__midi[data-state="out"] .slot__midi-dir {
+  color: var(--c-green);
+  text-shadow: 0 0 6px var(--c-green-glow);
+}
+.slot__midi[data-state="out"] .slot__midi-body {
+  color: var(--c-text);
+}
+
+/* New-event flash — driven by toggling .slot__midi--flash from JS. */
+.slot__midi--flash .slot__midi-body {
+  animation: slot-midi-flash .42s ease-out;
+}
+
+@keyframes slot-midi-flash {
+  0%   { color: var(--c-text-bright); text-shadow: 0 0 6px rgba(255,255,255,0.18); }
+  60%  { color: var(--c-text); text-shadow: none; }
+  100% { color: var(--c-text); text-shadow: none; }
+}
+
+/* Stale: after ~2.5s with no new events, dim the line so it doesn't
+ * read as live forever. JS toggles the .slot__midi--stale class. */
+.slot__midi--stale .slot__midi-body,
+.slot__midi--stale .slot__midi-time {
+  opacity: 0.55;
+}
+.slot__midi--stale .slot__midi-glyph,
+.slot__midi--stale .slot__midi-dir {
+  opacity: 0.6;
 }
 
 /* ═════════════ Console (chat) ═════════════ */

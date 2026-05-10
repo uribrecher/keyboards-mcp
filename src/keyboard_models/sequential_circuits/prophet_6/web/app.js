@@ -116,15 +116,14 @@ function updateUI(state) {
     }
   }
 
-  // Last change flash
+  // Last change flash on the row — the textual readout moved to the
+  // mock-runner shell (todo #5).
   if (state.lastChange) {
     const el = paramElements[state.lastChange.key];
     if (el) {
       el.row.classList.add("flash");
       setTimeout(() => el.row.classList.remove("flash"), 300);
     }
-    document.getElementById("last-change").textContent =
-      `${state.lastChange.name} = ${state.lastChange.label}`;
   }
 }
 

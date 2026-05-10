@@ -561,31 +561,6 @@ input.vslider[type="range"]::-moz-range-thumb {
   letter-spacing: 1px;
 }
 
-/* ── Footer ── */
-
-.footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: rgba(0,0,0,0.2);
-  border-radius: 5px;
-}
-
-.last-change-label {
-  font-size: 9px;
-  color: var(--text-dim);
-  letter-spacing: 1px;
-  flex-shrink: 0;
-}
-
-.last-change {
-  font-size: 10px;
-  color: rgba(255,255,255,0.4);
-  letter-spacing: 0.5px;
-  font-family: 'Courier New', monospace;
-}
-
 /* ── Flash animation for changed params ── */
 
 @keyframes flash {
