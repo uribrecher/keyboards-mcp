@@ -22,7 +22,10 @@ describe("JUNO-X mock handler", () => {
     it("getFullState has expected top-level keys", () => {
       const state = handler.getFullState(false);
       const keys = Object.keys(state).sort();
-      const expected = ["model", "part1", "part2", "part3", "part4", "part5", "scene", "sceneGlobal"].sort();
+      // `params` is the stage-3 name-keyed view of scene-global params
+      // (chorus_*, delay_*, etc.) — added alongside `sceneGlobal` for UIs
+      // that prefer the param domain over byte-level addr keys.
+      const expected = ["model", "params", "part1", "part2", "part3", "part4", "part5", "scene", "sceneGlobal"].sort();
       assert.deepStrictEqual(keys, expected);
     });
 

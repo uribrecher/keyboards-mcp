@@ -6,9 +6,10 @@
  */
 
 import type { MidiMessage, MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
+import type { ParamRef } from "../../../shared/midi-codec.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
-import { parseDT1, addAddresses } from "../../../shared/roland-dt1.js";
-import { JUNO_X_MODEL_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
+import { parseDT1, addAddresses, unpackNibbles } from "../../../shared/roland-dt1.js";
+import { JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
 import { createAnalogSynthParams } from "./engines/analog-synth.js";
 import { createZCoreParams } from "./engines/zcore.js";
 import { createJunoXModelParams } from "./engines/juno-x-model.js";
@@ -195,6 +196,9 @@ export function createJunoXMockHandler(): MockHandler {
       model: "Roland JUNO-X",
       scene: { ...currentScene },
       sceneGlobal: { ...sceneGlobal },
+      // Stage 3: name-keyed view of scene-global params (chorus_*, delay_*, etc.)
+      // for UIs that prefer the param domain over byte-level addr keys.
+      params: buildParamsView(),
       ...partsToState(),
     };
   }
@@ -296,45 +300,136 @@ export function createJunoXMockHandler(): MockHandler {
     return { log: `DT1: ${label} = ${data.join(",")} (not routed)` };
   }
 
-  function handleUIParam(name: string, value: number | string, channel: number): MockHandlerResult {
-    const found = codec.map.findParam(name);
-    if (!found) {
-      return { log: `UI: unknown param "${name}"` };
-    }
-
-    // 1-based part for the codec (channel is 0-based MIDI channel).
-    const part = channel + 1;
-    let messages;
-    try {
-      messages = codec.encodeParams([{ name: found.key, value, part }]);
-    } catch (err) {
-      return { log: `UI: ${found.param.name}: ${err instanceof Error ? err.message : String(err)}` };
-    }
-
-    // Apply each encoded message to internal state and collect emit packets.
+  /**
+   * Param-domain write. Routes each ref through the codec to derive the
+   * canonical wire bytes, then applies those bytes to internal state via
+   * the existing handleSysEx / handleCC paths so byte-keyed sceneGlobal /
+   * parts shapes stay consistent. The encoded packets are surfaced in
+   * ccOut/sysexOut so the engine can emit them on the device's MIDI Out
+   * (panel-knob analogue) — stage 4 will move that emission off the
+   * handler-result channel and onto the engine itself via codec.
+   */
+  function applySetParams(refs: ParamRef[]): MockHandlerResult {
     const ccOut: MockHandlerResult["ccOut"] = [];
     const sysexOut: number[][] = [];
-    let lastInner: MockHandlerResult = {};
-    for (const msg of messages) {
-      if (msg.type === "sysex") {
-        lastInner = handleSysEx(msg.bytes);
-        sysexOut.push(msg.bytes);
-      } else if (msg.type === "cc") {
-        const ch = msg.channel ?? channel;
-        lastInner = handleCC(msg.controller, msg.value, ch);
-        ccOut.push({ controller: msg.controller, value: msg.value, channel: ch });
-      } else if (msg.type === "program") {
-        lastInner = handleProgram(msg.number, msg.channel ?? channel);
+    let lastState: Record<string, any> | undefined;
+    const logLines: string[] = [];
+
+    for (const ref of refs) {
+      const found = codec.map.findParam(ref.name);
+      if (!found) {
+        logLines.push(`set: unknown param "${ref.name}"`);
+        continue;
       }
+      let messages;
+      try {
+        messages = codec.encodeParams([{ name: found.key, value: ref.value, part: ref.part }]);
+      } catch (err) {
+        logLines.push(`set: ${found.param.name}: ${err instanceof Error ? err.message : String(err)}`);
+        continue;
+      }
+      for (const msg of messages) {
+        let inner: MockHandlerResult = {};
+        if (msg.type === "sysex") {
+          inner = handleSysEx(msg.bytes);
+          sysexOut.push(msg.bytes);
+        } else if (msg.type === "cc") {
+          // Codec returns undefined channel for global params (contract:
+          // "use the connection's default"). On the mock side that maps to
+          // the configured lower channel — i.e. part 1's channel from init.
+          const ch = msg.channel ?? channels[0];
+          inner = handleCC(msg.controller, msg.value, ch);
+          ccOut.push({ controller: msg.controller, value: msg.value, channel: ch });
+        } else if (msg.type === "program") {
+          inner = handleProgram(msg.number, msg.channel ?? channels[0]);
+        }
+        if (inner.state) lastState = inner.state;
+      }
+      logLines.push(`set: ${found.param.name} = ${codec.formatValue(found.key, ref.value)}`);
     }
 
-    const result: MockHandlerResult = {
-      state: lastInner.state,
-      log: `UI: ${found.param.name} = ${codec.formatValue(found.key, value)}`,
-    };
+    const result: MockHandlerResult = {};
+    if (lastState) result.state = lastState;
+    if (logLines.length > 0) result.log = logLines.join("; ");
     if (sysexOut.length > 0) result.sysexOut = sysexOut;
     if (ccOut.length > 0) result.ccOut = ccOut;
     return result;
+  }
+
+  /**
+   * Param-domain read. Returns wire-byte values keyed by canonical param
+   * name. Reads from the byte-keyed sceneGlobal / parts state and runs
+   * each through `codec.decode` to recover the unpacked value.
+   */
+  function getParams(names: string[], part?: number): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const name of names) {
+      const found = codec.map.findParam(name);
+      if (!found) continue;
+      const param = found.param;
+      const partIdx = (part ?? 1) - 1;
+
+      if (param.sysexAddress) {
+        let fullAddr: number[];
+        if (param.perPart) {
+          const partOffset = SCENE_PART_OFFSETS[partIdx] ?? SCENE_PART_OFFSETS[0];
+          fullAddr = addAddresses(addAddresses(SCENE_BASE, partOffset), param.sysexAddress);
+        } else {
+          fullAddr = addAddresses(SCENE_BASE, param.sysexAddress);
+        }
+        const baseKey = addrKey(fullAddr);
+        const sysexSize = param.sysexSize ?? 1;
+        const data: number[] = [];
+        const stateMap = param.perPart ? parts[partIdx]?.sceneParams ?? {} : sceneGlobal;
+        for (let i = 0; i < sysexSize; i++) {
+          data.push(stateMap[`${baseKey}[${i}]`] ?? 0);
+        }
+        // Round-trip through codec.decode to recover the unpacked value.
+        const synth = codec.buildResponse(
+          { protocol: "roland-rq1", address: fullAddr, size: sysexSize, deviceId: JUNO_X_DEVICE_ID },
+          data,
+        );
+        const events = codec.decode(synth);
+        const ev = events.find(e => e.kind === "param" && e.name === found.key);
+        out[found.key] = ev && ev.kind === "param" ? ev.value : (data[0] ?? 0);
+      } else if (param.cc !== undefined) {
+        const partState = parts[partIdx];
+        out[found.key] = partState?.params.get(param.cc) ?? param.defaultValue;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Build the name-keyed `params` view of current state for the broadcast
+   * payload. UIs can read `data.params.<name>` instead of poking at
+   * byte-keyed `sceneGlobal[<addr>]`.
+   *
+   * Reads `sceneGlobal[<addr>]` directly — going through `codec.decode`
+   * here would walk the entire param map per param-key (decodeDt1ToParams
+   * iterates `map.params`), turning a single broadcast into O(N²) work.
+   * For multi-byte sysex params we use `unpackNibbles` directly; for
+   * single-byte params it's just the stored byte.
+   */
+  function buildParamsView(): Record<string, number> {
+    const view: Record<string, number> = {};
+    for (const [key, param] of Object.entries(codec.map.params)) {
+      if (param.perPart) continue;          // per-part values live under parts[N]
+      if (param.sysexAddress === undefined) continue; // CC-only globals don't apply
+      const fullAddr = addAddresses(SCENE_BASE, param.sysexAddress);
+      const baseKey = addrKey(fullAddr);
+      const sysexSize = param.sysexSize ?? 1;
+      if (sysexSize === 1) {
+        view[key] = sceneGlobal[`${baseKey}[0]`] ?? 0;
+      } else {
+        const bytes: number[] = [];
+        for (let i = 0; i < sysexSize * 2; i++) {
+          bytes.push(sceneGlobal[`${baseKey}[${i}]`] ?? 0);
+        }
+        view[key] = unpackNibbles(bytes);
+      }
+    }
+    return view;
   }
 
   // ── MockHandler implementation ──
@@ -355,8 +450,19 @@ export function createJunoXMockHandler(): MockHandler {
       }
     },
 
+    set_params(refs: ParamRef[]): MockHandlerResult {
+      return applySetParams(refs);
+    },
+
+    get_params(names: string[], part?: number): Record<string, number> {
+      return getParams(names, part);
+    },
+
+    /** @deprecated kept for engine-level WS backward compat — delegates to set_params. */
     onUIParam(name: string, value: number | string, channel?: number): MockHandlerResult {
-      return handleUIParam(name, value, channel ?? 0);
+      // Channel is 0-based MIDI channel; codec ParamRef.part is 1-based.
+      const part = (channel ?? 0) + 1;
+      return applySetParams([{ name, value, part }]);
     },
 
     getFullState(_includeInventory: boolean): Record<string, any> {
@@ -383,6 +489,14 @@ export class JunoXMockHandler implements MockHandler {
 
   onMIDI(msg: MidiMessage): MockHandlerResult {
     return this.inner.onMIDI(msg);
+  }
+
+  set_params(refs: ParamRef[]): MockHandlerResult {
+    return this.inner.set_params!(refs);
+  }
+
+  get_params(names: string[], part?: number): Record<string, number> {
+    return this.inner.get_params!(names, part);
   }
 
   onUIParam(name: string, value: number | string, channel?: number): MockHandlerResult {

@@ -130,13 +130,24 @@ export class MockEngine extends EventEmitter {
               this.dispatch({ type: "sysex", bytes: msg.bytes }, "ui");
             } else if (msg.type === "param") {
               console.log(`${this.tag()} WS-IN param ${msg.name}=${msg.value} ch=${msg.channel ?? 0}`);
-              // SysEx-addressed (or otherwise non-CC) param routed through the
-              // handler's onUIParam so the model encodes the name → MIDI bytes,
-              // applies state, and returns the encoded packet for the engine
-              // to emit on the device's MIDI Out (panel-knob analogue).
+              // Legacy alias for setParam — kept for backward compat with UIs
+              // that haven't migrated. New code should send {type:"setParam"}.
               const result = this.handler.onUIParam
                 ? this.handler.onUIParam(msg.name, msg.value, msg.channel ?? 0)
                 : { log: `UI: ${msg.name} = ${msg.value} (handler has no onUIParam)` };
+              this.applyHandlerResult(result, null);
+            } else if (msg.type === "setParam") {
+              console.log(`${this.tag()} WS-IN setParam ${msg.name}=${msg.value} part=${msg.part ?? 1}`);
+              // Stage 3 canonical path: UI talks param-domain to the mock.
+              // Handler updates internal state via set_params; the engine
+              // surfaces the encoded packets in the result so they reach
+              // MIDI Out (panel-knob analogue) — stage 4 will move this
+              // emission off the result channel and onto the engine.
+              const result = this.handler.set_params
+                ? this.handler.set_params([{ name: msg.name, value: msg.value, part: msg.part }])
+                : (this.handler.onUIParam
+                    ? this.handler.onUIParam(msg.name, msg.value, ((msg.part ?? 1) - 1))
+                    : { log: `UI: ${msg.name} = ${msg.value} (handler has no set_params or onUIParam)` });
               this.applyHandlerResult(result, null);
             }
           } catch { /* ignore */ }
