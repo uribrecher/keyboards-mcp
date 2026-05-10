@@ -259,9 +259,11 @@ export function createJunoXMockHandler(): MockHandler {
       };
     }
 
-    // For DT1, the codec tells us the param identity (name / part); we still
-    // parse the raw address+data here because state is keyed byte-level by
-    // address (stage 3 will re-key by name and drop this last raw parse).
+    // For DT1, parse the raw address+data inline — state is keyed byte-level
+    // by address, so we need the raw bytes to write into sceneGlobal /
+    // parts[idx].sceneParams. `sysexLookup` produces a human-readable label
+    // for the log line. Stage 3 will re-key state by param name and route
+    // the whole DT1 path through `codec.decode`, dropping this raw parse.
     const dt1 = parseDT1(bytes, JUNO_X_MODEL_ID);
     if (!dt1) {
       return { log: `SysEx (${bytes.length} bytes) — not a JUNO-X DT1, ignored` };
