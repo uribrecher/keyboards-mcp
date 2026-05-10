@@ -1,11 +1,26 @@
+/**
+ * JUNO-X mock-handler bytes-level read API used by the stage-4 engine
+ * to fulfill Roland RQ1 requests.
+ *
+ * Stage 4 moved RQ1 handling out of the mock and into the engine —
+ * the handler no longer sees RQ1 sysex. The engine now does:
+ *
+ *   codec.parseRequest(msg)  →  handler.read_bytes(addr, size)  →
+ *   codec.buildResponse(req, data)  →  emit on MIDI Out
+ *
+ * These tests verify `handler.read_bytes` for the same scenarios the
+ * old handler-driven RQ1 path used to cover. The codec round-trip is
+ * tested separately in `midi-codec.test.ts`.
+ */
+
 import { describe, it, beforeEach } from "node:test";
 import { strict as assert } from "node:assert";
 import { JunoXMockHandler } from "../../../src/keyboard_models/roland/juno_x/mock-handler.js";
 import { JUNO_X_MODEL_ID, SCENE_BASE } from "../../../src/keyboard_models/roland/juno_x/engines/engine-types.js";
-import { buildDT1, buildRQ1, parseDT1, addAddresses } from "../../../src/shared/roland-dt1.js";
+import { buildDT1, addAddresses } from "../../../src/shared/roland-dt1.js";
 
 const DEVICE_ID = 0x10;
-const CHORUS_SWITCH_OFFSET = [0x00, 0x50, 0x00, 0x00]; // see scene-params.ts
+const CHORUS_SWITCH_OFFSET = [0x00, 0x50, 0x00, 0x00];
 const CHORUS_SWITCH_ADDR = addAddresses(SCENE_BASE, CHORUS_SWITCH_OFFSET);
 
 let handler: JunoXMockHandler;
@@ -14,59 +29,43 @@ beforeEach(() => {
   handler.init(0, 1);
 });
 
-describe("JUNO-X mock RQ1 → DT1 round-trip", () => {
-  it("responds to RQ1 of chorus_switch with a DT1 carrying the stored byte", () => {
-    // Set chorus_switch via DT1 first.
+describe("JUNO-X mock read_bytes (stage-4 engine RQ1 fulfillment)", () => {
+  it("returns the byte stored by a prior DT1 write", () => {
     const setMsg = buildDT1(JUNO_X_MODEL_ID, DEVICE_ID, CHORUS_SWITCH_ADDR, [0x01]);
     handler.onMIDI({ type: "sysex", bytes: setMsg });
 
-    // Now issue RQ1 for the same address, size = 1 byte.
-    const reqMsg = buildRQ1(JUNO_X_MODEL_ID, DEVICE_ID, CHORUS_SWITCH_ADDR, [0x00, 0x00, 0x00, 0x01]);
-    const result = handler.onMIDI({ type: "sysex", bytes: reqMsg });
-
-    assert.ok(result.sysexOut, "expected sysexOut on the result");
-    assert.equal(result.sysexOut!.length, 1, "expected exactly one DT1 response");
-
-    const parsed = parseDT1(result.sysexOut![0], JUNO_X_MODEL_ID);
-    assert.ok(parsed, "response must parse as a DT1");
-    assert.deepStrictEqual(parsed!.address, CHORUS_SWITCH_ADDR);
-    assert.deepStrictEqual(parsed!.data, [0x01]);
+    const data = handler.read_bytes(CHORUS_SWITCH_ADDR, 1);
+    assert.deepStrictEqual(data, [0x01]);
   });
 
-  it("responds with zero bytes when the address is unset", () => {
-    const reqMsg = buildRQ1(JUNO_X_MODEL_ID, DEVICE_ID, CHORUS_SWITCH_ADDR, [0x00, 0x00, 0x00, 0x01]);
-    const result = handler.onMIDI({ type: "sysex", bytes: reqMsg });
-
-    assert.ok(result.sysexOut);
-    const parsed = parseDT1(result.sysexOut![0], JUNO_X_MODEL_ID);
-    assert.deepStrictEqual(parsed!.data, [0x00], "default byte for unset address is 0");
+  it("returns 0 for an unset address", () => {
+    const data = handler.read_bytes(CHORUS_SWITCH_ADDR, 1);
+    assert.deepStrictEqual(data, [0x00]);
   });
 
-  it("does not emit sysexOut for a DT1 (which only updates state)", () => {
+  it("returns the requested number of contiguous bytes (size > 15)", () => {
+    // Size 16 used to expose a nibble-vs-7bit decoder bug in the codec.
+    const data = handler.read_bytes(CHORUS_SWITCH_ADDR, 16);
+    assert.equal(data.length, 16);
+    assert.ok(data.every((b) => b === 0));
+  });
+
+  it("DT1 only updates state — it does not emit sysexOut from the handler", () => {
     const setMsg = buildDT1(JUNO_X_MODEL_ID, DEVICE_ID, CHORUS_SWITCH_ADDR, [0x01]);
     const result = handler.onMIDI({ type: "sysex", bytes: setMsg });
-    assert.equal(result.sysexOut, undefined);
+    // MockHandlerResult no longer has a sysexOut field at all (stage 4).
+    assert.equal((result as any).sysexOut, undefined);
   });
 
-  it("decodes RQ1 sizes > 15 bytes correctly (regression for nibble-vs-7bit confusion)", () => {
-    // Size 16 in 4x 7-bit encoding = [0,0,0,0x10]. With nibble decoding this
-    // would erroneously become 0; with 7-bit decoding it's 16.
-    const reqMsg = buildRQ1(JUNO_X_MODEL_ID, DEVICE_ID, CHORUS_SWITCH_ADDR, [0x00, 0x00, 0x00, 0x10]);
-    const result = handler.onMIDI({ type: "sysex", bytes: reqMsg });
+  it("read_bytes routes Scene Part addresses (0x10..0x14) to per-part scene state", () => {
+    // Scene Part 1 address: SCENE_BASE + SCENE_PART_OFFSETS[0] + param offset.
+    // For this test we just need any address whose byte[1] is 0x10..0x14 —
+    // [0x01, 0x10, 0x00, 0x09] targets Scene Part 1 at param offset 9.
+    const partAddr = [0x01, 0x10, 0x00, 0x09];
+    const setMsg = buildDT1(JUNO_X_MODEL_ID, DEVICE_ID, partAddr, [0x42]);
+    handler.onMIDI({ type: "sysex", bytes: setMsg });
 
-    assert.ok(result.sysexOut);
-    const parsed = parseDT1(result.sysexOut![0], JUNO_X_MODEL_ID);
-    assert.equal(parsed!.data.length, 16, "expected 16 data bytes for size=16");
-  });
-
-  it("echoes the RQ1 device ID in the DT1 response", () => {
-    const customDevId = 0x42;
-    const reqMsg = buildRQ1(JUNO_X_MODEL_ID, customDevId, CHORUS_SWITCH_ADDR, [0x00, 0x00, 0x00, 0x01]);
-    const result = handler.onMIDI({ type: "sysex", bytes: reqMsg });
-
-    assert.ok(result.sysexOut);
-    // The DT1 byte sequence: F0 41 <devId> <modelId..> 12 <addr..> <data..> <chk> F7
-    // Device ID is at index 2.
-    assert.equal(result.sysexOut![0][2], customDevId, "DT1 must echo the RQ1 device ID");
+    const data = handler.read_bytes(partAddr, 1);
+    assert.deepStrictEqual(data, [0x42]);
   });
 });

@@ -242,32 +242,9 @@ export function createJunoXMockHandler(): MockHandler {
   }
 
   function handleSysEx(bytes: number[]): MockHandlerResult {
-    const message = { type: "sysex", bytes } as const;
-
-    // Codec recognizes Roland RQ1 → request descriptor. Real JUNO-X
-    // hardware responds to RQ1 with a DT1 carrying the requested bytes;
-    // the mock mirrors that so the MCP can use `get_current_state`.
-    const req = codec.parseRequest(message);
-    if (req) {
-      const baseKey = addrKey(req.address);
-      const data: number[] = [];
-      for (let i = 0; i < req.size; i++) {
-        data.push(sceneGlobal[`${baseKey}[${i}]`] ?? 0);
-      }
-      // `buildResponse` echoes the requester's device ID into the DT1.
-      const dt1Response = codec.buildResponse(req, data);
-      const replyBytes = dt1Response.type === "sysex" ? dt1Response.bytes : [];
-      return {
-        log: `RQ1: addr=${baseKey} size=${req.size} dev=0x${req.deviceId.toString(16)} → DT1 ${data.join(",")}`,
-        sysexOut: [replyBytes],
-      };
-    }
-
-    // For DT1, parse the raw address+data inline — state is keyed byte-level
-    // by address, so we need the raw bytes to write into sceneGlobal /
-    // parts[idx].sceneParams. `sysexLookup` produces a human-readable label
-    // for the log line. Stage 3 will re-key state by param name and route
-    // the whole DT1 path through `codec.decode`, dropping this raw parse.
+    // Stage 4: RQ1 is handled in the engine via codec.parseRequest +
+    // handler.read_bytes — the handler never sees the request. Anything
+    // that reaches handleSysEx is a write-side message (DT1).
     const dt1 = parseDT1(bytes, JUNO_X_MODEL_ID);
     if (!dt1) {
       return { log: `SysEx (${bytes.length} bytes) — not a JUNO-X DT1, ignored` };
@@ -304,14 +281,14 @@ export function createJunoXMockHandler(): MockHandler {
    * Param-domain write. Routes each ref through the codec to derive the
    * canonical wire bytes, then applies those bytes to internal state via
    * the existing handleSysEx / handleCC paths so byte-keyed sceneGlobal /
-   * parts shapes stay consistent. The encoded packets are surfaced in
-   * ccOut/sysexOut so the engine can emit them on the device's MIDI Out
-   * (panel-knob analogue) — stage 4 will move that emission off the
-   * handler-result channel and onto the engine itself via codec.
+   * parts shapes stay consistent.
+   *
+   * Stage 4: this no longer fills emission channels in the result.
+   * Outbound MIDI emission is the engine's responsibility — for UI
+   * setParam writes it asks the codec to encode and emits on the device's
+   * MIDI Out itself.
    */
   function applySetParams(refs: ParamRef[]): MockHandlerResult {
-    const ccOut: MockHandlerResult["ccOut"] = [];
-    const sysexOut: number[][] = [];
     let lastState: Record<string, any> | undefined;
     const logLines: string[] = [];
 
@@ -332,14 +309,10 @@ export function createJunoXMockHandler(): MockHandler {
         let inner: MockHandlerResult = {};
         if (msg.type === "sysex") {
           inner = handleSysEx(msg.bytes);
-          sysexOut.push(msg.bytes);
         } else if (msg.type === "cc") {
-          // Codec returns undefined channel for global params (contract:
-          // "use the connection's default"). On the mock side that maps to
-          // the configured lower channel — i.e. part 1's channel from init.
-          const ch = msg.channel ?? channels[0];
-          inner = handleCC(msg.controller, msg.value, ch);
-          ccOut.push({ controller: msg.controller, value: msg.value, channel: ch });
+          // Codec returns undefined channel for global params; on the mock
+          // side fall back to the configured lower channel.
+          inner = handleCC(msg.controller, msg.value, msg.channel ?? channels[0]);
         } else if (msg.type === "program") {
           inner = handleProgram(msg.number, msg.channel ?? channels[0]);
         }
@@ -351,8 +324,6 @@ export function createJunoXMockHandler(): MockHandler {
     const result: MockHandlerResult = {};
     if (lastState) result.state = lastState;
     if (logLines.length > 0) result.log = logLines.join("; ");
-    if (sysexOut.length > 0) result.sysexOut = sysexOut;
-    if (ccOut.length > 0) result.ccOut = ccOut;
     return result;
   }
 
@@ -432,9 +403,29 @@ export function createJunoXMockHandler(): MockHandler {
     return view;
   }
 
+  /**
+   * Bytes-level read for engine-driven RQ1. Reads `size` bytes starting
+   * at `address` from the byte-keyed scene state. Falls back to the
+   * per-part scene-params map when the address targets a Scene Part
+   * (address byte 1 ∈ 0x10..0x14). Bytes never seen are reported as 0.
+   */
+  function readBytes(address: number[], size: number): number[] {
+    const baseKey = addrKey(address);
+    const data: number[] = [];
+    const isPartAddr = address[0] === 0x01 && address[1] >= 0x10 && address[1] <= 0x14;
+    const stateMap = isPartAddr
+      ? (parts[address[1] - 0x10]?.sceneParams ?? {})
+      : sceneGlobal;
+    for (let i = 0; i < size; i++) {
+      data.push(stateMap[`${baseKey}[${i}]`] ?? 0);
+    }
+    return data;
+  }
+
   // ── MockHandler implementation ──
 
   const handler: MockHandler = {
+    codec,
     init(lowerChannel: number, upperChannel: number): void {
       initParts(lowerChannel, upperChannel);
     },
@@ -456,6 +447,10 @@ export function createJunoXMockHandler(): MockHandler {
 
     get_params(names: string[], part?: number): Record<string, number> {
       return getParams(names, part);
+    },
+
+    read_bytes(address: number[], size: number): number[] {
+      return readBytes(address, size);
     },
 
     /** @deprecated kept for engine-level WS backward compat — delegates to set_params. */
@@ -497,6 +492,14 @@ export class JunoXMockHandler implements MockHandler {
 
   get_params(names: string[], part?: number): Record<string, number> {
     return this.inner.get_params!(names, part);
+  }
+
+  read_bytes(address: number[], size: number): number[] {
+    return this.inner.read_bytes!(address, size);
+  }
+
+  get codec() {
+    return this.inner.codec;
   }
 
   onUIParam(name: string, value: number | string, channel?: number): MockHandlerResult {
