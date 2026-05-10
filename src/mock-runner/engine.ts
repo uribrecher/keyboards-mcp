@@ -18,7 +18,8 @@ const HEARTBEAT_MS = 30_000;
  * Structured MIDI traffic notification, emitted as `midi-event` on the
  * engine's EventEmitter alongside the existing `MIDI-IN` / `MIDI-OUT`
  * console logs. Consumed by the mock-runner shell to render the per-tab
- * status strip (todo #5).
+ * MIDI drawer (the collapsible monitor at the bottom of the slot, with
+ * a 50-event ring buffer per tab — see PR #82).
  *
  * No model-specific interpretation — raw bytes only. Sysex carries the
  * FULL byte array so the shell can let the operator select-and-copy the

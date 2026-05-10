@@ -550,6 +550,12 @@ body.bay--resizing iframe { pointer-events: none; }
   height: 22px;
   flex-shrink: 0;
   transition: opacity .2s, color .2s;
+  /* Glyph / direction label / timestamp must NOT be selectable —
+   * triple-click or drag-select grabs only the message body. Explicit
+   * here (not just inherited from body{user-select:none}) so a future
+   * change to body's default doesn't silently alter the contract. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .midi-row__glyph {
   font-size: 11px;
@@ -667,11 +673,15 @@ body.bay--resizing iframe { pointer-events: none; }
 /* ═════════════ Console (chat) ═════════════ */
 
 .console {
-  /* Two columns: rail (8px, slot-facing edge — the splitter) | body
-   * (fills). When collapsed the body hides and the whole column
-   * shrinks to the rail width via the .bay :has() rule. */
+  /* Two columns: rail (slot-facing edge — the splitter) | body (fills).
+   * When collapsed the body hides and the whole column shrinks to the
+   * rail width via the .bay :has() rule. The single explicit 1fr row
+   * keeps the rail full-height even when the body is `display: none`
+   * (without it, the implicit auto-row would collapse to the latch's
+   * intrinsic height). */
   display: grid;
   grid-template-columns: var(--rail-w) 1fr;
+  grid-template-rows: 1fr;
   background: var(--c-console);
   position: relative;
   min-height: 0;
@@ -704,10 +714,10 @@ body.bay--resizing iframe { pointer-events: none; }
 
 /* ── Rail: combined splitter + collapse latch ──
  *
- * 8px-wide vertical rail at the slot-facing edge of the console.
- * Pointer drag resizes the console (cursor: col-resize). A click
- * without drag toggles `data-collapsed`. The chevron in the middle
- * tells you which way the lever throws.
+ * Vertical rail at the slot-facing edge of the console (width tracks
+ * --rail-w, currently 12px). Pointer drag resizes the console
+ * (cursor: col-resize). A click without drag toggles `data-collapsed`.
+ * The chevron in the middle tells you which way the lever throws.
  *
  * Brushed-metal gradient + faint vertical scribe line keep it
  * consistent with the chassis without the visual weight of the older

@@ -210,13 +210,13 @@ midiToggleEl?.addEventListener("click", () => {
   midiToggleEl.setAttribute("aria-expanded", next === "expanded" ? "true" : "false");
   midiToggleEl.textContent = next === "expanded" ? "▾" : "▴";
   midiToggleEl.title = next === "expanded" ? "Collapse MIDI history" : "Show MIDI history";
-  // Repaint without flashing — toggling is not a new event.
+  // Repaint without flashing — toggling is not a new event. The
+  // collapsed→expanded transition naturally satisfies the
+  // pinned-to-bottom check inside paintMidiDrawer (the single-row
+  // collapsed list reads as "scrolled to the bottom"), so the new
+  // expanded list snaps to the bottom there. No extra rAF needed.
   const history = activeTabId ? (midiHistoryByTab.get(activeTabId) ?? []) : [];
   paintMidiDrawer(history);
-  // After expanding, snap to the bottom so the freshest event is visible.
-  if (next === "expanded") {
-    requestAnimationFrame(() => { midiListEl.scrollTop = midiListEl.scrollHeight; });
-  }
 });
 
 // ── Console drawer rail (combined splitter + collapse toggle) ──
@@ -1270,10 +1270,14 @@ const DRAG_THRESHOLD_PX = 4;
 const bayEl = document.querySelector(".bay");
 
 function clampConsoleWidth(px, viewportW) {
-  // Hard min/max + dynamic ceiling so the slot never drops below its floor.
+  // Hard min/max + dynamic ceiling so the slot never drops below its
+  // floor. The rail lives INSIDE the console column now, so the
+  // console's measured width already includes it — no separate
+  // RAIL_PX subtraction (unlike the pre-PR-#82 layout where the
+  // splitter was its own bay column).
   const dynamicMax = Math.max(
     CONSOLE_MIN_PX,
-    Math.min(CONSOLE_MAX_PX, viewportW - RAIL_PX - SLOT_FLOOR_PX),
+    Math.min(CONSOLE_MAX_PX, viewportW - SLOT_FLOOR_PX),
   );
   return Math.max(CONSOLE_MIN_PX, Math.min(dynamicMax, px));
 }
