@@ -122,6 +122,18 @@ Out of scope: scene-modify (per-part offsets within scene-modify section), scene
 
 Useful prior art: `docs/plans/completed/23-juno-x-get-state-rq1.md` (scene-effects scope), `src/keyboard_models/roland/juno_x/device.ts` `setParameters` (per-part address calculation already in place), `src/keyboard_models/roland/juno_x/engines/engine-types.ts` (`SCENE_PART_OFFSETS`, `PART_NAMES`, `JunoXEngine`).
 
+### 30. MidiCodec architecture refactor
+
+**Status:** Planned — see `docs/plans/pending/30-midi-codec-architecture.md`.
+
+Major architectural cleanup of the mock + MCP. Introduces `MidiCodec`, a per-model translator between the param domain and the MIDI byte domain, used by both the mock-runner (incoming MIDI → set_params) and the MCP (outgoing set_params → MIDI bytes). MockHandler's API simplifies to `set_params` / `get_params` / `load_program` / `load_song` — no MIDI knowledge. Eliminates the awkward UI-synthesizes-MIDI-for-the-mock-to-parse-back-into-state round-trip introduced in #24, sharing all encoding logic between the mock and the MCP.
+
+Staged across four PRs:
+- Stage 1: Introduce `MidiCodec` interface + JUNO-X impl. MCP `device.setParameters` / `getState` delegate.
+- Stage 2: Mock handler's `handleSysEx`/`handleCC` delegate parsing to the codec.
+- Stage 3: MockHandler API switches to `set_params` / `get_params` keyed by param name. UI WS protocol switches to `{type:"setParam",...}`.
+- Stage 4: Drop `MockHandlerResult.{ccOut, programOut, sysexOut}` channels — emissions go through the codec at the engine boundary.
+
 ### 28. JUNO-X chorus type — UI ↔ state propagation bug
 
 **Status:** Needs investigation.
