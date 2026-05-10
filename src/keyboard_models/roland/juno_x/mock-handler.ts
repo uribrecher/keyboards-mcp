@@ -46,7 +46,6 @@ interface ParamEntryState {
   displayName?: string;
   section: string;
   type: string;
-  cc?: number;
   index?: number;
   labels?: Record<number, string>;
 }
@@ -222,7 +221,6 @@ export function createJunoXMockHandler(): MockHandler {
       type: param.type,
     };
     if (param.displayName) entry.displayName = param.displayName;
-    if (param.cc !== undefined) entry.cc = param.cc;
     if (param.type === "discrete" && param.labels) {
       entry.index = value;
       entry.labels = param.labels;

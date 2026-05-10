@@ -58,24 +58,24 @@
             <div class="section-label synth-label">LFO</div>
             <div class="sliders-row">
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-29">64</div>
-                <input type="range" class="vslider" min="0" max="127" value="64" data-cc="29" id="cc-lfo-rate">
-                <label for="cc-lfo-rate" class="ctrl-label">RATE</label>
+                <div class="ctrl-value" id="val-lfo_rate">64</div>
+                <input type="range" class="vslider" min="0" max="127" value="64" data-param="lfo_rate" id="param-lfo_rate">
+                <label for="param-lfo_rate" class="ctrl-label">RATE</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-27">0</div>
-                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="27" id="cc-lfo-delay">
-                <label for="cc-lfo-delay" class="ctrl-label">DLY</label>
+                <div class="ctrl-value" id="val-lfo_delay_time">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-param="lfo_delay_time" id="param-lfo_delay_time">
+                <label for="param-lfo_delay_time" class="ctrl-label">DLY</label>
               </div>
             </div>
             <div class="toggle-row">
-              <select class="ctrl-select-sm" data-cc="35" id="cc-lfo-waveform">
+              <select class="ctrl-select-sm" data-param="lfo_waveform" id="param-lfo_waveform">
                 <option value="0">TRI</option>
                 <option value="1">SAW</option>
                 <option value="2">SQR</option>
                 <option value="3">RND</option>
               </select>
-              <button class="tog-btn" data-cc="117" id="cc-lfo-sync" data-val-off="0" data-val-on="127">SYNC</button>
+              <button class="tog-btn" data-param="lfo_sync" id="param-lfo_sync">SYNC</button>
             </div>
           </section>
 
@@ -86,33 +86,33 @@
             <div class="section-label synth-label">OSC</div>
             <div class="sliders-row">
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-16">0</div>
-                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="16" id="cc-osc-pw">
-                <label for="cc-osc-pw" class="ctrl-label">PW</label>
+                <div class="ctrl-value" id="val-pw_level">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-param="pw_level" id="param-pw_level">
+                <label for="param-pw_level" class="ctrl-label">PW</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-17">127</div>
-                <input type="range" class="vslider" min="0" max="127" value="127" data-cc="17" id="cc-osc-saw">
-                <label for="cc-osc-saw" class="ctrl-label">SAW</label>
+                <div class="ctrl-value" id="val-saw_level">127</div>
+                <input type="range" class="vslider" min="0" max="127" value="127" data-param="saw_level" id="param-saw_level">
+                <label for="param-saw_level" class="ctrl-label">SAW</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-18">0</div>
-                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="18" id="cc-osc-sub">
-                <label for="cc-osc-sub" class="ctrl-label">SUB</label>
+                <div class="ctrl-value" id="val-sub_level">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-param="sub_level" id="param-sub_level">
+                <label for="param-sub_level" class="ctrl-label">SUB</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-19">0</div>
-                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="19" id="cc-osc-noise">
-                <label for="cc-osc-noise" class="ctrl-label">NOIS</label>
+                <div class="ctrl-value" id="val-noise_level">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-param="noise_level" id="param-noise_level">
+                <label for="param-noise_level" class="ctrl-label">NOIS</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-26">64</div>
-                <input type="range" class="vslider" min="0" max="127" value="64" data-cc="26" id="cc-osc-lfo-mod">
-                <label for="cc-osc-lfo-mod" class="ctrl-label">LFO</label>
+                <div class="ctrl-value" id="val-osc_lfo_mod">64</div>
+                <input type="range" class="vslider" min="0" max="127" value="64" data-param="osc_lfo_mod" id="param-osc_lfo_mod">
+                <label for="param-osc_lfo_mod" class="ctrl-label">LFO</label>
               </div>
             </div>
             <div class="toggle-row">
-              <button class="tog-btn" data-cc="46" id="cc-osc-supersaw" data-val-off="0" data-val-on="127">SSAW</button>
+              <button class="tog-btn" data-param="super_saw" id="param-super_saw">SSAW</button>
             </div>
           </section>
 
@@ -123,15 +123,15 @@
             <div class="section-label synth-label">HPF</div>
             <div class="sliders-row">
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-79">0</div>
+                <div class="ctrl-value" id="val-hpf_step">0</div>
                 <!-- HPF only has 4 steps (0-3), use a select styled as slider column -->
-                <select class="ctrl-select-vert" data-cc="79" id="cc-hpf-freq">
+                <select class="ctrl-select-vert" data-param="hpf_step" id="param-hpf_step">
                   <option value="0">0</option>
                   <option value="42">1</option>
                   <option value="85">2</option>
                   <option value="127">3</option>
                 </select>
-                <label for="cc-hpf-freq" class="ctrl-label">FREQ</label>
+                <label for="param-hpf_step" class="ctrl-label">FREQ</label>
               </div>
             </div>
             <div class="toggle-row"></div>
@@ -144,28 +144,28 @@
             <div class="section-label synth-label">FILTER</div>
             <div class="sliders-row">
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-3">127</div>
-                <input type="range" class="vslider" min="0" max="127" value="127" data-cc="3" id="cc-filter-cutoff">
-                <label for="cc-filter-cutoff" class="ctrl-label">CUT</label>
+                <div class="ctrl-value" id="val-cutoff">127</div>
+                <input type="range" class="vslider" min="0" max="127" value="127" data-param="cutoff" id="param-cutoff">
+                <label for="param-cutoff" class="ctrl-label">CUT</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-9">0</div>
-                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="9" id="cc-filter-res">
-                <label for="cc-filter-res" class="ctrl-label">RES</label>
+                <div class="ctrl-value" id="val-resonance">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-param="resonance" id="param-resonance">
+                <label for="param-resonance" class="ctrl-label">RES</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-81">64</div>
-                <input type="range" class="vslider" min="0" max="127" value="64" data-cc="81" id="cc-filter-env">
-                <label for="cc-filter-env" class="ctrl-label">ENV</label>
+                <div class="ctrl-value" id="val-flt_env_depth">64</div>
+                <input type="range" class="vslider" min="0" max="127" value="64" data-param="flt_env_depth" id="param-flt_env_depth">
+                <label for="param-flt_env_depth" class="ctrl-label">ENV</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-122">0</div>
-                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="122" id="cc-filter-key">
-                <label for="cc-filter-key" class="ctrl-label">KEY</label>
+                <div class="ctrl-value" id="val-flt_key_follow">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-param="flt_key_follow" id="param-flt_key_follow">
+                <label for="param-flt_key_follow" class="ctrl-label">KEY</label>
               </div>
             </div>
             <div class="toggle-row">
-              <select class="ctrl-select-sm" data-cc="108" id="cc-filter-vtype">
+              <select class="ctrl-select-sm" data-param="vintage_flt_type" id="param-vintage_flt_type">
                 <option value="0">VFlt OFF</option>
                 <option value="64">VFlt A</option>
                 <option value="127">VFlt B</option>
@@ -180,9 +180,9 @@
             <div class="section-label synth-label">AMP</div>
             <div class="sliders-row">
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-110">100</div>
-                <input type="range" class="vslider" min="0" max="127" value="100" data-cc="110" id="cc-amp-level">
-                <label for="cc-amp-level" class="ctrl-label">LVL</label>
+                <div class="ctrl-value" id="val-amp_level">100</div>
+                <input type="range" class="vslider" min="0" max="127" value="100" data-param="amp_level" id="param-amp_level">
+                <label for="param-amp_level" class="ctrl-label">LVL</label>
               </div>
             </div>
             <div class="toggle-row"></div>
@@ -195,24 +195,24 @@
             <div class="section-label synth-label">ENV</div>
             <div class="sliders-row">
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-89">0</div>
-                <input type="range" class="vslider" min="0" max="127" value="0" data-cc="89" id="cc-env-attack">
-                <label for="cc-env-attack" class="ctrl-label">A</label>
+                <div class="ctrl-value" id="val-env_attack">0</div>
+                <input type="range" class="vslider" min="0" max="127" value="0" data-param="env_attack" id="param-env_attack">
+                <label for="param-env_attack" class="ctrl-label">A</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-90">64</div>
-                <input type="range" class="vslider" min="0" max="127" value="64" data-cc="90" id="cc-env-decay">
-                <label for="cc-env-decay" class="ctrl-label">D</label>
+                <div class="ctrl-value" id="val-env_decay">64</div>
+                <input type="range" class="vslider" min="0" max="127" value="64" data-param="env_decay" id="param-env_decay">
+                <label for="param-env_decay" class="ctrl-label">D</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-102">100</div>
-                <input type="range" class="vslider" min="0" max="127" value="100" data-cc="102" id="cc-env-sustain">
-                <label for="cc-env-sustain" class="ctrl-label">S</label>
+                <div class="ctrl-value" id="val-env_sustain">100</div>
+                <input type="range" class="vslider" min="0" max="127" value="100" data-param="env_sustain" id="param-env_sustain">
+                <label for="param-env_sustain" class="ctrl-label">S</label>
               </div>
               <div class="slider-col">
-                <div class="ctrl-value" id="val-cc-103">30</div>
-                <input type="range" class="vslider" min="0" max="127" value="30" data-cc="103" id="cc-env-release">
-                <label for="cc-env-release" class="ctrl-label">R</label>
+                <div class="ctrl-value" id="val-env_release">30</div>
+                <input type="range" class="vslider" min="0" max="127" value="30" data-param="env_release" id="param-env_release">
+                <label for="param-env_release" class="ctrl-label">R</label>
               </div>
             </div>
             <div class="toggle-row adsr-label">ADSR</div>

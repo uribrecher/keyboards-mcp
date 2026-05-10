@@ -132,11 +132,10 @@ function updateEngineSelect(partData) {
 
 /**
  * Stage-5 state shape: `partData.params` is keyed by canonical param
- * NAME (e.g. "as_lfo_rate") rather than by `cc<N>`. Each entry includes
- * `cc` when the param is CC-mapped, which we use to find the matching
- * widget. Values are USER-DOMAIN (post-stage-5) — for continuous
- * params they equal the slider position (0-127); for scaled discretes
- * (max < 127) the value is the index, not the wire byte.
+ * NAME (e.g. `cutoff`, `lfo_rate`). Widgets are keyed by `data-param`
+ * (the same name). Values are USER-DOMAIN — for continuous params they
+ * equal the slider position 0-127; for scaled discretes (max < 127) the
+ * value is the index, not the wire byte.
  */
 function updateControlLabels(partData) {
   // Override hardcoded HTML labels with displayName from the midi-map.
@@ -144,16 +143,15 @@ function updateControlLabels(partData) {
   // displayName is absent, cached in `data-default-label`.
   const params = partData.params;
   if (!params) return;
-  for (const target of document.querySelectorAll("[data-cc]")) {
-    const cc = parseInt(target.dataset.cc, 10);
-    if (isNaN(cc)) continue;
+  for (const target of document.querySelectorAll("[data-param]")) {
+    const name = target.dataset.param;
+    if (!name) continue;
     const slot = labelSlotFor(target);
     if (!slot) continue;
     if (slot.dataset.defaultLabel === undefined) {
       slot.dataset.defaultLabel = slot.textContent;
     }
-    // Find param entry whose cc matches the widget.
-    const entry = findEntryByCc(params, cc);
+    const entry = params[name];
     const next = entry && entry.displayName ? entry.displayName : slot.dataset.defaultLabel;
     slot.textContent = next;
   }
@@ -165,29 +163,19 @@ function labelSlotFor(target) {
   return document.querySelector(`label[for="${target.id}"]`);
 }
 
-function findEntryByCc(params, cc) {
-  for (const entry of Object.values(params)) {
-    if (entry && typeof entry === "object" && entry.cc === cc) return entry;
-  }
-  return null;
-}
-
 function updatePartParams(partData) {
   updateControlLabels(partData);
   const params = partData.params;
   if (!params) return;
 
-  for (const entry of Object.values(params)) {
-    if (!entry || typeof entry !== "object" || entry.cc === undefined) continue;
-    const cc = entry.cc;
+  for (const [name, entry] of Object.entries(params)) {
+    if (!entry || typeof entry !== "object") continue;
     const value = entry.value;
 
-    // Update range slider
-    const slider = document.querySelector(`[data-cc="${cc}"].vslider`);
+    const slider = document.querySelector(`[data-param="${name}"].vslider`);
     if (slider) slider.value = value;
 
-    // Update select with matching data-cc
-    const selectEl = document.querySelector(`select[data-cc="${cc}"]`);
+    const selectEl = document.querySelector(`select[data-param="${name}"]`);
     if (selectEl) {
       let bestOpt = null;
       let bestDist = Infinity;
@@ -198,8 +186,7 @@ function updatePartParams(partData) {
       if (bestOpt) selectEl.value = bestOpt.value;
     }
 
-    // Update value display
-    const valEl = document.getElementById("val-cc-" + cc);
+    const valEl = document.getElementById("val-" + name);
     if (valEl) valEl.textContent = value;
   }
 }
@@ -220,58 +207,47 @@ function initPartButtons() {
 
 // ── Outgoing controls ──
 
-function sendCC(cc, value) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({
-    type: "cc",
-    controller: parseInt(cc, 10),
-    value: parseInt(value, 10),
-    channel: activePart - 1,
-  }));
-}
-
 function setLastChange(text) {
   const el = document.getElementById("last-change");
   if (el) el.textContent = text;
 }
 
 function initSliderControls() {
-  for (const el of document.querySelectorAll("input.vslider[data-cc]")) {
+  for (const el of document.querySelectorAll("input.vslider[data-param]")) {
     el.addEventListener("input", () => {
-      const cc = el.dataset.cc;
-      const value = el.value;
-      const valEl = document.getElementById("val-cc-" + cc);
+      const name = el.dataset.param;
+      const value = parseInt(el.value, 10);
+      const valEl = document.getElementById("val-" + name);
       if (valEl) valEl.textContent = value;
-      sendCC(cc, value);
-      setLastChange(`CC${cc} = ${value} (Part ${activePart})`);
+      sendUIParam(name, value);
+      setLastChange(`${name} = ${value} (Part ${activePart})`);
     });
   }
 }
 
 function initSelectControls() {
-  for (const el of document.querySelectorAll("select[data-cc]")) {
+  for (const el of document.querySelectorAll("select[data-param]")) {
     el.addEventListener("change", () => {
-      const cc = el.dataset.cc;
+      const name = el.dataset.param;
       const value = parseInt(el.value, 10);
-      const valEl = document.getElementById("val-cc-" + cc);
+      const valEl = document.getElementById("val-" + name);
       if (valEl) valEl.textContent = value;
-      sendCC(cc, value);
-      setLastChange(`CC${cc} = ${value} (Part ${activePart})`);
+      sendUIParam(name, value);
+      setLastChange(`${name} = ${value} (Part ${activePart})`);
     });
   }
 }
 
 function initToggleButtons() {
-  for (const el of document.querySelectorAll("button.tog-btn[data-cc]")) {
+  for (const el of document.querySelectorAll("button.tog-btn[data-param]")) {
     el.addEventListener("click", () => {
       el.classList.toggle("active");
-      const cc = el.dataset.cc;
+      const name = el.dataset.param;
       const isOn = el.classList.contains("active");
-      const value = isOn
-        ? parseInt(el.dataset.valOn ?? "127", 10)
-        : parseInt(el.dataset.valOff ?? "0", 10);
-      sendCC(cc, value);
-      setLastChange(`CC${cc} = ${value} (Part ${activePart})`);
+      // Toggles use 0/1 user-domain values; the codec scales to wire bytes.
+      const value = isOn ? 1 : 0;
+      sendUIParam(name, value);
+      setLastChange(`${name} = ${isOn ? "ON" : "OFF"} (Part ${activePart})`);
     });
   }
 }
