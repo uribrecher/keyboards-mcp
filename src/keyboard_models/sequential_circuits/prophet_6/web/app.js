@@ -124,7 +124,7 @@ function updateUI(state) {
       setTimeout(() => el.row.classList.remove("flash"), 300);
     }
     document.getElementById("last-change").textContent =
-      `${state.lastChange.name} = ${state.lastChange.label} (CC${state.lastChange.cc})`;
+      `${state.lastChange.name} = ${state.lastChange.label}`;
   }
 }
 

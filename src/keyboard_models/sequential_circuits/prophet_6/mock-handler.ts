@@ -1,13 +1,16 @@
 /**
- * Sequential Circuits Prophet-6 mock handler.
+ * Sequential Circuits Prophet-6 mock handler — pure param-domain.
  *
- * Mono-timbral, no backup, no programs — just CC state tracking.
- * The handler owns all state; the engine is just MIDI I/O + WebSocket.
+ * Mono-timbral, no parts, no engines, no programs. State is keyed by
+ * canonical param name with USER-domain values. The handler doesn't
+ * speak MIDI; the codec owns all wire-byte translation.
  */
 
 import type { MockHandler, MidiMessage, MockHandlerResult } from "../../../shared/keyboard-model.js";
+import type { ParamRef } from "../../../shared/midi-codec.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
 import { PARAMS } from "./midi-map.js";
+import { createProphet6Codec } from "./midi-codec.js";
 
 interface ParamState {
   value: number;
@@ -21,42 +24,33 @@ interface ParamState {
 }
 
 export function createProphet6MockHandler(): MockHandler {
-  const ccState = new Map<number, number>();
-
-  // CC → param lookup
-  const paramByCC = new Map<number, { key: string; param: KeyboardParameter }>();
-  for (const [key, param] of Object.entries(PARAMS)) {
-    paramByCC.set(param.cc!, { key, param });
-  }
+  const codec = createProphet6Codec();
+  const params: Record<string, number> = {};
 
   function initState(): void {
-    for (const param of Object.values(PARAMS)) {
-      ccState.set(param.cc!, param.defaultValue);
+    for (const [key, param] of Object.entries(PARAMS)) {
+      params[key] = param.defaultValue;
     }
   }
 
-  function labelFor(param: KeyboardParameter, midiValue: number): string {
+  function labelFor(param: KeyboardParameter, userValue: number): string {
     if (param.labels && (param.type === "discrete" || param.type === "toggle")) {
-      // Map 0-127 to discrete index
-      const range = param.max - param.min;
-      const index = range === 0 ? 0 : Math.round((midiValue / 127) * range);
-      return param.labels[index] ?? String(midiValue);
+      return param.labels[userValue] ?? String(userValue);
     }
-    return String(midiValue);
+    return String(userValue);
   }
 
-  function buildParamEntry(param: KeyboardParameter, midiValue: number): ParamState {
+  function buildParamEntry(param: KeyboardParameter, userValue: number): ParamState {
     const entry: ParamState = {
-      value: midiValue,
-      label: labelFor(param, midiValue),
+      value: userValue,
+      label: labelFor(param, userValue),
       name: param.name,
       section: param.section,
       type: param.type,
     };
     if (param.displayName) entry.displayName = param.displayName;
     if ((param.type === "discrete" || param.type === "toggle") && param.labels) {
-      const range = param.max - param.min;
-      entry.index = range === 0 ? 0 : Math.round((midiValue / 127) * range);
+      entry.index = userValue;
     }
     if (param.type === "discrete" && param.labels) {
       entry.labels = param.labels;
@@ -65,67 +59,81 @@ export function createProphet6MockHandler(): MockHandler {
   }
 
   function buildFullState(lastChangeKey?: string): Record<string, any> {
-    const params: Record<string, ParamState> = {};
-
+    const out: Record<string, ParamState> = {};
     for (const [key, param] of Object.entries(PARAMS)) {
-      const midiValue = ccState.get(param.cc!) ?? param.defaultValue;
-      params[key] = buildParamEntry(param, midiValue);
+      const userValue = params[key] ?? param.defaultValue;
+      out[key] = buildParamEntry(param, userValue);
     }
-
-    const msg: Record<string, any> = { global: params };
-
-    if (lastChangeKey) {
-      const cc = PARAMS[lastChangeKey]?.cc;
-      const entry = cc != null ? paramByCC.get(cc) : undefined;
-      if (entry) {
-        const midiValue = ccState.get(entry.param.cc!) ?? entry.param.defaultValue;
-        msg.lastChange = {
-          key: lastChangeKey,
-          name: entry.param.name,
-          cc: entry.param.cc,
-          value: midiValue,
-          label: labelFor(entry.param, midiValue),
-        };
-      }
+    const msg: Record<string, any> = { global: out };
+    if (lastChangeKey && PARAMS[lastChangeKey]) {
+      const param = PARAMS[lastChangeKey];
+      const userValue = params[lastChangeKey] ?? param.defaultValue;
+      msg.lastChange = {
+        key: lastChangeKey,
+        name: param.name,
+        value: userValue,
+        label: labelFor(param, userValue),
+      };
     }
-
     return msg;
   }
 
-  function handleCC(cc: number, value: number, channel: number): MockHandlerResult {
-    // Bank Select — ignore
-    if (cc === 0 || cc === 32) {
-      return { log: `Bank Select ${cc === 0 ? "MSB" : "LSB"} = ${value} (ch${channel})` };
+  function applySet(refs: ParamRef[]): MockHandlerResult {
+    const logLines: string[] = [];
+    let lastKey: string | undefined;
+    for (const ref of refs) {
+      const param = PARAMS[ref.name];
+      if (!param) {
+        logLines.push(`set: unknown param "${ref.name}"`);
+        continue;
+      }
+      let userValue: number;
+      try {
+        userValue = codec.normalizeUserValue(ref.name, ref.value);
+      } catch (err) {
+        logLines.push(`set: ${param.name}: ${err instanceof Error ? err.message : String(err)}`);
+        continue;
+      }
+      params[ref.name] = userValue;
+      lastKey = ref.name;
+      logLines.push(`set: ${param.name} = ${codec.formatValue(ref.name, userValue)}`);
     }
+    return {
+      state: buildFullState(lastKey),
+      log: logLines.join("; "),
+    };
+  }
 
-    ccState.set(cc, value);
-
-    const entry = paramByCC.get(cc);
-    const changeKey = entry?.key;
-    const desc = entry
-      ? `${entry.param.name} = ${labelFor(entry.param, value)} (CC${cc}=${value} ch${channel})`
-      : `CC${cc}=${value} ch${channel} [unmapped]`;
-
-    return { state: buildFullState(changeKey), log: desc };
+  function readParams(names: string[]): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const name of names) {
+      const param = PARAMS[name];
+      if (!param) continue;
+      out[name] = params[name] ?? param.defaultValue;
+    }
+    return out;
   }
 
   return {
-    init(): void {
+    codec,
+    init(_lowerChannel: number, _upperChannel: number, _label?: string): void {
       initState();
     },
 
-    onMIDI(msg: MidiMessage): MockHandlerResult {
-      switch (msg.type) {
-        case "cc":
-          return handleCC(msg.controller, msg.value, msg.channel);
-        case "program":
-          return { log: `Program Change ${msg.number} (ch${msg.channel}) — no program storage` };
-        case "sysex":
-          return { log: `SysEx (${msg.bytes.length} bytes) — ignored` };
-      }
+    /** Handler doesn't speak MIDI; engine + codec own all wire I/O. */
+    onMIDI(_msg: MidiMessage): MockHandlerResult {
+      return {};
     },
 
-    getFullState(): Record<string, any> {
+    set_params(refs: ParamRef[]): MockHandlerResult {
+      return applySet(refs);
+    },
+
+    get_params(names: string[]): Record<string, number> {
+      return readParams(names);
+    },
+
+    getFullState(_includeInventory: boolean): Record<string, any> {
       return buildFullState();
     },
   };
