@@ -8,7 +8,7 @@
 import type { MidiMessage, MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
 import type { ParamRef } from "../../../shared/midi-codec.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
-import { parseDT1, addAddresses } from "../../../shared/roland-dt1.js";
+import { parseDT1, addAddresses, unpackNibbles } from "../../../shared/roland-dt1.js";
 import { JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
 import { createAnalogSynthParams } from "./engines/analog-synth.js";
 import { createZCoreParams } from "./engines/zcore.js";
@@ -334,12 +334,14 @@ export function createJunoXMockHandler(): MockHandler {
           inner = handleSysEx(msg.bytes);
           sysexOut.push(msg.bytes);
         } else if (msg.type === "cc") {
-          // Default to channel 0 when codec leaves channel undefined (global params).
-          const ch = msg.channel ?? 0;
+          // Codec returns undefined channel for global params (contract:
+          // "use the connection's default"). On the mock side that maps to
+          // the configured lower channel — i.e. part 1's channel from init.
+          const ch = msg.channel ?? channels[0];
           inner = handleCC(msg.controller, msg.value, ch);
           ccOut.push({ controller: msg.controller, value: msg.value, channel: ch });
         } else if (msg.type === "program") {
-          inner = handleProgram(msg.number, msg.channel ?? 0);
+          inner = handleProgram(msg.number, msg.channel ?? channels[0]);
         }
         if (inner.state) lastState = inner.state;
       }
@@ -402,14 +404,30 @@ export function createJunoXMockHandler(): MockHandler {
    * Build the name-keyed `params` view of current state for the broadcast
    * payload. UIs can read `data.params.<name>` instead of poking at
    * byte-keyed `sceneGlobal[<addr>]`.
+   *
+   * Reads `sceneGlobal[<addr>]` directly — going through `codec.decode`
+   * here would walk the entire param map per param-key (decodeDt1ToParams
+   * iterates `map.params`), turning a single broadcast into O(N²) work.
+   * For multi-byte sysex params we use `unpackNibbles` directly; for
+   * single-byte params it's just the stored byte.
    */
   function buildParamsView(): Record<string, number> {
     const view: Record<string, number> = {};
     for (const [key, param] of Object.entries(codec.map.params)) {
       if (param.perPart) continue;          // per-part values live under parts[N]
       if (param.sysexAddress === undefined) continue; // CC-only globals don't apply
-      const values = getParams([key]);
-      if (key in values) view[key] = values[key];
+      const fullAddr = addAddresses(SCENE_BASE, param.sysexAddress);
+      const baseKey = addrKey(fullAddr);
+      const sysexSize = param.sysexSize ?? 1;
+      if (sysexSize === 1) {
+        view[key] = sceneGlobal[`${baseKey}[0]`] ?? 0;
+      } else {
+        const bytes: number[] = [];
+        for (let i = 0; i < sysexSize * 2; i++) {
+          bytes.push(sceneGlobal[`${baseKey}[${i}]`] ?? 0);
+        }
+        view[key] = unpackNibbles(bytes);
+      }
     }
     return view;
   }

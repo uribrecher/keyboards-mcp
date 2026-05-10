@@ -156,11 +156,17 @@ export interface MockHandler {
    * Param-domain write (#30 stage 3). The canonical way for the engine
    * (and UI WS messages of shape `{type:"setParam", name, value, part?}`)
    * to update a parameter on the mock. The handler updates internal state
-   * and returns a `MockHandlerResult` whose `state`/`log` are used as
-   * usual. Outbound MIDI emission for the panel-knob analogue is the
-   * engine's responsibility (it asks the codec to encode the same write
-   * and emits on the device's MIDI Out). The handler's
-   * `ccOut`/`sysexOut`/`programOut` channels are for handler-explicit
+   * and returns a `MockHandlerResult`.
+   *
+   * Stage-3 contract (current): handlers may surface the encoded outbound
+   * packets in the result's `ccOut` / `sysexOut` / `programOut` channels
+   * for the engine to emit on the device's MIDI Out (panel-knob analogue).
+   * This is what JUNO-X does today — `set_params` runs each ref through
+   * the codec and includes the encoded messages in the result.
+   *
+   * Stage-4 plan: emission moves out of the handler. The engine will ask
+   * the codec to encode the same write and emit on the device's MIDI Out
+   * directly, leaving `ccOut`/`sysexOut`/`programOut` for handler-explicit
    * emissions only (e.g. RQ1→DT1 reply).
    */
   set_params?(refs: ParamRef[]): MockHandlerResult;
