@@ -122,17 +122,22 @@ export interface MockHandlerResult {
   log?: string;
 }
 
-/* Stage 4 (#30) note:
+/* Stage 5 (#30) note:
  *
- * MockHandlerResult used to carry `sysexOut` / `ccOut` / `programOut`
- * channels for the engine to emit on the device's MIDI Out. Those
- * channels are gone — emission is now the engine's responsibility:
+ * The handler is pure param-domain. It speaks only `set_params` /
+ * `get_params` / `load_program` / engine getters. The engine owns all
+ * MIDI I/O:
  *   - UI setParam: engine calls handler.set_params for state, then asks
  *     codec.encodeParams to produce the wire bytes and emits.
  *   - RQ1: engine sees the request directly (codec.parseRequest), reads
- *     state via handler.read_bytes, builds the reply via codec, emits.
- *   - External MIDI in: handler updates state; engine never echoes
- *     external input back out (loop prevention).
+ *     state via codec.paramsAtAddress + handler.get_params, builds the
+ *     reply via codec, emits.
+ *   - External CC: engine routes through codec.decode → handler.set_params.
+ *   - External Program Change: engine accumulates bank-select MSB/LSB
+ *     and finalizes via handler.load_program.
+ *
+ * MockHandlerResult.sysexOut / ccOut / programOut are gone. So is
+ * handler.onMIDI — the engine never feeds raw MIDI to the handler.
  */
 
 /**
@@ -153,8 +158,6 @@ export interface MockHandler {
    * see `BackupCacheCapability`. Defaults to `"_default"`.
    */
   init(lowerChannel: number, upperChannel: number, label?: string): void;
-  /** Process any MIDI message. Returns state to broadcast and/or a log line. */
-  onMIDI(msg: MidiMessage): MockHandlerResult;
   /**
    * Param-domain write (#30 stages 3–4). The canonical way for the engine
    * (and UI WS messages of shape `{type:"setParam", name, value, part?}`)

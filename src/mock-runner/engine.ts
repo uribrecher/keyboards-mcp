@@ -128,15 +128,6 @@ export class MockEngine extends EventEmitter {
               console.log(`${this.tag()} WS-IN reload-cache`);
               this.handler.onCacheReload?.();
               this.broadcast(this.handler.getFullState(true));
-            } else if (msg.type === "cc") {
-              console.log(`${this.tag()} WS-IN cc CC=${msg.controller} val=${msg.value} ch=${msg.channel ?? 0}`);
-              this.dispatch({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel ?? 0 }, "ui");
-            } else if (msg.type === "program") {
-              console.log(`${this.tag()} WS-IN program n=${msg.number} ch=${msg.channel ?? 0}`);
-              this.dispatch({ type: "program", number: msg.number, channel: msg.channel ?? 0 }, "ui");
-            } else if (msg.type === "sysex") {
-              console.log(`${this.tag()} WS-IN ${MockEngine.summarizeSysex(msg.bytes ?? [])}`);
-              this.dispatch({ type: "sysex", bytes: msg.bytes }, "ui");
             } else if (msg.type === "param") {
               console.log(`${this.tag()} WS-IN param ${msg.name}=${msg.value} ch=${msg.channel ?? 0}`);
               // Legacy alias for setParam — kept for backward compat with UIs
@@ -144,7 +135,7 @@ export class MockEngine extends EventEmitter {
               const result = this.handler.onUIParam
                 ? this.handler.onUIParam(msg.name, msg.value, msg.channel ?? 0)
                 : { log: `UI: ${msg.name} = ${msg.value} (handler has no onUIParam)` };
-              this.applyHandlerResult(result, null);
+              this.applyHandlerResult(result);
             } else if (msg.type === "setParam") {
               // Default `part` to 1 once at the boundary so set_params,
               // codec.encodeParams, and the log line all see the same value.
@@ -183,17 +174,17 @@ export class MockEngine extends EventEmitter {
     if (this.midiInput) {
       this.midiInput.on("cc", (msg: { controller: number; value: number; channel: number }) => {
         console.log(`${this.tag()} MIDI-IN cc CC=${msg.controller} val=${msg.value} ch=${msg.channel}`);
-        this.dispatch({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel }, "external");
+        this.dispatch({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel });
       });
 
       this.midiInput.on("program", (msg: { number: number; channel: number }) => {
         console.log(`${this.tag()} MIDI-IN program n=${msg.number} ch=${msg.channel}`);
-        this.dispatch({ type: "program", number: msg.number, channel: msg.channel }, "external");
+        this.dispatch({ type: "program", number: msg.number, channel: msg.channel });
       });
 
       this.midiInput.on("sysex" as any, (msg: { bytes: number[] }) => {
         console.log(`${this.tag()} MIDI-IN ${MockEngine.summarizeSysex([...msg.bytes])}`);
-        this.dispatch({ type: "sysex", bytes: [...msg.bytes] }, "external");
+        this.dispatch({ type: "sysex", bytes: [...msg.bytes] });
       });
     }
 
@@ -312,69 +303,58 @@ export class MockEngine extends EventEmitter {
   // ── Private ──
 
   /**
-   * Dispatch a `MidiMessage` (synthesized from a UI WS command, or read
-   * from the virtual MIDI In) through the codec → handler param-domain
-   * path. Stage 5: the handler never sees raw MIDI.
+   * Dispatch an external `MidiMessage` through the codec → handler
+   * param-domain path. Stage 5: the handler never sees raw MIDI.
    *
-   * - **External SysEx that's a Roland RQ1**: codec.parseRequest →
+   * - **SysEx that's a Roland RQ1**: codec.parseRequest →
    *   codec.paramsAtAddress → handler.get_params → codec.encodeBytes →
    *   codec.buildResponse → emit. Handler is read-only here.
-   * - **External CC bank-select (CC 0 / CC 32)**: stateful, engine
-   *   accumulates per channel. No handler call until the PC arrives.
-   * - **External Program Change**: combine accumulated bank with PC slot
-   *   and call `handler.load_program(bank, slot)`.
+   * - **CC bank-select (CC 0 / CC 32)**: stateful, engine accumulates
+   *   per channel. No handler call until the PC arrives.
+   * - **Program Change**: combine accumulated bank with PC slot and call
+   *   `handler.load_program(bank, slot)`.
    * - **Everything else**: `codec.decode(msg)` → for each `param` event
    *   call `handler.set_params([{name, value, part}])` (value is
    *   user-domain, normalized by the codec).
-   * - **UI-source bare cc/program**: also echo the raw inbound to the
-   *   device's MIDI Out (panel-knob analogue). External MIDI is never
-   *   echoed (loop prevention on bridges).
+   *
+   * External MIDI is never echoed back out (loop prevention on bridges).
    */
-  private dispatch(msg: MidiMessage, source: "ui" | "external"): void {
+  private dispatch(msg: MidiMessage): void {
     const codec = this.handler.codec;
+    if (!codec) return;
 
-    if (codec && source === "external") {
-      // Engine-handled RQ1.
-      if (msg.type === "sysex") {
-        const req = codec.parseRequest({ type: "sysex", bytes: msg.bytes });
-        if (req) {
-          this.fulfillRequest(codec, req);
-          return;
-        }
-      }
-      // Engine-managed bank-select + program-change.
-      if (msg.type === "cc" && (msg.controller === 0 || msg.controller === 32)) {
-        const ch = msg.channel;
-        const acc = this.pendingBankByCh.get(ch) ?? { msb: 0, lsb: 0 };
-        if (msg.controller === 0) acc.msb = msg.value;
-        else acc.lsb = msg.value;
-        this.pendingBankByCh.set(ch, acc);
-        console.log(`${this.tag()} bank-select ${msg.controller === 0 ? "MSB" : "LSB"}=${msg.value} ch=${ch}`);
+    // Engine-handled RQ1.
+    if (msg.type === "sysex") {
+      const req = codec.parseRequest({ type: "sysex", bytes: msg.bytes });
+      if (req) {
+        this.fulfillRequest(codec, req);
         return;
       }
-      if (msg.type === "program") {
-        const acc = this.pendingBankByCh.get(msg.channel) ?? { msb: 0, lsb: 0 };
-        const bank = (acc.msb << 7) | acc.lsb;
-        this.pendingBankByCh.delete(msg.channel);
-        console.log(`${this.tag()} load_program bank=${bank} slot=${msg.number} ch=${msg.channel}`);
-        if (this.handler.load_program) {
-          const result = this.handler.load_program(bank, msg.number);
-          this.applyHandlerResult(result, null);
-        }
-        return;
-      }
-      // Everything else: codec.decode → set_params per param event.
-      const events = codec.decode(this.toEncoded(msg));
-      this.applySetEvents(events);
+    }
+    // Engine-managed bank-select + program-change.
+    if (msg.type === "cc" && (msg.controller === 0 || msg.controller === 32)) {
+      const ch = msg.channel;
+      const acc = this.pendingBankByCh.get(ch) ?? { msb: 0, lsb: 0 };
+      if (msg.controller === 0) acc.msb = msg.value;
+      else acc.lsb = msg.value;
+      this.pendingBankByCh.set(ch, acc);
+      console.log(`${this.tag()} bank-select ${msg.controller === 0 ? "MSB" : "LSB"}=${msg.value} ch=${ch}`);
       return;
     }
-
-    // Legacy fallback for handlers without a codec (Nord, Prophet) and
-    // for UI-source bare messages (the WS-handler "cc" / "program"
-    // branches that don't go through {type:"setParam"}). The handler's
-    // onMIDI updates state; UI-source also gets the panel-knob echo.
-    const result = this.handler.onMIDI ? this.handler.onMIDI(msg) : {};
-    this.applyHandlerResult(result, source === "ui" ? msg : null);
+    if (msg.type === "program") {
+      const acc = this.pendingBankByCh.get(msg.channel) ?? { msb: 0, lsb: 0 };
+      const bank = (acc.msb << 7) | acc.lsb;
+      this.pendingBankByCh.delete(msg.channel);
+      console.log(`${this.tag()} load_program bank=${bank} slot=${msg.number} ch=${msg.channel}`);
+      if (this.handler.load_program) {
+        const result = this.handler.load_program(bank, msg.number);
+        this.applyHandlerResult(result);
+      }
+      return;
+    }
+    // Everything else: codec.decode → set_params per param event.
+    const events = codec.decode(this.toEncoded(msg));
+    this.applySetEvents(events);
   }
 
   private toEncoded(msg: MidiMessage): EncodedMessage {
@@ -443,28 +423,10 @@ export class MockEngine extends EventEmitter {
     }
   }
 
-  /**
-   * Apply a `MockHandlerResult`: broadcast state, log, and emit any
-   * UI-source bare cc/program echo (panel-knob analogue).
-   */
-  private applyHandlerResult(result: MockHandlerResult, uiSource: MidiMessage | null): void {
+  /** Apply a `MockHandlerResult`: broadcast state and log. */
+  private applyHandlerResult(result: MockHandlerResult): void {
     if (result.state) this.broadcast(result.state);
     if (result.log) console.log(`${this.tag()} ${result.log}`);
-    this.emitUiEcho(uiSource);
-  }
-
-  /** Echo a UI-source bare cc/program out on MIDI Out (panel-knob analogue). */
-  private emitUiEcho(uiSource: MidiMessage | null): void {
-    if (!uiSource || !this.midiOutput) return;
-    try {
-      if (uiSource.type === "cc") {
-        console.log(`${this.tag()} MIDI-OUT (ui-echo) cc CC=${uiSource.controller} val=${uiSource.value} ch=${uiSource.channel}`);
-        this.midiOutput.send("cc", { controller: uiSource.controller, value: uiSource.value, channel: uiSource.channel });
-      } else if (uiSource.type === "program") {
-        console.log(`${this.tag()} MIDI-OUT (ui-echo) program n=${uiSource.number} ch=${uiSource.channel}`);
-        this.midiOutput.send("program", { number: uiSource.number, channel: uiSource.channel });
-      }
-    } catch (err) { console.error(`${this.tag()} MIDI-OUT (ui-echo) send failed:`, err); }
   }
 
   /**

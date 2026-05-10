@@ -15,14 +15,12 @@ const KNOB_SCALES = {
   eq_treble: { min: -15, max: 15, unit: "dB", decimals: 1 },
 };
 
-// Model MIDI to index decode (matches MODEL_TO_MIDI in nord-electro-5d-map.ts)
-const MODEL_MIDI_STARTS = [0, 3, 6, 8, 11, 13, 16, 18, 21];
-function midiToModelIdx(midiValue) {
-  for (let i = MODEL_MIDI_STARTS.length - 1; i >= 0; i--) {
-    if (midiValue >= MODEL_MIDI_STARTS[i]) return i;
-  }
-  return 0;
-}
+// State broadcast values are USER-domain. For model-index encoding
+// (piano_model, piano_variation) and one-based encoding
+// (sample_synth_sample), the user value is 1-based — matching the Nord
+// hardware display. The UI subtracts 1 for 0-indexed array lookups
+// (e.g. SAMPLE_NAMES[slot-1], "ABCD"[varNum-1]) and renders the user
+// value directly for slot numbers (`#${slot}`).
 
 // Piano models per type — populated dynamically from inventory via WebSocket.
 // Falls back to numeric indices (e.g., "#1") when inventory is not loaded.
@@ -241,7 +239,7 @@ function updateUI(data) {
     const lc = data.lastChange;
     const partLabel = lc.part && lc.part !== "global" ? ` [${lc.part}]` : "";
     document.getElementById("last-change").textContent =
-      `${lc.name} = ${lc.label} (CC${lc.cc} = ${lc.value})${partLabel}`;
+      `${lc.name} = ${lc.label}${partLabel}`;
 
     flashParam(lc.key, lc.part);
   }
@@ -336,8 +334,8 @@ function updateEngineParams(data) {
       const valEl = dbEl.querySelector(".drawbar-value");
 
       if (isFarfisa) {
-        const midiVal = drawbarSource[key].value;
-        const isOn = midiVal >= 64;
+        // Farfisa drawbars are on/off; treat upper half of position range as on.
+        const isOn = pos >= 4;
         dbEl.classList.toggle("toggle-on", isOn);
         if (fill) fill.style.height = isOn ? "100%" : "0%";
         if (cap) cap.style.top = "0";
@@ -353,23 +351,30 @@ function updateEngineParams(data) {
     }
   }
 
-  // Piano model display (section shows #N, full name stored for program bar)
+  // Piano model display (section shows #N, full name stored for program bar).
+  // piano_model and piano_variation are model-index encoded — user value is
+  // 1-based (matching the Nord hardware display). Subtract 1 for 0-based
+  // array lookups; display the user value directly.
   if (params.piano_type) {
     const typeIdx = params.piano_type.index ?? params.piano_type.value;
     const models = PIANO_MODELS[typeIdx] || [];
-    let modelIdx = 0;
+    let modelNum = 1;
     if (typeIdx === 4) {
-      if (params.piano_model) modelIdx = midiToModelIdx(params.piano_model.value);
-      const baseName = models[modelIdx] || `#${modelIdx + 1}`;
-      const varIdx = params.piano_variation ? midiToModelIdx(params.piano_variation.value) : 0;
-      const varLetter = "ABCD"[varIdx] || "A";
+      if (params.piano_model) modelNum = params.piano_model.value;
+      const baseName = models[modelNum - 1] || `#${modelNum}`;
+      const varNum = params.piano_variation ? params.piano_variation.value : 1;
+      const varLetter = "ABCD"[varNum - 1] || "A";
       lastPianoName = `${baseName} ${varLetter}`;
     } else {
-      if (params.piano_model) modelIdx = midiToModelIdx(params.piano_model.value);
-      lastPianoName = models[modelIdx] || `#${modelIdx + 1}`;
+      if (params.piano_model) modelNum = params.piano_model.value;
+      lastPianoName = models[modelNum - 1] || `#${modelNum}`;
     }
     const el = document.getElementById("val-piano_model");
-    if (el) el.textContent = typeIdx === 4 ? ("ABCD"[params.piano_variation ? midiToModelIdx(params.piano_variation.value) : 0] || "A") : `#${modelIdx + 1}`;
+    if (el) {
+      el.textContent = typeIdx === 4
+        ? ("ABCD"[(params.piano_variation ? params.piano_variation.value : 1) - 1] || "A")
+        : `#${modelNum}`;
+    }
   }
 
   // Knobs (engine params)
@@ -450,9 +455,10 @@ function updateEngineParams(data) {
   if (params.sample_synth_sample) {
     const valEl = document.getElementById("val-sample_synth_sample");
     if (valEl) {
+      // value is user-domain (1-based). SAMPLE_NAMES is 0-indexed.
       const slot = params.sample_synth_sample.value;
-      lastSampleName = SAMPLE_NAMES[slot] || `#${slot + 1}`;
-      valEl.textContent = `#${slot + 1}`;
+      lastSampleName = SAMPLE_NAMES[slot - 1] || `#${slot}`;
+      valEl.textContent = `#${slot}`;
     }
   }
 }

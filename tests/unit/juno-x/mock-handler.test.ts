@@ -3,7 +3,6 @@
  *
  * The handler no longer speaks MIDI. Tests verify the public API:
  * `set_params`, `get_params`, `load_program`, `getFullState` shape.
- * `onMIDI` is a no-op stub kept only for interface compatibility.
  */
 
 import { describe, it, beforeEach } from "node:test";
@@ -102,16 +101,6 @@ describe("JUNO-X mock handler (stage 5 — pure param domain)", () => {
       const state = handler.getFullState(false);
       assert.equal(state.scene.bank, 130);
       assert.equal(state.scene.program, 5);
-    });
-  });
-
-  describe("onMIDI is a no-op in stage 5", () => {
-    it("returns an empty result and does not affect state", () => {
-      const before = handler.getFullState(false);
-      const result = handler.onMIDI({ type: "cc", controller: 16, value: 100, channel: 0 });
-      assert.deepEqual(result, {});
-      const after = handler.getFullState(false);
-      assert.deepEqual(after, before);
     });
   });
 
