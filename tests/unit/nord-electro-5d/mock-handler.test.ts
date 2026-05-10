@@ -52,10 +52,9 @@ describe("Nord Electro 5D mock handler", () => {
 
   describe("drawbar routing", () => {
     it("drawbar set with part 1 propagates to upper (auto-propagate)", () => {
-      // user value 8 = drawbar position max → wire 127
       handler.set_params!([{ name: "drawbar_1", value: 8, part: 1 }]);
       const state = handler.getFullState(false);
-      assert.strictEqual(state.upper.drawbar_1.value, 127);
+      assert.strictEqual(state.upper.drawbar_1.value, 8);
       assert.strictEqual(state.upper.drawbar_1.position, 8);
       assert.strictEqual(state.lower.drawbar_1.position, 8);
     });
@@ -93,17 +92,16 @@ describe("Nord Electro 5D mock handler", () => {
 
   describe("per-part routing", () => {
     it("set with part 2 routes to upper only", () => {
-      // organ_model is discrete max=4. user value 3 → wire 95.
       handler.set_params!([{ name: "organ_model", value: 3, part: 2 }]);
       const state = handler.getFullState(false);
-      assert.strictEqual(state.upper.organ_model.value, 95);
+      assert.strictEqual(state.upper.organ_model.value, 3);
     });
 
     it("set without part defaults to lower and propagates to upper", () => {
       handler.set_params!([{ name: "organ_model", value: 3 }]);
       const state = handler.getFullState(false);
-      assert.strictEqual(state.lower.organ_model.value, 95);
-      assert.strictEqual(state.upper.organ_model.value, 95);
+      assert.strictEqual(state.lower.organ_model.value, 3);
+      assert.strictEqual(state.upper.organ_model.value, 3);
     });
   });
 

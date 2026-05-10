@@ -26,21 +26,14 @@
  * dispatch behavior where lower-channel CCs were treated as "global" and
  * also updated the upper channel.
  *
- * Broadcast `state.{lower|upper|global}.<name>.value` is the WIRE BYTE
- * (re-encoded from the stored user value) — the existing UI assumes
- * wire-domain in `.value` for many comparisons. `position`, `index`,
- * `label`, `displayName` are user-domain as before.
+ * Broadcast `state.{lower|upper|global}.<name>.value` is USER-DOMAIN
+ * (drawbar position 0-8, label index, etc.) — same convention as the
+ * stored values. The UI consumes user-domain throughout.
  */
 
 import type { MockHandler, MidiMessage, MockHandlerResult } from "../../../shared/keyboard-model.js";
 import type { ParamRef } from "../../../shared/midi-codec.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
-import {
-  midiToDrawbar,
-  midiToDiscrete,
-  midiToModelIndex,
-  resolveValue,
-} from "../../../shared/parameter-resolution.js";
 import { PARAMS } from "./midi-map.js";
 import type { ProgramParams } from "./backup-parser.js";
 import {
@@ -53,7 +46,8 @@ import { createNordElectro5DCodec } from "./midi-codec.js";
 // ── Types ──
 
 interface ParamState {
-  value: number;          // wire byte, kept for UI back-compat
+  /** USER-domain value (drawbar position 0-8, label index, etc.). */
+  value: number;
   label: string;
   name: string;
   displayName?: string;
@@ -75,10 +69,6 @@ type NordEngine = typeof NORD_ENGINES[number];
 
 export function createNordElectro5DMockHandler(): MockHandler {
   const codec = createNordElectro5DCodec();
-
-  // ── Channels (kept only for set-list / program-change semantics) ──
-  let lowerChannel = 1;
-  let upperChannel = 2;
 
   // ── Backup cache ──
   const backupCache = createBackupCache();
@@ -107,8 +97,10 @@ export function createNordElectro5DMockHandler(): MockHandler {
   const PART_LABELS = ["A", "B", "C", "D"] as const;
 
   // ── Constants for routing ──
-  const CC_AMP_TYPE = PARAMS.spkr_comp_type.cc!;
-  const AMP_ROTARY_MIDI = resolveValue(PARAMS.spkr_comp_type, 4);
+  // spkr_comp_type label index 4 = "Rotary" (see midi-map). Real-HW edge
+  // case: when both engines = Organ AND amp = Rotary, the part select is
+  // forced to "Both" in the broadcast.
+  const AMP_ROTARY_INDEX = 4;
 
   const DRAWBAR_KEYS = new Set<string>();
   for (const [key, param] of Object.entries(PARAMS)) {
@@ -280,34 +272,28 @@ export function createNordElectro5DMockHandler(): MockHandler {
   //  Broadcast state
   // ══════════════════════════════════════════
 
-  function labelFor(param: KeyboardParameter, wireValue: number): string {
-    if (param.encoding.kind === "drawbar") return String(midiToDrawbar(wireValue, param.encoding.positions));
-    if (param.encoding.kind === "model-index") return `index ${midiToModelIndex(wireValue, param.encoding.table)}`;
-    if (param.encoding.kind === "one-based") return String(wireValue + 1);
+  function labelFor(param: KeyboardParameter, userValue: number): string {
+    if (param.encoding.kind === "model-index") return `index ${userValue}`;
     if (param.labels && (param.type === "discrete" || param.type === "toggle")) {
-      const index = midiToDiscrete(wireValue, param.max);
-      return param.labels[index] ?? String(wireValue);
+      return param.labels[userValue] ?? String(userValue);
     }
-    return String(wireValue);
+    return String(userValue);
   }
 
   function buildParamEntry(param: KeyboardParameter, userValue: number): ParamState {
-    // UI compat: broadcast `.value` is the wire byte derived from the
-    // user-domain stored value. Other fields are user-domain as before.
-    const wireValue = resolveValue(param, userValue);
     const entry: ParamState = {
-      value: wireValue,
-      label: labelFor(param, wireValue),
+      value: userValue,
+      label: labelFor(param, userValue),
       name: param.name,
       section: param.section,
       type: param.type,
     };
     if (param.displayName) entry.displayName = param.displayName;
     if (param.encoding.kind === "drawbar") {
-      entry.position = midiToDrawbar(wireValue, param.encoding.positions);
+      entry.position = userValue;
     }
     if ((param.type === "discrete" || param.type === "toggle") && param.labels) {
-      entry.index = midiToDiscrete(wireValue, param.max);
+      entry.index = userValue;
     }
     if (param.type === "discrete" && param.labels) {
       entry.labels = param.labels;
@@ -320,13 +306,12 @@ export function createNordElectro5DMockHandler(): MockHandler {
     for (const [key, param] of Object.entries(PARAMS)) {
       if (param.encoding.kind !== "drawbar") continue;
       const userValue = presetDrawbars[presetKey][key] ?? codec.wireToUserValue(key, param.defaultValue);
-      const wireValue = resolveValue(param, userValue);
       result[key] = {
-        value: wireValue,
-        label: String(midiToDrawbar(wireValue, param.encoding.positions)),
+        value: userValue,
+        label: String(userValue),
         section: param.section,
         type: param.type,
-        position: midiToDrawbar(wireValue, param.encoding.positions),
+        position: userValue,
       };
     }
     return result;
@@ -336,8 +321,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
     const lowerEng = getUserValue("part_lower_engine_select", 0);
     const upperEng = getUserValue("part_upper_engine_select", 1);
     const ampType = globalParams["spkr_comp_type"];
-    const ampWire = ampType !== undefined ? resolveValue(PARAMS.spkr_comp_type, ampType) : PARAMS.spkr_comp_type.defaultValue;
-    return lowerEng === 0 && upperEng === 0 && ampWire === AMP_ROTARY_MIDI && CC_AMP_TYPE !== undefined;
+    return lowerEng === 0 && upperEng === 0 && ampType === AMP_ROTARY_INDEX;
   }
 
   function buildFullState(
@@ -419,12 +403,11 @@ export function createNordElectro5DMockHandler(): MockHandler {
       const param = PARAMS[lastChangeKey];
       const partIdx: 0 | 1 = lastChangePart === "upper" ? 1 : 0;
       const userValue = getUserValue(lastChangeKey, partIdx);
-      const wireValue = resolveValue(param, userValue);
       msg.lastChange = {
         key: lastChangeKey,
         name: param.name,
-        value: wireValue,
-        label: labelFor(param, wireValue),
+        value: userValue,
+        label: labelFor(param, userValue),
         part: lastChangePart,
       };
     }
@@ -589,9 +572,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
 
   const handler: MockHandler = {
     codec,
-    init(lower: number, upper: number, label?: string): void {
-      lowerChannel = lower;
-      upperChannel = upper;
+    init(_lower: number, _upper: number, label?: string): void {
       activeLabel = label;
       resetState();
       backupCache.load(activeLabel);
@@ -638,9 +619,8 @@ export function createNordElectro5DMockHandler(): MockHandler {
     },
 
     setFullState(snapshot: Record<string, any>): void {
-      // Best-effort tolerant restore (plan #9). Inputs are wire-domain
-      // ParamState objects (matching what buildParamEntry emits); convert
-      // back to user-domain on the way in.
+      // Best-effort tolerant restore (plan #9). Inputs are user-domain
+      // ParamState objects (matching what buildParamEntry emits).
       try {
         const restoreSection = (partIdx: 0 | 1 | "global", section: any) => {
           if (!section || typeof section !== "object") return;
@@ -648,11 +628,10 @@ export function createNordElectro5DMockHandler(): MockHandler {
             const param = PARAMS[key];
             if (!param) continue;
             if (!ps || typeof ps !== "object" || typeof ps.value !== "number") continue;
-            const userValue = codec.wireToUserValue(key, ps.value);
             if (partIdx === "global") {
-              globalParams[key] = userValue;
+              globalParams[key] = ps.value;
             } else {
-              parts[partIdx].params[key] = userValue;
+              parts[partIdx].params[key] = ps.value;
             }
           }
         };
@@ -667,7 +646,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
             const param = PARAMS[key];
             if (!param || param.encoding.kind !== "drawbar") continue;
             if (ps && typeof ps === "object" && typeof ps.value === "number") {
-              presetDrawbars[presetKey][key] = codec.wireToUserValue(key, ps.value);
+              presetDrawbars[presetKey][key] = ps.value;
             }
           }
         };
@@ -696,8 +675,9 @@ export function createNordElectro5DMockHandler(): MockHandler {
     },
   };
 
-  // Touch unused-by-default vars to avoid lint complaints.
-  void lowerChannel; void upperChannel; void PERPART_KEYS;
+  // PERPART_KEYS is currently unused (perPart is read off PARAMS directly).
+  // Keeping it for future routing helpers; void here to satisfy lint.
+  void PERPART_KEYS;
 
   return handler;
 }
