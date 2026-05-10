@@ -15,8 +15,12 @@ const KNOB_SCALES = {
   eq_treble: { min: -15, max: 15, unit: "dB", decimals: 1 },
 };
 
-// State broadcast values are USER-domain. piano_model / piano_variation
-// values ARE the model indices already (no wire→index conversion needed).
+// State broadcast values are USER-domain. For model-index encoding
+// (piano_model, piano_variation) and one-based encoding
+// (sample_synth_sample), the user value is 1-based — matching the Nord
+// hardware display. The UI subtracts 1 for 0-indexed array lookups
+// (e.g. SAMPLE_NAMES[slot-1], "ABCD"[varNum-1]) and renders the user
+// value directly for slot numbers (`#${slot}`).
 
 // Piano models per type — populated dynamically from inventory via WebSocket.
 // Falls back to numeric indices (e.g., "#1") when inventory is not loaded.
@@ -235,7 +239,7 @@ function updateUI(data) {
     const lc = data.lastChange;
     const partLabel = lc.part && lc.part !== "global" ? ` [${lc.part}]` : "";
     document.getElementById("last-change").textContent =
-      `${lc.name} = ${lc.label} (CC${lc.cc} = ${lc.value})${partLabel}`;
+      `${lc.name} = ${lc.label}${partLabel}`;
 
     flashParam(lc.key, lc.part);
   }

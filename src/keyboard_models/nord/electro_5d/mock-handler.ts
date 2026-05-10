@@ -562,11 +562,6 @@ export function createNordElectro5DMockHandler(): MockHandler {
   }
 
   // ══════════════════════════════════════════
-  //  Channel-tagged set_params helper for the lower→both auto-propagate
-  //  semantic when the codec emits {part: 1} for lower-channel CCs
-  // ══════════════════════════════════════════
-
-  // ══════════════════════════════════════════
   //  MockHandler implementation
   // ══════════════════════════════════════════
 
@@ -633,6 +628,14 @@ export function createNordElectro5DMockHandler(): MockHandler {
         restoreSection(0, snapshot.lower);
         restoreSection(1, snapshot.upper);
         restoreSection("global", snapshot.global);
+
+        // Sync the active-preset pointer from the restored organ_preset_select
+        // value (perPart). Otherwise post-restore drawbar/vibrato/percussion
+        // writes route to the pre-restore preset.
+        const restoredPreset = parts[0].params["organ_preset_select"];
+        if (restoredPreset !== undefined) {
+          activePreset = restoredPreset >= 1 ? 2 : 1;
+        }
 
         const restorePreset = (presetKey: "preset1" | "preset2", entries: any) => {
           if (!entries || typeof entries !== "object") return;

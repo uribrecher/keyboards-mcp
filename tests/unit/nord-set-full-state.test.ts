@@ -43,4 +43,25 @@ describe("Nord setFullState round-trip", () => {
     a.init(LOWER_CH, UPPER_CH);
     assert.doesNotThrow(() => a.setFullState!({ rubbish: 123, mystery: "x" }));
   });
+
+  it("syncs activePreset from restored organ_preset_select", () => {
+    // Snapshot a state where Preset 2 is active.
+    const a = createNordElectro5DMockHandler();
+    a.init(LOWER_CH, UPPER_CH);
+    a.set_params!([{ name: "organ_preset_select", value: 1 }]);
+    a.set_params!([{ name: "drawbar_1", value: 8, part: 1 }]);
+    const snapshot = a.getFullState(false);
+    assert.strictEqual(snapshot.preset2Drawbars.drawbar_1.position, 8);
+
+    // Restore into a fresh handler and verify a subsequent drawbar write
+    // routes to preset2 (not preset1, which would be the case if
+    // activePreset wasn't synced).
+    const b = createNordElectro5DMockHandler();
+    b.init(LOWER_CH, UPPER_CH);
+    b.setFullState!(JSON.parse(JSON.stringify(snapshot)));
+    b.set_params!([{ name: "drawbar_2", value: 5, part: 1 }]);
+    const after = b.getFullState(false);
+    assert.strictEqual(after.preset2Drawbars.drawbar_2.position, 5);
+    assert.strictEqual(after.preset1Drawbars.drawbar_2.position, 0);
+  });
 });
