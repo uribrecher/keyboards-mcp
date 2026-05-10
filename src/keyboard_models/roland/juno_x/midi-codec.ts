@@ -7,12 +7,12 @@
 import type {
   MidiCodec,
   ParamRef,
-  Action,
   EncodedMessage,
   DecodedEvent,
   RequestDescriptor,
   ParamAtAddress,
 } from "../../../shared/midi-codec.js";
+import { createBaseCodecHelpers } from "../../../shared/midi-codec.js";
 import { createParameterMap } from "./midi-map.js";
 import {
   JUNO_X_MODEL_ID,
@@ -34,6 +34,7 @@ import { wireToUserValue as paramResolutionWireToUser } from "../../../shared/pa
 
 export function createJunoXCodec(): MidiCodec {
   const map = createParameterMap();
+  const base = createBaseCodecHelpers(map);
 
   // ── Helpers ──
 
@@ -55,45 +56,6 @@ export function createJunoXCodec(): MidiCodec {
     const wireValue = map.resolveValue(found.param, value);
     const sysexSize = found.param.sysexSize ?? 1;
     return sysexSize > 1 ? packNibbles(wireValue, sysexSize * 2) : [wireValue];
-  }
-
-  // ── Format / normalize helpers ──
-
-  function formatValue(name: string, userValue: number | string): string {
-    const param = map.params[name];
-    if (!param) return String(userValue);
-    return map.formatValue(param, map.resolveValue(param, userValue));
-  }
-
-  function formatWireValue(name: string, wireValue: number): string {
-    const param = map.params[name];
-    if (!param) return String(wireValue);
-    return map.formatValue(param, wireValue);
-  }
-
-  function normalizeUserValue(name: string, value: number | string): number {
-    const param = map.params[name];
-    if (!param) throw new Error(`Unknown parameter: "${name}"`);
-    if (typeof value === "number") {
-      return Math.max(param.min, Math.min(param.max, Math.round(value)));
-    }
-    if (param.labels) {
-      const lower = value.toLowerCase();
-      for (const [idxStr, label] of Object.entries(param.labels)) {
-        if (label.toLowerCase() === lower) return Number(idxStr);
-      }
-    }
-    const parsed = Number(value);
-    if (!Number.isNaN(parsed)) {
-      return Math.max(param.min, Math.min(param.max, Math.round(parsed)));
-    }
-    throw new Error(`Cannot resolve "${value}" for "${param.name}"`);
-  }
-
-  function wireToUserValue(name: string, wireValue: number): number {
-    const param = map.params[name];
-    if (!param) return wireValue;
-    return paramResolutionWireToUser(param, wireValue);
   }
 
   // ── Encode ──
@@ -123,20 +85,6 @@ export function createJunoXCodec(): MidiCodec {
 
   function encodeBytes(name: string, value: number | string, _part?: number): number[] {
     return packParamData(name, value);
-  }
-
-  function encodeAction(action: Action): EncodedMessage[] {
-    if (action.kind === "loadProgram" || action.kind === "loadSong") {
-      const channel = action.kind === "loadSong" && action.part !== undefined
-        ? action.part - 1
-        : (action.kind === "loadProgram" ? action.channel : undefined);
-      return [
-        { type: "cc",      controller: 0,  value: (action.bank >> 7) & 0x7F, channel },
-        { type: "cc",      controller: 32, value: action.bank & 0x7F,         channel },
-        { type: "program", number: action.slot, channel },
-      ];
-    }
-    return [];
   }
 
   // ── Decode ──
@@ -231,8 +179,7 @@ export function createJunoXCodec(): MidiCodec {
       });
     }
     if (message.type === "program") {
-      // Bank state is engine-managed; codec only emits the PC half.
-      return [{ kind: "loadProgram", bank: 0, slot: message.number, channel: message.channel }];
+      return [base.decodeProgramChange(message)];
     }
     return [];
   }
@@ -307,13 +254,9 @@ export function createJunoXCodec(): MidiCodec {
 
   return {
     map,
-    formatValue,
-    formatWireValue,
-    normalizeUserValue,
-    wireToUserValue,
+    ...base,
     encodeParams,
     encodeBytes,
-    encodeAction,
     decode,
     paramsAtAddress,
     parseRequest,

@@ -181,14 +181,23 @@ export interface MidiCodec {
   buildResponse(req: RequestDescriptor, paramValues: number[]): EncodedMessage;
 }
 
-// ─── Generic CC-only codec helper ───────────────────────────────────────────
+// ─── Shared base helpers ────────────────────────────────────────────────────
 //
-// Most non-Roland models use only CC for parameter access (Nord, Prophet-6).
-// They share an identical encode / decode shape, so this helper saves each
-// model from copying the same dozen lines.
+// Value-domain helpers + program-change encode/decode that every codec
+// needs regardless of wire protocol. CC-only codecs and Roland codecs both
+// compose this so the boilerplate lives in exactly one place.
 
-/** Construct a CC-only codec from any `ParameterMap`. */
-export function createCcCodec(map: ParameterMap): MidiCodec {
+export interface BaseCodecHelpers {
+  formatValue(name: string, userValue: number | string): string;
+  formatWireValue(name: string, wireValue: number): string;
+  normalizeUserValue(name: string, value: number | string): number;
+  wireToUserValue(name: string, wireValue: number): number;
+  encodeAction(action: Action): EncodedMessage[];
+  decodeProgramChange(msg: { type: "program"; number: number; channel?: number }): DecodedEvent;
+}
+
+/** Construct value-domain + program-change helpers for any `ParameterMap`. */
+export function createBaseCodecHelpers(map: ParameterMap): BaseCodecHelpers {
   function formatValue(name: string, userValue: number | string): string {
     const param = map.params[name];
     if (!param) return String(userValue);
@@ -227,6 +236,43 @@ export function createCcCodec(map: ParameterMap): MidiCodec {
     return paramResolutionWireToUser(param, wireValue);
   }
 
+  function encodeAction(action: Action): EncodedMessage[] {
+    if (action.kind === "loadProgram" || action.kind === "loadSong") {
+      // loadSong.part is 1-based numeric (models with letter labels translate
+      // before dispatch). loadProgram has its own optional channel field.
+      // Undefined channel → use the connection's default channel.
+      const channel = action.kind === "loadSong" && action.part !== undefined
+        ? action.part - 1
+        : (action.kind === "loadProgram" ? action.channel : undefined);
+      return [
+        { type: "cc",      controller: 0,  value: (action.bank >> 7) & 0x7F, channel },
+        { type: "cc",      controller: 32, value: action.bank & 0x7F,         channel },
+        { type: "program", number: action.slot, channel },
+      ];
+    }
+    return [];
+  }
+
+  function decodeProgramChange(msg: { type: "program"; number: number; channel?: number }): DecodedEvent {
+    // Bank state is engine-managed (engine.dispatch accumulates CC 0/32);
+    // codec only emits the PC half. `bank: 0` is a placeholder — the engine
+    // combines its accumulated MSB/LSB before calling handler.load_program.
+    return { kind: "loadProgram", bank: 0, slot: msg.number, channel: msg.channel };
+  }
+
+  return { formatValue, formatWireValue, normalizeUserValue, wireToUserValue, encodeAction, decodeProgramChange };
+}
+
+// ─── Generic CC-only codec helper ───────────────────────────────────────────
+//
+// Most non-Roland models use only CC for parameter access (Nord, Prophet-6).
+// They share an identical encode / decode shape, so this helper saves each
+// model from copying the same dozen lines.
+
+/** Construct a CC-only codec from any `ParameterMap`. */
+export function createCcCodec(map: ParameterMap): MidiCodec {
+  const base = createBaseCodecHelpers(map);
+
   function encodeParams(refs: ParamRef[]): EncodedMessage[] {
     return refs.map((ref) => {
       const found = map.findParam(ref.name);
@@ -246,23 +292,6 @@ export function createCcCodec(map: ParameterMap): MidiCodec {
     throw new Error("encodeBytes not supported on CC-only codec — no bytes-level wire");
   }
 
-  function encodeAction(action: Action): EncodedMessage[] {
-    if (action.kind === "loadProgram" || action.kind === "loadSong") {
-      // loadSong.part is 1-based numeric (models with letter labels translate
-      // before dispatch). loadProgram has its own optional channel field.
-      // Undefined channel → use the connection's default channel.
-      const channel = action.kind === "loadSong" && action.part !== undefined
-        ? action.part - 1
-        : (action.kind === "loadProgram" ? action.channel : undefined);
-      return [
-        { type: "cc",      controller: 0,  value: (action.bank >> 7) & 0x7F, channel },
-        { type: "cc",      controller: 32, value: action.bank & 0x7F,         channel },
-        { type: "program", number: action.slot, channel },
-      ];
-    }
-    return [];
-  }
-
   function decode(message: EncodedMessage): DecodedEvent[] {
     if (message.type === "cc") {
       const found = map.getParamByCC(message.controller);
@@ -278,7 +307,7 @@ export function createCcCodec(map: ParameterMap): MidiCodec {
       return [event];
     }
     if (message.type === "program") {
-      return [{ kind: "loadProgram", bank: 0, slot: message.number, channel: message.channel }];
+      return [base.decodeProgramChange(message)];
     }
     return [];
   }
@@ -297,13 +326,9 @@ export function createCcCodec(map: ParameterMap): MidiCodec {
 
   return {
     map,
-    formatValue,
-    formatWireValue,
-    normalizeUserValue,
-    wireToUserValue,
+    ...base,
     encodeParams,
     encodeBytes,
-    encodeAction,
     decode,
     paramsAtAddress,
     parseRequest,
