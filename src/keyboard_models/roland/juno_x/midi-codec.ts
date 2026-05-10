@@ -1,12 +1,7 @@
 /**
- * JUNO-X MidiCodec — param ↔ MIDI translator.
- *
- * Single source of truth for the wire bytes that correspond to each
- * JUNO-X parameter. Used by both the JUNO-X mock (incoming MIDI →
- * set_params) and the MCP-side `JunoXDevice` (outgoing set_params →
- * MIDI bytes, plus inbound DT1 decoding for `get_current_state`).
- *
- * Plan: docs/plans/pending/30-midi-codec-architecture.md (stages 1-5).
+ * JUNO-X MidiCodec — param ↔ MIDI translator. Used by both the mock
+ * (incoming MIDI → handler.set_params) and the MCP device (outgoing
+ * set_params → MIDI bytes, RQ1 reply decoding for `get_current_state`).
  */
 
 import type {
@@ -53,13 +48,7 @@ export function createJunoXCodec(): MidiCodec {
     return addAddresses(SCENE_BASE, found.param.sysexAddress);
   }
 
-  /**
-   * Pack a single param's wire bytes — what would appear in the data
-   * field of a DT1 (no header/checksum). The `part` argument doesn't
-   * affect the data bytes (only the address); it's the caller's job to
-   * include it when calling `encodeBytes` so the API is symmetric with
-   * `encodeParams`.
-   */
+  /** Wire bytes for a single param value — DT1 data field only. */
   function packParamData(name: string, value: number | string): number[] {
     const found = map.findParam(name);
     if (!found) throw new Error(`Unknown parameter: "${name}"`);
@@ -152,12 +141,8 @@ export function createJunoXCodec(): MidiCodec {
 
   // ── Decode ──
 
-  /**
-   * Resolve a DT1 address+data into param events. Walks scene-global
-   * params first (engine-less); then walks each engine's per-part
-   * params with the part offsets. `engine` is set on per-part events
-   * so the handler can route to the right engine namespace.
-   */
+  /** Resolve a DT1 address+data into param events. `engine` is set on
+   *  per-engine matches so the handler routes to the right namespace. */
   function decodeDt1ToParams(address: number[], data: number[]): DecodedEvent[] {
     const results: DecodedEvent[] = [];
     const sysexSizeFor = (param: { sysexSize?: number }) => param.sysexSize ?? 1;
@@ -182,8 +167,7 @@ export function createJunoXCodec(): MidiCodec {
       return true;
     };
 
-    // Scene-level params (engine-agnostic). Per-part variants iterate
-    // SCENE_PART_OFFSETS; non-perPart variants use SCENE_BASE directly.
+    // Scene-level params (engine-agnostic). perPart iterates part offsets.
     for (const [key, param] of Object.entries(map.globalParams)) {
       if (!param.sysexAddress) continue;
       if (param.perPart) {
@@ -232,9 +216,8 @@ export function createJunoXCodec(): MidiCodec {
       return decodeDt1ToParams(dt1.address, dt1.data);
     }
     if (message.type === "cc") {
-      // For an ambiguous CC (multiple engines have the same CC), emit
-      // one candidate event per engine. Handler picks based on active
-      // engine state on the targeted part.
+      // Multi-engine CC: emit one candidate per matching engine; handler
+      // picks based on active-engine state on the targeted part.
       const matches = map.getParamsByCC(message.controller);
       if (matches.length === 0) return [];
       return matches.map(({ engine, key, param }) => {

@@ -64,19 +64,15 @@ function handleState(data) {
     updatePartParams(partData);
   }
 
-  // Mirror scene-global FX switches into the UI button states. Stage 3
-  // moved this from byte-keyed `data.sceneGlobal[<addr>]` to the
-  // name-keyed `data.params.<name>` view that the mock now broadcasts.
-  if (data.params) {
-    syncFxUI(data.params);
-  }
+  // Mirror scene-global FX switches into UI button states.
+  if (data.params) syncFxUI(data.params);
 }
 
 // ── Scene-global FX state → UI button mirror ──
 
 function syncFxUI(params) {
-  // Chorus mode buttons: switch off → OFF; switch on → first non-OFF
-  // button (mode disambiguation is blocked on todo #11 wiring chorus_mode).
+  // Chorus mode disambiguation depends on todo #11 (chorus_mode wiring);
+  // for now: switch off → OFF, switch on → first non-OFF button.
   const chorusOn = (params.chorus_switch ?? 0) > 0;
   const chorusButtons = document.querySelectorAll("button.fx-chorus[data-mode]");
   let alreadyActive = false;
@@ -131,11 +127,10 @@ function updateEngineSelect(partData) {
 // ── Slider / value display update ──
 
 /**
- * Stage-5 state shape: `partData.params` is keyed by canonical param
- * NAME (e.g. `cutoff`, `lfo_rate`). Widgets are keyed by `data-param`
- * (the same name). Values are USER-DOMAIN — for continuous params they
- * equal the slider position 0-127; for scaled discretes (max < 127) the
- * value is the index, not the wire byte.
+ * `partData.params` is keyed by canonical param name (e.g. `cutoff`),
+ * matching widget `data-param` attributes. Values are user-domain —
+ * continuous params equal the slider 0-127; scaled discretes are the
+ * index, not the wire byte.
  */
 function updateControlLabels(partData) {
   // Override hardcoded HTML labels with displayName from the midi-map.
@@ -289,12 +284,7 @@ function initFxButtons() {
   }
 }
 
-/**
- * Send a named parameter value from the UI. Stage 3: canonical
- * `{type:"setParam", name, value, part?}` shape. The legacy
- * `{type:"param"}` and `{type:"cc"}` shapes still work on the engine
- * side for backward compat but new code should use this.
- */
+/** Send a named parameter value from the UI. */
 function sendUIParam(name, value) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: "setParam", name, value, part: activePart }));

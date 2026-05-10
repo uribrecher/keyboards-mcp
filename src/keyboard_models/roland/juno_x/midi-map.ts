@@ -1,15 +1,12 @@
 /**
- * JUNO-X MIDI parameter map.
+ * JUNO-X parameter map. Engine-specific param sets are kept distinct
+ * (`getParamsForEngine`, `findParamInEngine`, `getParamsByCC`) so the
+ * codec and handler can disambiguate cross-engine CCs without relying
+ * on a merged-flat-namespace lookup.
  *
- * After the stage-5b refactor, params are NOT merged into a single flat
- * namespace. Engine-specific param sets are kept distinct so that the
- * codec and handler can disambiguate the same CC across engines (e.g.
- * CC 3 = `cutoff` in AnalogSynth, JunoXModel, AND ZCore's `p1_cutoff`).
- *
- * A flat `params` view IS still exposed for callers that just want a
- * lookup of "all params on this model" (list_parameters tool, etc.) —
- * collisions on shared keys are last-wins, but that's acceptable for
- * those callers because they don't drive routing.
+ * A flat `params` view is still exposed for callers that just need
+ * "any param by key" (list_parameters tool, etc.). Collisions on shared
+ * keys are last-wins — fine for those callers since they don't route.
  */
 
 import type { KeyboardParameter } from "../../../shared/types.js";
@@ -47,16 +44,15 @@ export function createParameterMap(): JunoXParameterMap {
     [JunoXEngine.RDPiano]: createRDPianoParams(),
   };
 
-  // Flat view for callers that just want any param by key (list_parameters,
-  // list_sections, etc.). Collisions on shared keys are last-wins; consumers
-  // who care about cross-engine ambiguity use `findParamInEngine` /
+  // Flat best-effort view (last-wins on shared keys); callers that
+  // need cross-engine disambiguation use `findParamInEngine` /
   // `getParamsByCC` instead.
   const allParams: Record<string, KeyboardParameter> = { ...sceneParams };
   for (const params of Object.values(engineParamSets)) {
     Object.assign(allParams, params);
   }
 
-  // Reverse lookup: CC → all (engine, key, param) matches.
+  // CC → every (engine, key) that has it.
   const ccToMatches = new Map<number, Array<{ engine: JunoXEngine; key: string; param: KeyboardParameter }>>();
   for (const [engineStr, params] of Object.entries(engineParamSets) as [JunoXEngine, Record<string, KeyboardParameter>][]) {
     for (const [key, param] of Object.entries(params)) {
@@ -67,7 +63,7 @@ export function createParameterMap(): JunoXParameterMap {
     }
   }
 
-  // Best-effort: first engine that defines a key.
+  /** First engine that defines `key`, or undefined. */
   function getEngineForParam(key: string): JunoXEngine | undefined {
     for (const [engineStr, params] of Object.entries(engineParamSets) as [JunoXEngine, Record<string, KeyboardParameter>][]) {
       if (params[key]) return engineStr;
@@ -97,7 +93,7 @@ export function createParameterMap(): JunoXParameterMap {
       return undefined;
     },
 
-    /** Returns the first match in iteration order — last-wins on collisions. */
+    /** Last-wins lookup; cross-engine routing uses `getParamsByCC` instead. */
     getParamByCC(cc: number): { key: string; param: KeyboardParameter } | undefined {
       const matches = ccToMatches.get(cc);
       if (!matches || matches.length === 0) return undefined;

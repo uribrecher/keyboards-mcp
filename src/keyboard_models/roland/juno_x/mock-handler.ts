@@ -1,27 +1,17 @@
 /**
- * JUNO-X mock handler — pure logic (#30 stages 5/5b).
+ * JUNO-X mock handler — pure param-domain logic. State is keyed by
+ * canonical param name with user-domain values, separated per (part,
+ * engine) so switching engines preserves inactive-engine state.
  *
- * The handler speaks ONLY the param domain. Internal state is keyed by
- * canonical param name with USER-domain values, separated **per engine
- * per part** so engine switching preserves inactive engines' settings —
- * the same shape real hardware uses.
- *
- *   parts[i].activeEngine                ──> which engine drives part i
- *   parts[i].engineParams[engine][key]   ──> per-engine state, USER-domain
+ *   parts[i].activeEngine                ──> drives routing for part i
+ *   parts[i].engineParams[engine][key]   ──> per-engine values
  *   globalParams[key]                    ──> scene-global (chorus_*, etc.)
  *
- * Routing for incoming `set_params` refs:
- *   - explicit engine field on the ref → store in that engine's namespace
- *     regardless of active engine. Used by the codec when emitting per-
- *     engine candidates for an ambiguous CC; handler keeps only the one
- *     matching active engine on the targeted part (real-HW semantics).
- *   - no engine field → if scene-global, store in globalParams. Otherwise
- *     route to the active engine on the targeted part and look up the
- *     name there. No match → log unknown.
- *
- * Codec-emitted DT1 events that resolve to a specific engine carry the
- * `engine` field; the handler stores them in that engine's namespace
- * unconditionally (sysex addresses are unique per engine).
+ * `set_params` routing: scene-global names go to globalParams; otherwise
+ * we look up the name in the active engine's param set. Refs that carry
+ * an explicit `engine` field (codec candidates for an ambiguous CC) are
+ * applied only when the engine matches the active engine on the part —
+ * real-HW behavior.
  */
 
 import type { MidiMessage, MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
@@ -79,43 +69,20 @@ export function createJunoXMockHandler(): MockHandler {
 
   // ── Param-domain writes ──
 
-  /**
-   * Resolve where a `set_params` ref should land, given the targeted
-   * part. Returns the engine namespace + canonical key, or null when
-   * the ref doesn't match anything routable to the active engine.
-   *
-   * Rules:
-   *  - Scene-global key → globalParams (no engine).
-   *  - Ref carries explicit `engine` and the param matches the active
-   *    engine on the part → store there. Otherwise drop (real-HW
-   *    routes only to the active engine).
-   *  - No `engine` field → look up the name in the active engine's
-   *    param set. Match → store there. No match → drop.
-   */
   type Target =
     | { kind: "global"; key: string }
     | { kind: "engine"; engine: JunoXEngine; key: string };
 
+  /** Where a `set_params` ref should land. Null when not routable. */
   function resolveTarget(ref: ParamRef): Target | null {
-    // Scene-global takes precedence.
-    if (paramMap.globalParams[ref.name]) {
-      return { kind: "global", key: ref.name };
-    }
-    const partIdx = (ref.part ?? 1) - 1;
-    const partState = parts[partIdx];
+    if (paramMap.globalParams[ref.name]) return { kind: "global", key: ref.name };
+    const partState = parts[(ref.part ?? 1) - 1];
     if (!partState) return null;
     const active = partState.activeEngine;
-
-    if (ref.engine !== undefined) {
-      // Codec-emitted candidate. Real HW routes to active engine only.
-      if (ref.engine !== active) return null;
-      const param = paramMap.findParamInEngine(active, ref.name);
-      if (!param) return null;
-      return { kind: "engine", engine: active, key: ref.name };
-    }
-    // No engine specified — look up name in active engine.
-    const param = paramMap.findParamInEngine(active, ref.name);
-    if (!param) return null;
+    // Explicit engine on the ref must match the active engine; bare
+    // refs route to the active engine if it defines the name.
+    if (ref.engine !== undefined && ref.engine !== active) return null;
+    if (!paramMap.findParamInEngine(active, ref.name)) return null;
     return { kind: "engine", engine: active, key: ref.name };
   }
 
@@ -125,10 +92,8 @@ export function createJunoXMockHandler(): MockHandler {
     for (const ref of refs) {
       const target = resolveTarget(ref);
       if (!target) {
-        // Codec-emitted candidate that doesn't match active engine, OR
-        // an explicit name that the active engine doesn't define. Real
-        // HW would also ignore — quiet log only when the ref is fully
-        // unknown (not just routed away from the active engine).
+        // Quietly ignore refs that just don't match the active engine
+        // (real-HW behavior); only log when the name is fully unknown.
         const known = paramMap.findParam(ref.name) || paramMap.globalParams[ref.name];
         if (!known) logLines.push(`set: unknown param "${ref.name}"`);
         continue;
@@ -266,10 +231,8 @@ export function createJunoXMockHandler(): MockHandler {
       initParts(lowerChannel, upperChannel);
     },
 
-    onMIDI(_msg: MidiMessage): MockHandlerResult {
-      // Stage 5: handler doesn't speak MIDI.
-      return {};
-    },
+    /** Handler doesn't speak MIDI; engine + codec own all wire I/O. */
+    onMIDI(_msg: MidiMessage): MockHandlerResult { return {}; },
 
     set_params(refs: ParamRef[]): MockHandlerResult {
       return applySet(refs);
