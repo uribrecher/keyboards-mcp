@@ -637,8 +637,9 @@ body.bay--resizing iframe { pointer-events: none; }
   position: absolute;
   right: 6px;
   bottom: 4px;
-  width: 20px;
-  height: 16px;
+  width: 18px;
+  height: 12px;          /* + 2px border = 14 total — fits inside the
+                          *   ~19px header strip when expanded. */
   display: grid;
   place-items: center;
   /* At rest: a subtle amber-tinted bezel so the operator sees it as
@@ -647,7 +648,7 @@ body.bay--resizing iframe { pointer-events: none; }
   border: 1px solid var(--c-edge);
   border-radius: 2px;
   color: var(--c-amber-deep);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
   cursor: pointer;
   transition: color .15s, border-color .15s, background .15s;
