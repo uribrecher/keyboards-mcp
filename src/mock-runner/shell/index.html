@@ -10,105 +10,134 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- ┌─ Top chassis: brand strip + tab rail ─────────────────────────────┐ -->
-  <header class="chassis">
-    <div class="chassis__rule chassis__rule--top"></div>
-
-    <div class="brand">
-      <span class="brand__lamp" aria-hidden="true"></span>
-      <span class="brand__name">MOCK&nbsp;RUNNER</span>
-      <span class="brand__sep">·</span>
-      <span class="brand__sub">MULTI-DEVICE TEST RACK</span>
-      <span class="brand__screws" aria-hidden="true">
-        <span class="screw"></span><span class="screw"></span>
-      </span>
-    </div>
-
-    <nav class="tabbar" id="tabbar" role="tablist" aria-label="Open mocks">
-      <!-- tabs injected here -->
-      <button class="tabbar__plus" id="tab-new" aria-label="New tab">+</button>
-    </nav>
-
-    <div class="chassis__rule chassis__rule--bottom"></div>
-  </header>
-
-  <!-- ┌─ Main split: iframe stack + chat console ─────────────────────────┐ -->
+  <!-- ┌─ Layout: rack column | full-height splitter | console drawer ─────┐ -->
   <main class="bay">
-    <section class="slot" id="slot">
-      <!-- iframes get injected here, one per tab -->
-      <div class="slot__empty" id="slot-empty">
-        <div class="slot__empty-rail"></div>
-        <div class="slot__empty-msg">— EMPTY RACK SLOT —</div>
-        <div class="slot__empty-rail"></div>
-      </div>
-      <!--
-        Per-tab MIDI traffic monitor. Pinned to the bottom of the slot;
-        renders the most-recent MIDI event from the active tab's MockEngine.
-        Generic format only — no model-specific interpretation here.
-        See todo #5 (docs/plans/pending/todo-list.md).
+    <!-- Rack column: chassis (brand + tabs) above the slot, MIDI drawer
+         pinned to the bottom. The splitter to the right runs the full
+         window height since the chassis no longer spans across it. -->
+    <div class="bay__rack">
+      <header class="chassis">
+        <div class="chassis__rule chassis__rule--top"></div>
 
+        <div class="brand">
+          <span class="brand__lamp" aria-hidden="true"></span>
+          <span class="brand__name">MOCK&nbsp;RUNNER</span>
+          <span class="brand__sep">·</span>
+          <span class="brand__sub">MULTI-DEVICE TEST RACK</span>
+          <span class="brand__screws" aria-hidden="true">
+            <span class="screw"></span><span class="screw"></span>
+          </span>
+        </div>
+
+        <nav class="tabbar" id="tabbar" role="tablist" aria-label="Open mocks">
+          <!-- tabs injected here -->
+          <button class="tab tab--add" id="tab-new" aria-label="New tab">+</button>
+        </nav>
+
+        <div class="chassis__rule chassis__rule--bottom"></div>
+      </header>
+
+      <section class="slot" id="slot">
+        <!-- iframes get injected here, one per tab -->
+        <div class="slot__empty" id="slot-empty">
+          <div class="slot__empty-rail"></div>
+          <div class="slot__empty-msg">— EMPTY RACK SLOT —</div>
+          <div class="slot__empty-rail"></div>
+        </div>
+      </section>
+
+      <!--
+        MIDI traffic monitor — collapsible drawer.
+        Collapsed (default): single line showing the latest event from the
+        active tab's per-tab ring buffer (cap 50). Expanded: header bar +
+        scrollable list of all buffered events for that tab, newest pinned
+        at the bottom.
+
+        Generic format only — no model-specific interpretation.
         No aria-live: MIDI can burst (RQ1 round-trip = several events in
         <100ms), and announcing each would overwhelm assistive tech. The
-        strip is a developer-facing read-only display, so silence is the
-        correct accessibility default here.
+        drawer is a developer-facing read-only display.
       -->
-      <div class="slot__midi" id="slot-midi" data-state="idle">
-        <span class="slot__midi-glyph" id="slot-midi-glyph" aria-hidden="true">·</span>
-        <span class="slot__midi-dir" id="slot-midi-dir"></span>
-        <span class="slot__midi-time" id="slot-midi-time"></span>
-        <span class="slot__midi-body" id="slot-midi-body">— no MIDI yet —</span>
-      </div>
-    </section>
+      <section class="midi-drawer" id="midi-drawer" data-state="collapsed">
+        <header class="midi-drawer__head">
+          <span class="midi-drawer__title">MIDI MONITOR</span>
+          <span class="midi-drawer__count" id="midi-drawer-count">0 events</span>
+        </header>
+        <ul class="midi-drawer__list" id="midi-drawer-list" role="list">
+          <li class="midi-row midi-row--placeholder" data-state="idle">
+            <span class="midi-row__glyph" aria-hidden="true">·</span>
+            <span class="midi-row__dir"></span>
+            <span class="midi-row__time"></span>
+            <span class="midi-row__body">— no MIDI yet —</span>
+          </li>
+        </ul>
+        <button class="midi-drawer__chevron" id="midi-drawer-toggle"
+                aria-expanded="false" aria-controls="midi-drawer-list"
+                title="Show MIDI history">▴</button>
+      </section>
+    </div>
 
-    <div class="bay__splitter" id="bay-splitter" aria-hidden="true"
-         title="Drag to resize · double-click to reset"></div>
+    <aside class="console" id="console" data-collapsed="false">
+      <!--
+        Combined rail — both the splitter (pointer drag resizes the
+        console) and the collapse toggle (pure click flips
+        data-collapsed). Sits at the slot-facing edge of the console;
+        cursor: col-resize on hover, click without movement toggles the
+        drawer. Chevron in the middle reads as the lever.
+      -->
+      <button class="console__latch" id="console-latch"
+              aria-expanded="true" aria-controls="console-body"
+              title="Drag to resize · click to collapse">
+        <span class="console__latch-glyph" id="console-latch-glyph">▶</span>
+      </button>
 
-    <aside class="console" id="console">
-      <!-- Tabbed box: tabs are first-class. CHAT tab carries the agent
-           identity strip (lamp + SID + meter); LOG tab carries an unread
-           severity-tinted LED. The action buttons that used to live up
-           here (backup / reset / clear) have been removed pending
-           backlog #19. -->
-      <div class="console__tabs" role="tablist" aria-label="Console panes">
-        <button class="console__tab" id="tab-chat" role="tab"
-                aria-selected="true" aria-controls="chat-log"
-                data-state="unknown">
-          <span class="console__lamp"></span>
-          <span class="console__sid" id="agent-sid"
-                title="Agent process id — changes if the agent restarts">
-            <span class="console__sid-label">SID:</span><span
-                  class="console__sid-value" id="agent-sid-value">—</span>
-          </span>
-          <span class="console__meter" id="agent-status" data-state="unknown">
-            <span></span><span></span><span></span><span></span><span></span>
-          </span>
-        </button>
-        <button class="console__tab" id="tab-log" role="tab"
-                aria-selected="false" aria-controls="event-log">
-          <span class="console__tab-label">LOG</span>
-          <span class="console__unread" id="event-log-unread" hidden></span>
-        </button>
-      </div>
-
-      <div class="console__log" id="chat-log" role="log" aria-live="polite">
-        <div class="chat-row chat-row--system">
-          <p class="chat-line">Bring up a model on the rack. Then ask Claude to drive it.</p>
+      <div class="console__body" id="console-body">
+        <!-- Tabbed box: tabs are first-class. CHAT tab carries the agent
+             identity strip (lamp + SID + meter); LOG tab carries an unread
+             severity-tinted LED. The action buttons that used to live up
+             here (backup / reset / clear) have been removed pending
+             backlog #19. -->
+        <div class="console__tabs" role="tablist" aria-label="Console panes">
+          <button class="console__tab" id="tab-chat" role="tab"
+                  aria-selected="true" aria-controls="chat-log"
+                  data-state="unknown">
+            <span class="console__lamp"></span>
+            <span class="console__sid" id="agent-sid"
+                  title="Agent process id — changes if the agent restarts">
+              <span class="console__sid-label">SID:</span><span
+                    class="console__sid-value" id="agent-sid-value">—</span>
+            </span>
+            <span class="console__meter" id="agent-status" data-state="unknown">
+              <span></span><span></span><span></span><span></span><span></span>
+            </span>
+          </button>
+          <button class="console__tab" id="tab-log" role="tab"
+                  aria-selected="false" aria-controls="event-log">
+            <span class="console__tab-label">LOG</span>
+            <span class="console__unread" id="event-log-unread" hidden></span>
+          </button>
         </div>
-      </div>
 
-      <div class="console__log console__log--events" id="event-log"
-           role="log" aria-live="polite" hidden>
-        <div class="event-log__empty">— no events —</div>
-      </div>
+        <div class="console__log" id="chat-log" role="log" aria-live="polite">
+          <div class="chat-row chat-row--system">
+            <p class="chat-line">Bring up a model on the rack. Then ask Claude to drive it.</p>
+          </div>
+        </div>
 
-      <form class="composer" id="chat-form" autocomplete="off">
-        <div class="composer__prompt">›</div>
-        <textarea
-          class="composer__input"
-          id="chat-input"
-          rows="1"
-        ></textarea>
-      </form>
+        <div class="console__log console__log--events" id="event-log"
+             role="log" aria-live="polite" hidden>
+          <div class="event-log__empty">— no events —</div>
+        </div>
+
+        <form class="composer" id="chat-form" autocomplete="off">
+          <div class="composer__prompt">›</div>
+          <textarea
+            class="composer__input"
+            id="chat-input"
+            rows="1"
+          ></textarea>
+        </form>
+      </div>
     </aside>
   </main>
 

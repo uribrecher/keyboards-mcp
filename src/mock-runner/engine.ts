@@ -18,13 +18,18 @@ const HEARTBEAT_MS = 30_000;
  * Structured MIDI traffic notification, emitted as `midi-event` on the
  * engine's EventEmitter alongside the existing `MIDI-IN` / `MIDI-OUT`
  * console logs. Consumed by the mock-runner shell to render the per-tab
- * status strip (todo #5). No model-specific interpretation — raw bytes
- * only; sysex is summarized at the source so the IPC payload stays tiny.
+ * MIDI drawer (the collapsible monitor at the bottom of the slot, with
+ * a 50-event ring buffer per tab — see PR #82).
+ *
+ * No model-specific interpretation — raw bytes only. Sysex carries the
+ * FULL byte array so the shell can let the operator select-and-copy the
+ * complete message; the renderer relies on CSS `text-overflow: ellipsis`
+ * to truncate the display visually without losing the underlying text.
  */
 export type MidiEventPayload =
   | { direction: "in" | "out"; kind: "cc"; controller: number; value: number; channel: number }
   | { direction: "in" | "out"; kind: "program"; number: number; channel: number }
-  | { direction: "in" | "out"; kind: "sysex"; byteCount: number; head: number[]; tailByte?: number };
+  | { direction: "in" | "out"; kind: "sysex"; bytes: number[] };
 
 export interface EngineOptions {
   lowerChannel: number;
@@ -81,10 +86,13 @@ export class MockEngine extends EventEmitter {
   }
 
   /**
-   * Compact one-line summary of a sysex packet. Short packets (≤5 bytes)
-   * are shown in full; longer packets show first 4 + " .. " + last byte
-   * so the elision marker only appears when there's actually a middle
-   * being dropped. Stays consistent with `structuredSysex`.
+   * Compact one-line summary of a sysex packet for console logs.
+   * Short packets (≤5 bytes) are shown in full; longer packets show
+   * first 4 + " .. " + last byte so the elision marker only appears
+   * when there's actually a middle being dropped.
+   *
+   * The structured `midi-event` payload carries the FULL byte array
+   * (see `MidiEventPayload`) — this trimmed format is for stdout only.
    */
   private static summarizeSysex(bytes: number[]): string {
     const fmt = (b: number) => b.toString(16).padStart(2, "0");
@@ -94,23 +102,6 @@ export class MockEngine extends EventEmitter {
     const head = bytes.slice(0, 4).map(fmt).join(" ");
     const tail = fmt(bytes[bytes.length - 1]);
     return `sysex ${bytes.length} bytes [${head} .. ${tail}]`;
-  }
-
-  /**
-   * Structured sysex summary for the `midi-event` payload. Mirrors
-   * `summarizeSysex`'s rule: short packets carry every byte in `head`
-   * with no `tailByte`; longer packets carry first 4 in `head` plus the
-   * last byte in `tailByte`.
-   */
-  private static structuredSysex(bytes: number[]): { byteCount: number; head: number[]; tailByte?: number } {
-    if (bytes.length <= 5) {
-      return { byteCount: bytes.length, head: bytes.slice() };
-    }
-    return {
-      byteCount: bytes.length,
-      head: bytes.slice(0, 4),
-      tailByte: bytes[bytes.length - 1],
-    };
   }
 
   async start(): Promise<void> {
@@ -225,7 +216,7 @@ export class MockEngine extends EventEmitter {
       this.midiInput.on("sysex" as any, (msg: { bytes: number[] }) => {
         const bytes = [...msg.bytes];
         console.log(`${this.tag()} MIDI-IN ${MockEngine.summarizeSysex(bytes)}`);
-        this.emit("midi-event", { direction: "in", kind: "sysex", ...MockEngine.structuredSysex(bytes) } satisfies MidiEventPayload);
+        this.emit("midi-event", { direction: "in", kind: "sysex", bytes: bytes.slice() } satisfies MidiEventPayload);
         this.dispatch({ type: "sysex", bytes });
       });
     }
@@ -499,7 +490,7 @@ export class MockEngine extends EventEmitter {
       } else if (msg.type === "sysex") {
         console.log(`${this.tag()} MIDI-OUT ${MockEngine.summarizeSysex(msg.bytes)}`);
         this.midiOutput.send("sysex", msg.bytes);
-        this.emit("midi-event", { direction: "out", kind: "sysex", ...MockEngine.structuredSysex(msg.bytes) } satisfies MidiEventPayload);
+        this.emit("midi-event", { direction: "out", kind: "sysex", bytes: msg.bytes.slice() } satisfies MidiEventPayload);
       }
     } catch (err) { console.error(`${this.tag()} MIDI-OUT send failed:`, err); }
   }

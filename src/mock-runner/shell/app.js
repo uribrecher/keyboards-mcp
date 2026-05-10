@@ -54,25 +54,30 @@ function setActive(tabId) {
     if (t.iframe) t.iframe.hidden = !isActive;
   }
   slotEmpty.hidden = tabs.length > 0;
-  paintMidiStrip(tabId ? lastMidiEventByTab.get(tabId) : null);
+  paintMidiDrawer(tabId ? (midiHistoryByTab.get(tabId) ?? []) : []);
   if (tabId) void api.setActiveTab?.(tabId);
 }
 
-// ── MIDI status strip (todo #5) ──
+// ── MIDI traffic monitor — drawer (todo #5 + layout overhaul) ──
 //
-// The shell receives `midi:event` IPC messages from main, one per MIDI
-// byte exchange that the active tab's MockEngine logs. We keep just the
-// most-recent event per tab and paint the active tab's into the strip.
-// No buffering of older events — single-line, latest-only display.
+// Per-tab ring buffer of recent MIDI events. Collapsed (default): the
+// drawer shows just the latest event from the active tab. Expanded:
+// shows the full buffered history (up to MIDI_HISTORY_CAP per tab) in
+// a scrollable list with the newest at the bottom and the operator's
+// scroll position preserved during bursts when they've scrolled up.
 
-const lastMidiEventByTab = new Map(); // tabId → { ts, direction, kind, ...details }
-const slotMidiEl     = document.getElementById("slot-midi");
-const slotMidiGlyph  = document.getElementById("slot-midi-glyph");
-const slotMidiDir    = document.getElementById("slot-midi-dir");
-const slotMidiTime   = document.getElementById("slot-midi-time");
-const slotMidiBody   = document.getElementById("slot-midi-body");
-let staleTimer = null;
+const MIDI_HISTORY_CAP = 50;
 const STALE_AFTER_MS = 2500;
+const SCROLL_PIN_THRESHOLD_PX = 10;
+
+/** tabId → array of {ts, direction, kind, ...details}, oldest-first. */
+const midiHistoryByTab = new Map();
+
+const midiDrawerEl    = document.getElementById("midi-drawer");
+const midiListEl      = document.getElementById("midi-drawer-list");
+const midiCountEl     = document.getElementById("midi-drawer-count");
+const midiToggleEl    = document.getElementById("midi-drawer-toggle");
+let staleTimer = null;
 
 function formatMidiTime(ts) {
   const d = new Date(ts);
@@ -90,49 +95,155 @@ function formatMidiBody(ev) {
   if (ev.kind === "program") {
     return `PC=${ev.number} ch=${ev.channel}`;
   }
-  // sysex
-  const head = ev.head.map((b) => b.toString(16).padStart(2, "0")).join(" ");
-  const tail = ev.tailByte !== undefined
-    ? ` .. ${ev.tailByte.toString(16).padStart(2, "0")}`
-    : "";
-  return `sysex ${ev.byteCount} bytes [${head}${tail}]`;
+  // sysex — emit the FULL hex string. CSS truncates the visible row
+  // with text-overflow: ellipsis; the underlying text node still holds
+  // every byte, so click-and-drag selection on .midi-row__body grabs
+  // the complete message for copy/paste.
+  const hex = ev.bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ");
+  return `sysex ${ev.bytes.length} bytes [${hex}]`;
 }
 
-function paintMidiStrip(ev) {
+/** Render a single <li class="midi-row"> for the given event. */
+function buildMidiRow(ev) {
+  const li = document.createElement("li");
+  li.className = "midi-row";
+  li.dataset.state = ev.direction;
+  li.innerHTML =
+    `<span class="midi-row__glyph" aria-hidden="true">${ev.direction === "in" ? "◂" : "▸"}</span>` +
+    `<span class="midi-row__dir">${ev.direction === "in" ? "IN" : "OUT"}</span>` +
+    `<span class="midi-row__time">${formatMidiTime(ev.ts)}</span>` +
+    `<span class="midi-row__body"></span>`;
+  // textContent (not innerHTML) for the body — sysex strings are
+  // generated, but better safe than sorry against future kinds.
+  li.querySelector(".midi-row__body").textContent = formatMidiBody(ev);
+  return li;
+}
+
+/** Build the placeholder "— no MIDI yet —" row. */
+function buildPlaceholderRow() {
+  const li = document.createElement("li");
+  li.className = "midi-row midi-row--placeholder";
+  li.dataset.state = "idle";
+  li.innerHTML =
+    `<span class="midi-row__glyph" aria-hidden="true">·</span>` +
+    `<span class="midi-row__dir"></span>` +
+    `<span class="midi-row__time"></span>` +
+    `<span class="midi-row__body">— no MIDI yet —</span>`;
+  return li;
+}
+
+function isExpanded() {
+  return midiDrawerEl.dataset.state === "expanded";
+}
+
+function isPinnedToBottom() {
+  return (midiListEl.scrollHeight - midiListEl.scrollTop - midiListEl.clientHeight)
+    <= SCROLL_PIN_THRESHOLD_PX;
+}
+
+/**
+ * Repaint the drawer list from a per-tab history buffer.
+ * Collapsed: render the single latest event (or placeholder if empty).
+ * Expanded: render every buffered event, newest at the bottom; if the
+ * caller flagged `flashLatest`, restart the flash keyframe on the
+ * latest row.
+ */
+function paintMidiDrawer(events, opts = { flashLatest: false, isNewEvent: false }) {
   if (staleTimer) { clearTimeout(staleTimer); staleTimer = null; }
-  slotMidiEl.classList.remove("slot__midi--flash", "slot__midi--stale");
-  if (!ev) {
-    slotMidiEl.dataset.state = "idle";
-    slotMidiGlyph.textContent = "·";
-    slotMidiDir.textContent   = "";
-    slotMidiTime.textContent  = "";
-    slotMidiBody.textContent  = "— no MIDI yet —";
-    return;
+
+  const expanded = isExpanded();
+  const pinnedBeforeRepaint = expanded && isPinnedToBottom();
+
+  // Build the new row set off-DOM, then swap in.
+  const frag = document.createDocumentFragment();
+  if (events.length === 0) {
+    frag.appendChild(buildPlaceholderRow());
+  } else if (!expanded) {
+    frag.appendChild(buildMidiRow(events[events.length - 1]));
+  } else {
+    for (const ev of events) frag.appendChild(buildMidiRow(ev));
   }
-  slotMidiEl.dataset.state = ev.direction;
-  slotMidiGlyph.textContent = ev.direction === "in" ? "◂" : "▸";
-  slotMidiDir.textContent   = ev.direction === "in" ? "IN"  : "OUT";
-  slotMidiTime.textContent  = formatMidiTime(ev.ts);
-  slotMidiBody.textContent  = formatMidiBody(ev);
-  // Restart the flash keyframe via rAF double-pump — toggling on the next
-  // frame avoids a forced synchronous layout (offsetWidth read) on every
-  // event, which matters under MIDI bursts (RQ1 round-trips).
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      slotMidiEl.classList.add("slot__midi--flash");
-    });
-  });
-  staleTimer = setTimeout(() => {
-    slotMidiEl.classList.add("slot__midi--stale");
-    staleTimer = null;
-  }, STALE_AFTER_MS);
+  midiListEl.replaceChildren(frag);
+
+  // Update the header count.
+  midiCountEl.textContent = `${events.length} event${events.length === 1 ? "" : "s"}`;
+
+  // Auto-scroll to bottom only when the operator was already pinned, so a
+  // mid-history scroll-up isn't yanked back during a burst.
+  if (expanded && pinnedBeforeRepaint) {
+    midiListEl.scrollTop = midiListEl.scrollHeight;
+  }
+
+  // Flash + stale on the latest row only.
+  const latest = midiListEl.lastElementChild;
+  if (latest && !latest.classList.contains("midi-row--placeholder")) {
+    if (opts.flashLatest) {
+      // rAF double-pump avoids a forced sync layout on every event.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        latest.classList.add("midi-row--flash");
+      }));
+    }
+    if (opts.isNewEvent) {
+      staleTimer = setTimeout(() => {
+        latest.classList.add("midi-row--stale");
+        staleTimer = null;
+      }, STALE_AFTER_MS);
+    }
+  }
 }
 
 api.onMidiEvent?.((payload) => {
   // payload: { tabId, ts, direction, kind, ...details }
-  lastMidiEventByTab.set(payload.tabId, payload);
-  if (payload.tabId === activeTabId) paintMidiStrip(payload);
+  let history = midiHistoryByTab.get(payload.tabId);
+  if (!history) { history = []; midiHistoryByTab.set(payload.tabId, history); }
+  history.push(payload);
+  if (history.length > MIDI_HISTORY_CAP) history.splice(0, history.length - MIDI_HISTORY_CAP);
+  if (payload.tabId === activeTabId) {
+    paintMidiDrawer(history, { flashLatest: true, isNewEvent: true });
+  }
 });
+
+// ── Drawer toggle handlers ──
+midiToggleEl?.addEventListener("click", () => {
+  const next = isExpanded() ? "collapsed" : "expanded";
+  midiDrawerEl.dataset.state = next;
+  midiToggleEl.setAttribute("aria-expanded", next === "expanded" ? "true" : "false");
+  midiToggleEl.textContent = next === "expanded" ? "▾" : "▴";
+  midiToggleEl.title = next === "expanded" ? "Collapse MIDI history" : "Show MIDI history";
+  // Repaint without flashing — toggling is not a new event. The
+  // collapsed→expanded transition naturally satisfies the
+  // pinned-to-bottom check inside paintMidiDrawer (the single-row
+  // collapsed list reads as "scrolled to the bottom"), so the new
+  // expanded list snaps to the bottom there. No extra rAF needed.
+  const history = activeTabId ? (midiHistoryByTab.get(activeTabId) ?? []) : [];
+  paintMidiDrawer(history);
+});
+
+// ── Console drawer rail (combined splitter + collapse toggle) ──
+//
+// The rail is the only chrome between the slot and the console. Pointer
+// drag → resize. Click without movement → toggle collapsed. The drag
+// vs click discrimination uses a pixel threshold (DRAG_THRESHOLD_PX);
+// any pointermove beyond that flips the gesture into a drag.
+//
+// Drag handlers live in the splitter section further down so they can
+// share the persistence/clamp helpers; here we just expose the element
+// + a tiny helper to update the chevron + aria.
+const consoleEl       = document.getElementById("console");
+const consoleLatchEl  = document.getElementById("console-latch");
+const consoleLatchGlyphEl = document.getElementById("console-latch-glyph");
+
+function setConsoleCollapsed(collapsed) {
+  const next = collapsed ? "true" : "false";
+  consoleEl.dataset.collapsed = next;
+  consoleLatchEl?.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  if (consoleLatchEl) {
+    consoleLatchEl.title = collapsed
+      ? "Click to expand · drag to resize"
+      : "Drag to resize · click to collapse";
+  }
+  if (consoleLatchGlyphEl) consoleLatchGlyphEl.textContent = collapsed ? "◀" : "▶";
+}
 
 function renderTabButton(tab) {
   const btn = document.createElement("button");
@@ -277,7 +388,7 @@ async function closeTab(tabId) {
 
   // Tear down iframe + engine
   if (tab.iframe) tab.iframe.remove();
-  lastMidiEventByTab.delete(tabId);
+  midiHistoryByTab.delete(tabId);
   await api.closeTab(tabId);
 
   const idx = tabs.indexOf(tab);
@@ -290,7 +401,7 @@ async function closeTab(tabId) {
     else {
       activeTabId = null;
       slotEmpty.hidden = false;
-      paintMidiStrip(null);
+      paintMidiDrawer([]);
     }
   }
 }
@@ -1139,24 +1250,34 @@ api.onMountTab?.((info) => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// Bay splitter — operator-controlled slot/console width
-// (spec: docs/superpowers/specs/2026-05-08-mock-runner-event-log-design.md)
+// Console rail — combined splitter + collapse toggle
+//
+// One element handles two gestures:
+//   • drag (pointermove > DRAG_THRESHOLD_PX) → resize the console
+//   • click (no movement past threshold)     → toggle collapsed state
+//
+// Width persistence (localStorage), clamping to a slot floor, and
+// dblclick-to-reset behave the same as the old separate-splitter setup.
 // ─────────────────────────────────────────────────────────────────
 
 const SPLITTER_STORAGE_KEY = "mock-runner:console-w";
 const CONSOLE_MIN_PX = 380;
 const CONSOLE_MAX_PX = 800;
 const SLOT_FLOOR_PX  = 600;
-const SPLITTER_PX    = 6;
+const RAIL_PX        = 12;
+const DRAG_THRESHOLD_PX = 4;
 
-const bayEl     = document.querySelector(".bay");
-const splitter  = document.getElementById("bay-splitter");
+const bayEl = document.querySelector(".bay");
 
 function clampConsoleWidth(px, viewportW) {
-  // Hard min/max + dynamic ceiling so the slot never drops below its floor.
+  // Hard min/max + dynamic ceiling so the slot never drops below its
+  // floor. The rail lives INSIDE the console column now, so the
+  // console's measured width already includes it — no separate
+  // RAIL_PX subtraction (unlike the pre-PR-#82 layout where the
+  // splitter was its own bay column).
   const dynamicMax = Math.max(
     CONSOLE_MIN_PX,
-    Math.min(CONSOLE_MAX_PX, viewportW - SPLITTER_PX - SLOT_FLOOR_PX),
+    Math.min(CONSOLE_MAX_PX, viewportW - SLOT_FLOOR_PX),
   );
   return Math.max(CONSOLE_MIN_PX, Math.min(dynamicMax, px));
 }
@@ -1177,7 +1298,7 @@ function clearPersistedWidth() {
 }
 
 // Initial load — apply persisted width if present and within current bounds.
-(function initSplitter() {
+(function initRailWidth() {
   let saved;
   try { saved = localStorage.getItem(SPLITTER_STORAGE_KEY); } catch { saved = null; }
   if (!saved) return;
@@ -1187,49 +1308,75 @@ function clearPersistedWidth() {
   applyConsoleWidth(clamped);
 })();
 
-// Drag handlers
+// Drag-or-click state for the rail.
 let dragStartX = 0;
 let dragStartW = 0;
+let didDrag    = false;
 
-splitter.addEventListener("pointerdown", (e) => {
-  splitter.setPointerCapture(e.pointerId);
+consoleLatchEl?.addEventListener("pointerdown", (e) => {
+  // Ignore secondary buttons / non-primary input.
+  if (e.button !== 0) return;
+  consoleLatchEl.setPointerCapture(e.pointerId);
   document.body.classList.add("bay--resizing");
   dragStartX = e.clientX;
-  // Read the current rendered width — uses --console-w if set, else
-  // the clamp() default. getBoundingClientRect on the console gives
-  // us the real pixel value either way.
-  dragStartW = document.getElementById("console").getBoundingClientRect().width;
+  didDrag = false;
+  // If the console is collapsed when the gesture begins, the click
+  // path is the operator pressing "expand" — we do nothing here. If
+  // they exceed the drag threshold while still down, pointermove will
+  // un-collapse and start growing the console from the rail width.
+  dragStartW = consoleEl.getBoundingClientRect().width;
   e.preventDefault();
 });
 
-splitter.addEventListener("pointermove", (e) => {
-  if (!splitter.hasPointerCapture(e.pointerId)) return;
-  // Splitter sits to the LEFT of the console. Dragging right shrinks
-  // the console; dragging left grows it. (Reverse the sign vs intuition.)
-  const next = clampConsoleWidth(dragStartW - (e.clientX - dragStartX), window.innerWidth);
-  applyConsoleWidth(next);
+consoleLatchEl?.addEventListener("pointermove", (e) => {
+  if (!consoleLatchEl.hasPointerCapture(e.pointerId)) return;
+  const dx = e.clientX - dragStartX;
+  if (!didDrag && Math.abs(dx) > DRAG_THRESHOLD_PX) {
+    didDrag = true;
+    if (consoleEl.dataset.collapsed === "true") {
+      // Snap out of collapsed at the moment the drag is recognized so
+      // the operator can sweep the console open in one motion.
+      setConsoleCollapsed(false);
+      dragStartW = RAIL_PX;
+    }
+  }
+  if (didDrag) {
+    // Rail sits LEFT of the console — dragging right shrinks the
+    // console, dragging left grows it. Sign reversed accordingly.
+    const next = clampConsoleWidth(dragStartW - dx, window.innerWidth);
+    applyConsoleWidth(next);
+  }
 });
 
-function endSplitterDrag(e, persist) {
-  if (splitter.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
+function endRailGesture(e, persist) {
+  if (consoleLatchEl?.hasPointerCapture(e.pointerId)) {
+    consoleLatchEl.releasePointerCapture(e.pointerId);
+  }
   document.body.classList.remove("bay--resizing");
-  if (persist) {
-    const finalW = document.getElementById("console").getBoundingClientRect().width;
-    persistConsoleWidth(Math.round(finalW));
+  if (didDrag) {
+    if (persist) {
+      const finalW = consoleEl.getBoundingClientRect().width;
+      persistConsoleWidth(Math.round(finalW));
+    }
+  } else if (persist) {
+    // Pure click — toggle the collapsed state. (Cancel/lost-capture
+    // both pass persist=false, so an aborted gesture won't toggle.)
+    setConsoleCollapsed(consoleEl.dataset.collapsed !== "true");
   }
 }
 
-splitter.addEventListener("pointerup",     (e) => endSplitterDrag(e, true));
+consoleLatchEl?.addEventListener("pointerup",          (e) => endRailGesture(e, true));
 // On cancel (OS gesture, alt-tab, focus loss) clear the resizing state
-// without overwriting the persisted width — the drag is being aborted,
-// not committed. Without these, .bay--resizing can stick on <body>
-// leaving cursor: col-resize and iframe pointer-events disabled until
-// reload.
-splitter.addEventListener("pointercancel", (e) => endSplitterDrag(e, false));
-splitter.addEventListener("lostpointercapture", (e) => endSplitterDrag(e, false));
+// without persisting the width or treating it as a click. Without these,
+// .bay--resizing can stick on <body> leaving cursor: col-resize and
+// iframe pointer-events disabled until reload.
+consoleLatchEl?.addEventListener("pointercancel",      (e) => endRailGesture(e, false));
+consoleLatchEl?.addEventListener("lostpointercapture", (e) => endRailGesture(e, false));
 
-// Double-click resets to the static-CSS default.
-splitter.addEventListener("dblclick", () => {
+// Double-click resets to the static-CSS default. Note: dblclick fires
+// after the second pointerup — by that point setConsoleCollapsed has
+// already toggled twice, so we end where we started, then reset width.
+consoleLatchEl?.addEventListener("dblclick", () => {
   clearPersistedWidth();
 });
 
