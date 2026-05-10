@@ -54,8 +54,85 @@ function setActive(tabId) {
     if (t.iframe) t.iframe.hidden = !isActive;
   }
   slotEmpty.hidden = tabs.length > 0;
+  paintMidiStrip(tabId ? lastMidiEventByTab.get(tabId) : null);
   if (tabId) void api.setActiveTab?.(tabId);
 }
+
+// ── MIDI status strip (todo #5) ──
+//
+// The shell receives `midi:event` IPC messages from main, one per MIDI
+// byte exchange that the active tab's MockEngine logs. We keep just the
+// most-recent event per tab and paint the active tab's into the strip.
+// No buffering of older events — single-line, latest-only display.
+
+const lastMidiEventByTab = new Map(); // tabId → { ts, direction, kind, ...details }
+const slotMidiEl     = document.getElementById("slot-midi");
+const slotMidiGlyph  = document.getElementById("slot-midi-glyph");
+const slotMidiDir    = document.getElementById("slot-midi-dir");
+const slotMidiTime   = document.getElementById("slot-midi-time");
+const slotMidiBody   = document.getElementById("slot-midi-body");
+let staleTimer = null;
+const STALE_AFTER_MS = 2500;
+
+function formatMidiTime(ts) {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  const ms = String(d.getMilliseconds()).padStart(3, "0");
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
+
+function formatMidiBody(ev) {
+  if (ev.kind === "cc") {
+    return `CC${ev.controller}=${ev.value} ch=${ev.channel}`;
+  }
+  if (ev.kind === "program") {
+    return `PC=${ev.number} ch=${ev.channel}`;
+  }
+  // sysex
+  const head = ev.head.map((b) => b.toString(16).padStart(2, "0")).join(" ");
+  const tail = ev.tailByte !== undefined
+    ? ` .. ${ev.tailByte.toString(16).padStart(2, "0")}`
+    : "";
+  return `sysex ${ev.byteCount} bytes [${head}${tail}]`;
+}
+
+function paintMidiStrip(ev) {
+  if (staleTimer) { clearTimeout(staleTimer); staleTimer = null; }
+  slotMidiEl.classList.remove("slot__midi--flash", "slot__midi--stale");
+  if (!ev) {
+    slotMidiEl.dataset.state = "idle";
+    slotMidiGlyph.textContent = "·";
+    slotMidiDir.textContent   = "";
+    slotMidiTime.textContent  = "";
+    slotMidiBody.textContent  = "— no MIDI yet —";
+    return;
+  }
+  slotMidiEl.dataset.state = ev.direction;
+  slotMidiGlyph.textContent = ev.direction === "in" ? "◂" : "▸";
+  slotMidiDir.textContent   = ev.direction === "in" ? "IN"  : "OUT";
+  slotMidiTime.textContent  = formatMidiTime(ev.ts);
+  slotMidiBody.textContent  = formatMidiBody(ev);
+  // Restart the flash keyframe via rAF double-pump — toggling on the next
+  // frame avoids a forced synchronous layout (offsetWidth read) on every
+  // event, which matters under MIDI bursts (RQ1 round-trips).
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      slotMidiEl.classList.add("slot__midi--flash");
+    });
+  });
+  staleTimer = setTimeout(() => {
+    slotMidiEl.classList.add("slot__midi--stale");
+    staleTimer = null;
+  }, STALE_AFTER_MS);
+}
+
+api.onMidiEvent?.((payload) => {
+  // payload: { tabId, ts, direction, kind, ...details }
+  lastMidiEventByTab.set(payload.tabId, payload);
+  if (payload.tabId === activeTabId) paintMidiStrip(payload);
+});
 
 function renderTabButton(tab) {
   const btn = document.createElement("button");
@@ -200,6 +277,7 @@ async function closeTab(tabId) {
 
   // Tear down iframe + engine
   if (tab.iframe) tab.iframe.remove();
+  lastMidiEventByTab.delete(tabId);
   await api.closeTab(tabId);
 
   const idx = tabs.indexOf(tab);
@@ -212,6 +290,7 @@ async function closeTab(tabId) {
     else {
       activeTabId = null;
       slotEmpty.hidden = false;
+      paintMidiStrip(null);
     }
   }
 }

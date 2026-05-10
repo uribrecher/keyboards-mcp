@@ -3,7 +3,6 @@
 // ── State ──
 
 let activePart = 1;
-let firstMessage = true;
 
 // ── WebSocket ──
 
@@ -32,15 +31,7 @@ function connect() {
   ws.onerror = () => ws.close();
 
   ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    if (firstMessage) {
-      firstMessage = false;
-      const footer = document.getElementById("last-change");
-      if (footer && footer.textContent === "—") {
-        footer.textContent = "Connected";
-      }
-    }
-    handleState(data);
+    handleState(JSON.parse(event.data));
   };
 }
 
@@ -202,11 +193,6 @@ function initPartButtons() {
 
 // ── Outgoing controls ──
 
-function setLastChange(text) {
-  const el = document.getElementById("last-change");
-  if (el) el.textContent = text;
-}
-
 function initSliderControls() {
   for (const el of document.querySelectorAll("input.vslider[data-param]")) {
     el.addEventListener("input", () => {
@@ -215,7 +201,6 @@ function initSliderControls() {
       const valEl = document.getElementById("val-" + name);
       if (valEl) valEl.textContent = value;
       sendUIParam(name, value);
-      setLastChange(`${name} = ${value} (Part ${activePart})`);
     });
   }
 }
@@ -228,7 +213,6 @@ function initSelectControls() {
       const valEl = document.getElementById("val-" + name);
       if (valEl) valEl.textContent = value;
       sendUIParam(name, value);
-      setLastChange(`${name} = ${value} (Part ${activePart})`);
     });
   }
 }
@@ -242,7 +226,6 @@ function initToggleButtons() {
       // Toggles use 0/1 user-domain values; the codec scales to wire bytes.
       const value = isOn ? 1 : 0;
       sendUIParam(name, value);
-      setLastChange(`${name} = ${isOn ? "ON" : "OFF"} (Part ${activePart})`);
     });
   }
 }
@@ -262,7 +245,6 @@ function initChorusButtons() {
       if (mode !== "OFF") {
         sendUIParam("chorus_mode", CHORUS_MODES[mode] ?? 1);
       }
-      setLastChange(`Chorus = ${mode}`);
     });
   }
 }
@@ -279,7 +261,6 @@ function initFxButtons() {
       if (paramName) {
         sendUIParam(paramName, isOn ? 1 : 0);
       }
-      setLastChange(`${fx} = ${isOn ? "ON" : "OFF"}`);
     });
   }
 }
@@ -300,7 +281,6 @@ function initEngineSwitch() {
     }
     const target = document.getElementById("panel-" + value);
     if (target) target.classList.remove("hidden");
-    setLastChange(`Engine = ${value}`);
   });
 }
 
