@@ -156,21 +156,16 @@ export interface MockHandler {
   /** Process any MIDI message. Returns state to broadcast and/or a log line. */
   onMIDI(msg: MidiMessage): MockHandlerResult;
   /**
-   * Param-domain write (#30 stage 3). The canonical way for the engine
+   * Param-domain write (#30 stages 3–4). The canonical way for the engine
    * (and UI WS messages of shape `{type:"setParam", name, value, part?}`)
    * to update a parameter on the mock. The handler updates internal state
-   * and returns a `MockHandlerResult`.
+   * and returns a `MockHandlerResult` with `state` and `log` only.
    *
-   * Stage-3 contract (current): handlers may surface the encoded outbound
-   * packets in the result's `ccOut` / `sysexOut` / `programOut` channels
-   * for the engine to emit on the device's MIDI Out (panel-knob analogue).
-   * This is what JUNO-X does today — `set_params` runs each ref through
-   * the codec and includes the encoded messages in the result.
-   *
-   * Stage-4 plan: emission moves out of the handler. The engine will ask
-   * the codec to encode the same write and emit on the device's MIDI Out
-   * directly, leaving `ccOut`/`sysexOut`/`programOut` for handler-explicit
-   * emissions only (e.g. RQ1→DT1 reply).
+   * Outbound MIDI emission is the engine's responsibility (stage 4).
+   * For UI-source writes the engine asks the codec to encode the same
+   * write and writes the bytes to the device's MIDI Out (panel-knob
+   * analogue). The handler MUST NOT carry MIDI bytes in the result —
+   * those channels are gone.
    */
   set_params?(refs: ParamRef[]): MockHandlerResult;
   /**

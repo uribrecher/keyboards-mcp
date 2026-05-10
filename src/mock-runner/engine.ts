@@ -138,22 +138,25 @@ export class MockEngine extends EventEmitter {
                 : { log: `UI: ${msg.name} = ${msg.value} (handler has no onUIParam)` };
               this.applyHandlerResult(result, null);
             } else if (msg.type === "setParam") {
-              console.log(`${this.tag()} WS-IN setParam ${msg.name}=${msg.value} part=${msg.part ?? 1}`);
+              // Default `part` to 1 once at the boundary so set_params,
+              // codec.encodeParams, and the log line all see the same value.
+              const part = msg.part ?? 1;
+              console.log(`${this.tag()} WS-IN setParam ${msg.name}=${msg.value} part=${part}`);
               // Stage 4: engine handles emission via codec, not the handler.
               // 1. handler.set_params updates state (no emission channel).
               // 2. engine asks codec to encode and writes to MIDI Out
               //    (panel-knob analogue — UI is a closed-loop source).
               const result = this.handler.set_params
-                ? this.handler.set_params([{ name: msg.name, value: msg.value, part: msg.part }])
+                ? this.handler.set_params([{ name: msg.name, value: msg.value, part }])
                 : (this.handler.onUIParam
-                    ? this.handler.onUIParam(msg.name, msg.value, ((msg.part ?? 1) - 1))
+                    ? this.handler.onUIParam(msg.name, msg.value, part - 1)
                     : { log: `UI: ${msg.name} = ${msg.value} (handler has no set_params or onUIParam)` });
               if (result.state) this.broadcast(result.state);
               if (result.log) console.log(`${this.tag()} ${result.log}`);
               const codec = this.handler.codec;
               if (codec) {
                 try {
-                  const encoded = codec.encodeParams([{ name: msg.name, value: msg.value, part: msg.part }]);
+                  const encoded = codec.encodeParams([{ name: msg.name, value: msg.value, part }]);
                   for (const enc of encoded) this.emitOne(enc);
                 } catch (err) {
                   console.error(`${this.tag()} setParam emit failed:`, err);
@@ -356,16 +359,27 @@ export class MockEngine extends EventEmitter {
     } catch (err) { console.error(`${this.tag()} MIDI-OUT (ui-echo) send failed:`, err); }
   }
 
-  /** Send one codec-encoded message to the virtual MIDI Out. */
+  /**
+   * Send one codec-encoded message to the virtual MIDI Out.
+   *
+   * The codec contract is "undefined channel → use the connection's
+   * configured default." On the mock side that maps to `lowerChannel`
+   * from `init` — the same channel global params receive on inbound.
+   * easymidi.Output has no default-channel facility, so the engine
+   * resolves the default before calling `send`.
+   */
   private emitOne(msg: EncodedMessage): void {
     if (!this.midiOutput) return;
+    const defaultChannel = this.opts.lowerChannel;
     try {
       if (msg.type === "cc") {
-        console.log(`${this.tag()} MIDI-OUT cc CC=${msg.controller} val=${msg.value} ch=${msg.channel ?? "default"}`);
-        this.midiOutput.send("cc", { controller: msg.controller, value: msg.value, channel: msg.channel });
+        const channel = msg.channel ?? defaultChannel;
+        console.log(`${this.tag()} MIDI-OUT cc CC=${msg.controller} val=${msg.value} ch=${channel}`);
+        this.midiOutput.send("cc", { controller: msg.controller, value: msg.value, channel });
       } else if (msg.type === "program") {
-        console.log(`${this.tag()} MIDI-OUT program n=${msg.number} ch=${msg.channel ?? "default"}`);
-        this.midiOutput.send("program", { number: msg.number, channel: msg.channel });
+        const channel = msg.channel ?? defaultChannel;
+        console.log(`${this.tag()} MIDI-OUT program n=${msg.number} ch=${channel}`);
+        this.midiOutput.send("program", { number: msg.number, channel });
       } else if (msg.type === "sysex") {
         console.log(`${this.tag()} MIDI-OUT ${MockEngine.summarizeSysex(msg.bytes)}`);
         this.midiOutput.send("sysex", msg.bytes);
