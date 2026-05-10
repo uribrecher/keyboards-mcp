@@ -54,25 +54,30 @@ function setActive(tabId) {
     if (t.iframe) t.iframe.hidden = !isActive;
   }
   slotEmpty.hidden = tabs.length > 0;
-  paintMidiStrip(tabId ? lastMidiEventByTab.get(tabId) : null);
+  paintMidiDrawer(tabId ? (midiHistoryByTab.get(tabId) ?? []) : []);
   if (tabId) void api.setActiveTab?.(tabId);
 }
 
-// ── MIDI status strip (todo #5) ──
+// ── MIDI traffic monitor — drawer (todo #5 + layout overhaul) ──
 //
-// The shell receives `midi:event` IPC messages from main, one per MIDI
-// byte exchange that the active tab's MockEngine logs. We keep just the
-// most-recent event per tab and paint the active tab's into the strip.
-// No buffering of older events — single-line, latest-only display.
+// Per-tab ring buffer of recent MIDI events. Collapsed (default): the
+// drawer shows just the latest event from the active tab. Expanded:
+// shows the full buffered history (up to MIDI_HISTORY_CAP per tab) in
+// a scrollable list with the newest at the bottom and the operator's
+// scroll position preserved during bursts when they've scrolled up.
 
-const lastMidiEventByTab = new Map(); // tabId → { ts, direction, kind, ...details }
-const slotMidiEl     = document.getElementById("slot-midi");
-const slotMidiGlyph  = document.getElementById("slot-midi-glyph");
-const slotMidiDir    = document.getElementById("slot-midi-dir");
-const slotMidiTime   = document.getElementById("slot-midi-time");
-const slotMidiBody   = document.getElementById("slot-midi-body");
-let staleTimer = null;
+const MIDI_HISTORY_CAP = 50;
 const STALE_AFTER_MS = 2500;
+const SCROLL_PIN_THRESHOLD_PX = 10;
+
+/** tabId → array of {ts, direction, kind, ...details}, oldest-first. */
+const midiHistoryByTab = new Map();
+
+const midiDrawerEl    = document.getElementById("midi-drawer");
+const midiListEl      = document.getElementById("midi-drawer-list");
+const midiCountEl     = document.getElementById("midi-drawer-count");
+const midiToggleEl    = document.getElementById("midi-drawer-toggle");
+let staleTimer = null;
 
 function formatMidiTime(ts) {
   const d = new Date(ts);
@@ -98,40 +103,133 @@ function formatMidiBody(ev) {
   return `sysex ${ev.byteCount} bytes [${head}${tail}]`;
 }
 
-function paintMidiStrip(ev) {
+/** Render a single <li class="midi-row"> for the given event. */
+function buildMidiRow(ev) {
+  const li = document.createElement("li");
+  li.className = "midi-row";
+  li.dataset.state = ev.direction;
+  li.innerHTML =
+    `<span class="midi-row__glyph" aria-hidden="true">${ev.direction === "in" ? "◂" : "▸"}</span>` +
+    `<span class="midi-row__dir">${ev.direction === "in" ? "IN" : "OUT"}</span>` +
+    `<span class="midi-row__time">${formatMidiTime(ev.ts)}</span>` +
+    `<span class="midi-row__body"></span>`;
+  // textContent (not innerHTML) for the body — sysex strings are
+  // generated, but better safe than sorry against future kinds.
+  li.querySelector(".midi-row__body").textContent = formatMidiBody(ev);
+  return li;
+}
+
+/** Build the placeholder "— no MIDI yet —" row. */
+function buildPlaceholderRow() {
+  const li = document.createElement("li");
+  li.className = "midi-row midi-row--placeholder";
+  li.dataset.state = "idle";
+  li.innerHTML =
+    `<span class="midi-row__glyph" aria-hidden="true">·</span>` +
+    `<span class="midi-row__dir"></span>` +
+    `<span class="midi-row__time"></span>` +
+    `<span class="midi-row__body">— no MIDI yet —</span>`;
+  return li;
+}
+
+function isExpanded() {
+  return midiDrawerEl.dataset.state === "expanded";
+}
+
+function isPinnedToBottom() {
+  return (midiListEl.scrollHeight - midiListEl.scrollTop - midiListEl.clientHeight)
+    <= SCROLL_PIN_THRESHOLD_PX;
+}
+
+/**
+ * Repaint the drawer list from a per-tab history buffer.
+ * Collapsed: render the single latest event (or placeholder if empty).
+ * Expanded: render every buffered event, newest at the bottom; if the
+ * caller flagged `flashLatest`, restart the flash keyframe on the
+ * latest row.
+ */
+function paintMidiDrawer(events, opts = { flashLatest: false, isNewEvent: false }) {
   if (staleTimer) { clearTimeout(staleTimer); staleTimer = null; }
-  slotMidiEl.classList.remove("slot__midi--flash", "slot__midi--stale");
-  if (!ev) {
-    slotMidiEl.dataset.state = "idle";
-    slotMidiGlyph.textContent = "·";
-    slotMidiDir.textContent   = "";
-    slotMidiTime.textContent  = "";
-    slotMidiBody.textContent  = "— no MIDI yet —";
-    return;
+
+  const expanded = isExpanded();
+  const pinnedBeforeRepaint = expanded && isPinnedToBottom();
+
+  // Build the new row set off-DOM, then swap in.
+  const frag = document.createDocumentFragment();
+  if (events.length === 0) {
+    frag.appendChild(buildPlaceholderRow());
+  } else if (!expanded) {
+    frag.appendChild(buildMidiRow(events[events.length - 1]));
+  } else {
+    for (const ev of events) frag.appendChild(buildMidiRow(ev));
   }
-  slotMidiEl.dataset.state = ev.direction;
-  slotMidiGlyph.textContent = ev.direction === "in" ? "◂" : "▸";
-  slotMidiDir.textContent   = ev.direction === "in" ? "IN"  : "OUT";
-  slotMidiTime.textContent  = formatMidiTime(ev.ts);
-  slotMidiBody.textContent  = formatMidiBody(ev);
-  // Restart the flash keyframe via rAF double-pump — toggling on the next
-  // frame avoids a forced synchronous layout (offsetWidth read) on every
-  // event, which matters under MIDI bursts (RQ1 round-trips).
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      slotMidiEl.classList.add("slot__midi--flash");
-    });
-  });
-  staleTimer = setTimeout(() => {
-    slotMidiEl.classList.add("slot__midi--stale");
-    staleTimer = null;
-  }, STALE_AFTER_MS);
+  midiListEl.replaceChildren(frag);
+
+  // Update the header count.
+  midiCountEl.textContent = `${events.length} event${events.length === 1 ? "" : "s"}`;
+
+  // Auto-scroll to bottom only when the operator was already pinned, so a
+  // mid-history scroll-up isn't yanked back during a burst.
+  if (expanded && pinnedBeforeRepaint) {
+    midiListEl.scrollTop = midiListEl.scrollHeight;
+  }
+
+  // Flash + stale on the latest row only.
+  const latest = midiListEl.lastElementChild;
+  if (latest && !latest.classList.contains("midi-row--placeholder")) {
+    if (opts.flashLatest) {
+      // rAF double-pump avoids a forced sync layout on every event.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        latest.classList.add("midi-row--flash");
+      }));
+    }
+    if (opts.isNewEvent) {
+      staleTimer = setTimeout(() => {
+        latest.classList.add("midi-row--stale");
+        staleTimer = null;
+      }, STALE_AFTER_MS);
+    }
+  }
 }
 
 api.onMidiEvent?.((payload) => {
   // payload: { tabId, ts, direction, kind, ...details }
-  lastMidiEventByTab.set(payload.tabId, payload);
-  if (payload.tabId === activeTabId) paintMidiStrip(payload);
+  let history = midiHistoryByTab.get(payload.tabId);
+  if (!history) { history = []; midiHistoryByTab.set(payload.tabId, history); }
+  history.push(payload);
+  if (history.length > MIDI_HISTORY_CAP) history.splice(0, history.length - MIDI_HISTORY_CAP);
+  if (payload.tabId === activeTabId) {
+    paintMidiDrawer(history, { flashLatest: true, isNewEvent: true });
+  }
+});
+
+// ── Drawer toggle handlers ──
+midiToggleEl?.addEventListener("click", () => {
+  const next = isExpanded() ? "collapsed" : "expanded";
+  midiDrawerEl.dataset.state = next;
+  midiToggleEl.setAttribute("aria-expanded", next === "expanded" ? "true" : "false");
+  midiToggleEl.textContent = next === "expanded" ? "▾" : "▴";
+  midiToggleEl.title = next === "expanded" ? "Collapse MIDI history" : "Show MIDI history";
+  // Repaint without flashing — toggling is not a new event.
+  const history = activeTabId ? (midiHistoryByTab.get(activeTabId) ?? []) : [];
+  paintMidiDrawer(history);
+  // After expanding, snap to the bottom so the freshest event is visible.
+  if (next === "expanded") {
+    requestAnimationFrame(() => { midiListEl.scrollTop = midiListEl.scrollHeight; });
+  }
+});
+
+// ── Console drawer toggle ──
+const consoleEl       = document.getElementById("console");
+const consoleLatchEl  = document.getElementById("console-latch");
+const consoleLatchGlyphEl = document.getElementById("console-latch-glyph");
+
+consoleLatchEl?.addEventListener("click", () => {
+  const next = consoleEl.dataset.collapsed === "true" ? "false" : "true";
+  consoleEl.dataset.collapsed = next;
+  consoleLatchEl.setAttribute("aria-expanded", next === "false" ? "true" : "false");
+  consoleLatchEl.title = next === "true" ? "Expand console" : "Collapse console";
+  consoleLatchGlyphEl.textContent = next === "true" ? "◀" : "▶";
 });
 
 function renderTabButton(tab) {
@@ -277,7 +375,7 @@ async function closeTab(tabId) {
 
   // Tear down iframe + engine
   if (tab.iframe) tab.iframe.remove();
-  lastMidiEventByTab.delete(tabId);
+  midiHistoryByTab.delete(tabId);
   await api.closeTab(tabId);
 
   const idx = tabs.indexOf(tab);
@@ -290,7 +388,7 @@ async function closeTab(tabId) {
     else {
       activeTabId = null;
       slotEmpty.hidden = false;
-      paintMidiStrip(null);
+      paintMidiDrawer([]);
     }
   }
 }
@@ -1195,10 +1293,20 @@ splitter.addEventListener("pointerdown", (e) => {
   splitter.setPointerCapture(e.pointerId);
   document.body.classList.add("bay--resizing");
   dragStartX = e.clientX;
+  // If the console is collapsed when the drag begins, re-expand it. The
+  // initial width snaps to the persisted value (or the clamp default)
+  // so the drag has a sensible starting point. Update latch chrome too.
+  const consoleEl = document.getElementById("console");
+  if (consoleEl.dataset.collapsed === "true") {
+    consoleEl.dataset.collapsed = "false";
+    consoleLatchEl?.setAttribute("aria-expanded", "true");
+    if (consoleLatchEl) consoleLatchEl.title = "Collapse console";
+    if (consoleLatchGlyphEl) consoleLatchGlyphEl.textContent = "▶";
+  }
   // Read the current rendered width — uses --console-w if set, else
   // the clamp() default. getBoundingClientRect on the console gives
-  // us the real pixel value either way.
-  dragStartW = document.getElementById("console").getBoundingClientRect().width;
+  // us the real pixel value either way (after the layout above settles).
+  dragStartW = consoleEl.getBoundingClientRect().width;
   e.preventDefault();
 });
 
