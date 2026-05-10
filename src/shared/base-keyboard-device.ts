@@ -150,9 +150,11 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
 
       try {
         if (codec) {
-          // Codec path: encode → send. Display formatted via codec helper.
-          const [msg] = codec.encodeParams([{ name: found.key, value }]);
-          this.sendEncodedMessage(msg);
+          // Codec path: encode → send. A codec MAY return more than one
+          // message per param (e.g. multi-byte sysex split, or future
+          // bank-select+CC combos), so we must send them all.
+          const messages = codec.encodeParams([{ name: found.key, value }]);
+          for (const msg of messages) this.sendEncodedMessage(msg);
           results.push(`  ${found.param.name}: ${codec.formatValue(found.key, value)}`);
         } else {
           // Legacy path (no codec yet): CC-only inline encoding.
@@ -180,7 +182,12 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
     return { content: [{ type: "text", text }] };
   }
 
-  /** Dispatch a codec-produced `EncodedMessage` over the live connection. */
+  /**
+   * Dispatch a codec-produced `EncodedMessage` over the live connection.
+   * A `channel` of `undefined` is passed through to the connection helpers,
+   * which then fall back to the connection's configured default channel —
+   * this preserves channel-aware behaviour for non-default-channel devices.
+   */
   protected sendEncodedMessage(msg: import("./midi-codec.js").EncodedMessage): void {
     if (msg.type === "cc") {
       this.connection!.sendCC(msg.controller, msg.value, msg.channel);

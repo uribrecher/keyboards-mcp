@@ -57,7 +57,11 @@ export function createJunoXCodec(): MidiCodec {
       return { type: "sysex", bytes };
     }
     if (found.param.cc !== undefined) {
-      const channel = (ref.part ?? 1) - 1;
+      // perPart CC params target a specific part-channel; global CC params use
+      // the connection's default channel (leave undefined).
+      const channel = found.param.perPart && ref.part !== undefined
+        ? ref.part - 1
+        : undefined;
       return { type: "cc", controller: found.param.cc, value: midiValue, channel };
     }
     throw new Error(`${found.param.name}: no transport address (no sysexAddress or cc)`);
@@ -68,16 +72,12 @@ export function createJunoXCodec(): MidiCodec {
   }
 
   function encodeAction(action: Action): EncodedMessage[] {
-    if (action.kind === "loadProgram") {
-      const channel = action.channel ?? 0;
-      return [
-        { type: "cc",      controller: 0,  value: (action.bank >> 7) & 0x7F, channel },
-        { type: "cc",      controller: 32, value: action.bank & 0x7F,         channel },
-        { type: "program", number: action.slot, channel },
-      ];
-    }
-    if (action.kind === "loadSong") {
-      const channel = action.part ? (parseInt(action.part, 10) - 1) : 0;
+    if (action.kind === "loadProgram" || action.kind === "loadSong") {
+      // Undefined channel → connection default. loadSong.part is 1-based
+      // numeric; loadProgram has its own optional channel field.
+      const channel = action.kind === "loadSong" && action.part !== undefined
+        ? action.part - 1
+        : (action.kind === "loadProgram" ? action.channel : undefined);
       return [
         { type: "cc",      controller: 0,  value: (action.bank >> 7) & 0x7F, channel },
         { type: "cc",      controller: 32, value: action.bank & 0x7F,         channel },
@@ -141,7 +141,9 @@ export function createJunoXCodec(): MidiCodec {
     if (message.type === "cc") {
       const ccLookup = map.getParamByCC(message.controller);
       if (!ccLookup) return [];
-      const part = ccLookup.param.perPart ? message.channel + 1 : undefined;
+      const part = ccLookup.param.perPart && message.channel !== undefined
+        ? message.channel + 1
+        : undefined;
       const event: DecodedEvent = part !== undefined
         ? { kind: "param", name: ccLookup.key, value: message.value, part }
         : { kind: "param", name: ccLookup.key, value: message.value };

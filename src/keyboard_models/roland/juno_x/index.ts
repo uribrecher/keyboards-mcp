@@ -6,13 +6,15 @@
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { KeyboardModel } from "../../../shared/keyboard-model.js";
-import { createParameterMap } from "./midi-map.js";
 import { createJunoXCodec } from "./midi-codec.js";
 import { JunoXDevice } from "./device.js";
 import { JunoXMockHandler } from "./mock-handler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const parameterMap = createParameterMap();
+// Single codec instance shared by every JunoXDevice spawned from this model.
+// `createDevice` wires the codec's parameter map into BaseDeviceDeps so the
+// device and codec speak the same map (no duplicate parameter-map factories).
+const sharedCodec = createJunoXCodec();
 
 const model: KeyboardModel = {
   info: {
@@ -87,13 +89,13 @@ NOTES:
 
   createDevice() {
     return new JunoXDevice(model, {
-      parameterMap,
+      parameterMap: sharedCodec.map,
       systemPromptTemplate: model.agentSystemPrompt,
     });
   },
 
   createCodec() {
-    return createJunoXCodec();
+    return sharedCodec;
   },
 
   createMockHandler() {

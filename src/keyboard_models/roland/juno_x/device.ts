@@ -17,17 +17,20 @@ import {
   JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID,
   SCENE_BASE,
 } from "./engines/engine-types.js";
-import type { JunoXParameterMap } from "./midi-map.js";
-import { createJunoXCodec } from "./midi-codec.js";
-
 export class JunoXDevice extends BaseKeyboardDevice {
-  private junoMap: JunoXParameterMap;
-  private junoCodec: MidiCodec;
-
   constructor(model: KeyboardModel, deps: BaseDeviceDeps) {
     super(model, deps);
-    this.junoMap = deps.parameterMap as JunoXParameterMap;
-    this.junoCodec = createJunoXCodec();
+  }
+
+  /**
+   * Concrete codec for this model. Reuses the lazy `this.codec` from the
+   * base class so device + codec share the same instance and can't drift.
+   * Throws on missing codec — JUNO-X requires one to encode DT1 SysEx.
+   */
+  private get junoCodec(): MidiCodec {
+    const c = this.codec;
+    if (!c) throw new Error("JUNO-X model is missing createCodec()");
+    return c;
   }
 
   /** Parts 1-5 are per-part; all others are global. Default to part "1". */
@@ -46,7 +49,7 @@ export class JunoXDevice extends BaseKeyboardDevice {
     const errors: string[] = [];
 
     for (const { name, value } of params) {
-      const found = this.junoMap.findParam(name);
+      const found = this.parameterMap.findParam(name);
       if (!found) {
         errors.push(`Unknown parameter: "${name}"`);
         continue;
@@ -54,10 +57,13 @@ export class JunoXDevice extends BaseKeyboardDevice {
 
       try {
         const statePart = this.resolvePartForParam(found.key, part);
-        const partNum = statePart !== undefined ? parseInt(statePart, 10) : 1;
-        const ref: ParamRef = { name: found.key, value, part: partNum };
-        const [msg] = this.junoCodec.encodeParams([ref]);
-        this.sendEncodedMessage(msg);
+        // Only set part for perPart params — global params should leave the
+        // channel undefined so the connection's default channel is used.
+        const ref: ParamRef = statePart !== undefined
+          ? { name: found.key, value, part: parseInt(statePart, 10) }
+          : { name: found.key, value };
+        const messages = this.junoCodec.encodeParams([ref]);
+        for (const msg of messages) this.sendEncodedMessage(msg);
         results.push(`  ${found.param.name}: ${this.junoCodec.formatValue(found.key, value)}`);
       } catch (err) {
         errors.push(
