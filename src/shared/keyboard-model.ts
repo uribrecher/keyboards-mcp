@@ -9,7 +9,7 @@ import type { KeyboardParameter } from "./types.js";
 import type { MidiSender } from "./midi-sender.js";
 import type { MidiConnection } from "./midi-connection.js";
 import type { ToolResult } from "./tool-result.js";
-import type { MidiCodec } from "./midi-codec.js";
+import type { MidiCodec, ParamRef } from "./midi-codec.js";
 
 // ── Model metadata ──
 
@@ -153,13 +153,25 @@ export interface MockHandler {
   /** Process any MIDI message. Returns state to broadcast and/or a log line. */
   onMIDI(msg: MidiMessage): MockHandlerResult;
   /**
-   * Called when the mock UI fires `{type:"param", name, value, channel?}` for
-   * params that have no CC mapping (typically SysEx-addressed). The handler
-   * MUST encode the named param to MIDI bytes, apply state by routing through
-   * its own `onMIDI`, and return the encoded packet(s) in `sysexOut` / `ccOut`
-   * so the engine can emit them on the device's MIDI Out (panel-knob analogue).
-   *
-   * Models whose UI never sends `{type:"param"}` can leave this unimplemented.
+   * Param-domain write (#30 stage 3). The canonical way for the engine
+   * (and UI WS messages of shape `{type:"setParam", name, value, part?}`)
+   * to update a parameter on the mock. The handler updates internal state
+   * and returns a `MockHandlerResult` whose `state`/`log` are used as
+   * usual. Outbound MIDI emission for the panel-knob analogue is the
+   * engine's responsibility (it asks the codec to encode the same write
+   * and emits on the device's MIDI Out). The handler's
+   * `ccOut`/`sysexOut`/`programOut` channels are for handler-explicit
+   * emissions only (e.g. RQ1→DT1 reply).
+   */
+  set_params?(refs: ParamRef[]): MockHandlerResult;
+  /**
+   * Param-domain read. Returns wire-byte values keyed by canonical
+   * parameter name. Pass `part` for per-part params.
+   */
+  get_params?(names: string[], part?: number): Record<string, number>;
+  /**
+   * @deprecated Use `set_params` instead. Kept for backward compatibility
+   * with engine WS handlers that still emit `{type:"param"}`.
    */
   onUIParam?(name: string, value: number | string, channel?: number): MockHandlerResult;
   /** Return the complete current state (for new WebSocket clients) */
