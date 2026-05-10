@@ -10,20 +10,27 @@ import type { KeyboardModel } from "../../../shared/keyboard-model.js";
 import { BaseKeyboardDevice, type BaseDeviceDeps } from "../../../shared/base-keyboard-device.js";
 import type { ToolResult } from "../../../shared/tool-result.js";
 import { textResult } from "../../../shared/tool-result.js";
-import { buildDT1, addAddresses, packNibbles, requestRolandValue } from "../../../shared/roland-dt1.js";
+import { addAddresses, requestRolandValue } from "../../../shared/roland-dt1.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
+import type { MidiCodec, ParamRef } from "../../../shared/midi-codec.js";
 import {
   JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID,
-  SCENE_BASE, SCENE_PART_OFFSETS,
+  SCENE_BASE,
 } from "./engines/engine-types.js";
-import type { JunoXParameterMap } from "./midi-map.js";
-
 export class JunoXDevice extends BaseKeyboardDevice {
-  private junoMap: JunoXParameterMap;
-
   constructor(model: KeyboardModel, deps: BaseDeviceDeps) {
     super(model, deps);
-    this.junoMap = deps.parameterMap as JunoXParameterMap;
+  }
+
+  /**
+   * Concrete codec for this model. Reuses the lazy `this.codec` from the
+   * base class so device + codec share the same instance and can't drift.
+   * Throws on missing codec — JUNO-X requires one to encode DT1 SysEx.
+   */
+  private get junoCodec(): MidiCodec {
+    const c = this.codec;
+    if (!c) throw new Error("JUNO-X model is missing createCodec()");
+    return c;
   }
 
   /** Parts 1-5 are per-part; all others are global. Default to part "1". */
@@ -42,43 +49,22 @@ export class JunoXDevice extends BaseKeyboardDevice {
     const errors: string[] = [];
 
     for (const { name, value } of params) {
-      const found = this.junoMap.findParam(name);
+      const found = this.parameterMap.findParam(name);
       if (!found) {
         errors.push(`Unknown parameter: "${name}"`);
         continue;
       }
 
       try {
-        const midiValue = this.junoMap.resolveValue(found.param, value);
         const statePart = this.resolvePartForParam(found.key, part);
-
-        if (found.param.sysexAddress !== undefined) {
-          // DT1 SysEx path
-          const partIndex = statePart !== undefined ? (parseInt(statePart, 10) - 1) : 0;
-          let fullAddress: number[];
-          if (found.param.perPart) {
-            const partOffset = SCENE_PART_OFFSETS[partIndex] ?? SCENE_PART_OFFSETS[0];
-            fullAddress = addAddresses(addAddresses(SCENE_BASE, partOffset), found.param.sysexAddress);
-          } else {
-            fullAddress = addAddresses(SCENE_BASE, found.param.sysexAddress);
-          }
-
-          const sysexSize = found.param.sysexSize ?? 1;
-          const data = sysexSize > 1 ? packNibbles(midiValue, sysexSize * 2) : [midiValue];
-          this.connection!.sendSysEx(buildDT1(JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, fullAddress, data));
-
-        } else if (found.param.cc !== undefined) {
-          // CC path — part index maps to MIDI channel (parts 1-5 → channels 0-4)
-          const partIndex = statePart !== undefined ? (parseInt(statePart, 10) - 1) : 0;
-          this.connection!.sendCC(found.param.cc, midiValue, partIndex);
-
-        } else {
-          errors.push(`${found.param.name}: no transport address (no sysexAddress or cc)`);
-          continue;
-        }
-
-        const displayValue = this.junoMap.formatValue(found.param, midiValue);
-        results.push(`  ${found.param.name}: ${displayValue}`);
+        // Only set part for perPart params — global params should leave the
+        // channel undefined so the connection's default channel is used.
+        const ref: ParamRef = statePart !== undefined
+          ? { name: found.key, value, part: parseInt(statePart, 10) }
+          : { name: found.key, value };
+        const messages = this.junoCodec.encodeParams([ref]);
+        for (const msg of messages) this.sendEncodedMessage(msg);
+        results.push(`  ${found.param.name}: ${this.junoCodec.formatValue(found.key, value)}`);
       } catch (err) {
         errors.push(
           `${found.param.name}: ${err instanceof Error ? err.message : String(err)}`,
@@ -130,17 +116,30 @@ export class JunoXDevice extends BaseKeyboardDevice {
     }
 
     // Fire one RQ1 per param in parallel. Per-param timeouts surface in
-    // the result text but don't fail the whole call.
+    // the result text but don't fail the whole call. The RQ1 round-trip
+    // orchestration (send + await reply with timeout) lives here in the
+    // MCP per the design — `requestRolandValue` is its current home. The
+    // codec is responsible for *decoding* the reply: we synthesize a DT1
+    // from the data bytes and ask the codec to decode it back to a param
+    // event. This validates the codec's decode path against live wire
+    // data and prepares the way for stage 2 (mock-side decoding).
     const PER_PARAM_TIMEOUT_MS = 500;
     const results = await Promise.all(paramsToRead.map(async ({ key, param }) => {
       const fullAddr = addAddresses(SCENE_BASE, param.sysexAddress!);
+      const sysexSize = param.sysexSize ?? 1;
       try {
         const data = await requestRolandValue(
           conn, JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, fullAddr,
-          param.sysexSize ?? 1, PER_PARAM_TIMEOUT_MS,
+          sysexSize, PER_PARAM_TIMEOUT_MS,
         );
-        const value = data[0] ?? 0;
-        const display = this.parameterMap.formatValue(param, value);
+        const replyMsg = this.junoCodec.buildResponse(
+          { protocol: "roland-rq1", address: fullAddr, size: sysexSize, deviceId: JUNO_X_DEVICE_ID },
+          data,
+        );
+        const events = this.junoCodec.decode(replyMsg);
+        const paramEvent = events.find(e => e.kind === "param" && e.name === key);
+        const value = paramEvent && paramEvent.kind === "param" ? paramEvent.value : (data[0] ?? 0);
+        const display = this.junoCodec.formatWireValue(key, value);
         return { key, line: `  ${param.name}: ${display}` };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
