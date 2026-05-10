@@ -42,47 +42,78 @@ describe("Prophet-6 mock handler", () => {
     });
   });
 
-  // ── CC routing ──
+  // ── set_params routing ──
 
-  describe("CC routing", () => {
-    it("CC 67 (osc1_freq) with value 100 updates state", () => {
-      handler.onMIDI({ type: "cc", controller: 67, value: 100, channel: 0 });
+  describe("set_params routing", () => {
+    it("continuous param value is stored verbatim in user domain", () => {
+      handler.set_params!([{ name: "osc1_freq", value: 100 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.global.osc1_freq.value, 100);
     });
 
-    it("CC 102 (lp_freq) with value 64 updates state", () => {
-      handler.onMIDI({ type: "cc", controller: 102, value: 64, channel: 0 });
+    it("second continuous param updates independently", () => {
+      handler.set_params!([{ name: "lp_freq", value: 64 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.global.lp_freq.value, 64);
     });
 
-    it("onMIDI returns state and log for mapped CC", () => {
-      const result = handler.onMIDI({ type: "cc", controller: 67, value: 50, channel: 0 });
+    it("set_params returns state and log", () => {
+      const result = handler.set_params!([{ name: "osc1_freq", value: 50 }]);
       assert.ok(result.state, "expected state in result");
       assert.ok(result.log, "expected log in result");
       assert.ok(result.log!.includes("Osc 1 Freq"), `expected param name in log: "${result.log}"`);
     });
 
-    it("onMIDI returns lastChange for the changed param", () => {
-      const result = handler.onMIDI({ type: "cc", controller: 67, value: 80, channel: 0 });
+    it("returns lastChange for the changed param", () => {
+      const result = handler.set_params!([{ name: "osc1_freq", value: 80 }]);
       assert.ok(result.state!.lastChange, "expected lastChange");
       assert.strictEqual(result.state!.lastChange.key, "osc1_freq");
       assert.strictEqual(result.state!.lastChange.value, 80);
+    });
+
+    it("unknown param is logged but doesn't throw", () => {
+      const result = handler.set_params!([{ name: "totally_made_up", value: 10 }]);
+      assert.ok(result.log!.includes("unknown"), `expected 'unknown' in log: "${result.log}"`);
+    });
+
+    it("string label resolves to user-domain index", () => {
+      // arp_mode has labels { 0: "Up", 1: "Down", 2: "Up/Down", ... }
+      handler.set_params!([{ name: "arp_mode", value: "Down" }]);
+      const state = handler.getFullState(false);
+      assert.strictEqual(state.global.arp_mode.value, 1);
+      assert.strictEqual(state.global.arp_mode.label, "Down");
+    });
+  });
+
+  // ── get_params ──
+
+  describe("get_params", () => {
+    it("returns user-domain values for requested names", () => {
+      handler.set_params!([{ name: "osc1_freq", value: 77 }]);
+      const out = handler.get_params!(["osc1_freq", "lp_freq"]);
+      assert.strictEqual(out.osc1_freq, 77);
+      // lp_freq unchanged → defaultValue
+      assert.ok(typeof out.lp_freq === "number");
+    });
+
+    it("skips unknown param names", () => {
+      const out = handler.get_params!(["osc1_freq", "totally_made_up"]);
+      assert.ok("osc1_freq" in out);
+      assert.ok(!("totally_made_up" in out));
     });
   });
 
   // ── Toggle params ──
 
   describe("toggle params", () => {
-    it("arp_on_off CC 58 with value 127 shows On label", () => {
-      handler.onMIDI({ type: "cc", controller: 58, value: 127, channel: 0 });
+    it("arp_on_off user value 1 shows On label", () => {
+      handler.set_params!([{ name: "arp_on_off", value: 1 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.global.arp_on_off.label, "On");
     });
 
-    it("arp_on_off CC 58 with value 0 shows Off label", () => {
-      handler.onMIDI({ type: "cc", controller: 58, value: 0, channel: 0 });
+    it("arp_on_off user value 0 shows Off label", () => {
+      handler.set_params!([{ name: "arp_on_off", value: 0 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.global.arp_on_off.label, "Off");
     });
@@ -92,8 +123,7 @@ describe("Prophet-6 mock handler", () => {
 
   describe("dynamic UI labels in state", () => {
     it("discrete param entry includes labels object from MIDI map", () => {
-      // arp_mode CC 59 is discrete with labels { 0: "Up", 1: "Down", ... }
-      handler.onMIDI({ type: "cc", controller: 59, value: 0, channel: 0 });
+      handler.set_params!([{ name: "arp_mode", value: 0 }]);
       const state = handler.getFullState(false);
       const entry = state.global.arp_mode;
       assert.ok(entry.labels, "expected labels on discrete entry");
@@ -102,15 +132,13 @@ describe("Prophet-6 mock handler", () => {
     });
 
     it("continuous param entry has no labels field", () => {
-      // osc1_freq CC 67 is continuous
-      handler.onMIDI({ type: "cc", controller: 67, value: 100, channel: 0 });
+      handler.set_params!([{ name: "osc1_freq", value: 100 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.global.osc1_freq.labels, undefined);
     });
 
     it("toggle param entry has no labels field", () => {
-      // arp_on_off CC 58 is type 'toggle' with labels in MIDI map; should NOT surface in state
-      handler.onMIDI({ type: "cc", controller: 58, value: 127, channel: 0 });
+      handler.set_params!([{ name: "arp_on_off", value: 1 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.global.arp_on_off.labels, undefined);
     });
@@ -123,47 +151,27 @@ describe("Prophet-6 mock handler", () => {
     });
 
     it("displayName is absent from state entry when not set in midi-map", () => {
-      // None of the Prophet-6 params currently set displayName.
       const state = handler.getFullState(false);
       assert.strictEqual(state.global.osc1_freq.displayName, undefined);
     });
   });
 
-  // ── Bank select ignored ──
+  // ── onMIDI is a no-op (codec path bypasses it) ──
 
-  describe("bank select", () => {
-    it("CC 0 (Bank Select MSB) does not update param state", () => {
-      const stateBefore = JSON.stringify(handler.getFullState(false));
-      handler.onMIDI({ type: "cc", controller: 0, value: 5, channel: 0 });
-      const stateAfter = JSON.stringify(handler.getFullState(false));
-      assert.strictEqual(stateBefore, stateAfter);
+  describe("onMIDI no-op", () => {
+    it("returns empty result for cc message", () => {
+      const result = handler.onMIDI({ type: "cc", controller: 67, value: 100, channel: 0 });
+      assert.deepStrictEqual(result, {});
     });
 
-    it("CC 32 (Bank Select LSB) does not update param state", () => {
-      const stateBefore = JSON.stringify(handler.getFullState(false));
-      handler.onMIDI({ type: "cc", controller: 32, value: 3, channel: 0 });
-      const stateAfter = JSON.stringify(handler.getFullState(false));
-      assert.strictEqual(stateBefore, stateAfter);
-    });
-  });
-
-  // ── No-crash on program change and sysex ──
-
-  describe("no-crash messages", () => {
-    it("program change does not throw", () => {
+    it("returns empty result for program change", () => {
       const result = handler.onMIDI({ type: "program", number: 5, channel: 0 });
-      assert.ok(result.log, "expected a log message");
+      assert.deepStrictEqual(result, {});
     });
 
-    it("sysex does not throw", () => {
+    it("returns empty result for sysex", () => {
       const result = handler.onMIDI({ type: "sysex", bytes: [0xF0, 0x7E, 0xF7] });
-      assert.ok(result.log, "expected a log message");
-    });
-
-    it("unmapped CC does not throw", () => {
-      const result = handler.onMIDI({ type: "cc", controller: 120, value: 0, channel: 0 });
-      assert.ok(result.log, "expected a log message");
-      assert.ok(result.log!.includes("unmapped"), `expected 'unmapped' in log: "${result.log}"`);
+      assert.deepStrictEqual(result, {});
     });
   });
 });
