@@ -349,15 +349,15 @@ body > .bay { height: 100vh; }
 
 .bay {
   display: grid;
-  /* Three columns: rack (chassis + slot + midi-drawer, flex) | 6px
-   * splitter | console (operator-set width via --console-w). When the
-   * console is collapsed (data-collapsed=true via the latch button), the
-   * third column collapses to a 32px rail showing only the spine + latch.
-   * The slot has an implicit floor of 600px enforced by the splitter
-   * drag clamp in app.js. */
-  --console-w-collapsed: 32px;
+  /* Two columns: rack (chassis + slot + midi-drawer, flex) | console
+   * (operator-set width via --console-w). The console's leading edge
+   * doubles as the splitter — see .console__latch which serves both
+   * the drag-resize and the collapse-toggle roles. The slot has an
+   * implicit floor of 600px enforced by the latch drag clamp in app.js.
+   * When collapsed, the console column shrinks to just the rail width. */
+  --rail-w: 8px;
   grid-template-columns:
-    1fr 6px var(--console-w, clamp(484px, 35vw, 616px));
+    1fr var(--console-w, clamp(484px, 35vw, 616px));
   gap: 0;
   min-height: 0;
   height: 100%;
@@ -366,15 +366,14 @@ body > .bay { height: 100vh; }
 }
 
 /* :has() lets the grid reflect the console's collapsed state without JS
- * having to re-write the grid template. Chrome/WebKit/Firefox all ship
- * :has() so this is safe in Electron's Chromium. */
+ * having to re-write the grid template. */
 .bay:has(.console[data-collapsed="true"]) {
   grid-template-columns:
-    1fr 6px var(--console-w-collapsed);
+    1fr var(--rail-w);
 }
 
-/* Mid-drag, the splitter writes a literal pixel value into --console-w
- * and we don't want a competing transition fighting it. */
+/* Mid-drag, the rail writes a literal pixel value into --console-w and
+ * we don't want a competing transition fighting it. */
 body.bay--resizing .bay {
   transition: none;
 }
@@ -386,47 +385,6 @@ body.bay--resizing .bay {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-}
-
-.bay__splitter {
-  position: relative;
-  cursor: col-resize;
-  background:
-    linear-gradient(180deg,
-      rgba(255,255,255,0.02) 0%,
-      rgba(255,255,255,0.06) 50%,
-      rgba(255,255,255,0.02) 100%);
-  border-left:  1px solid var(--c-edge);
-  border-right: 1px solid var(--c-edge);
-  transition: background .12s, box-shadow .12s;
-}
-
-/* Subtle dimple at vertical center — reads as a screw/grip. */
-.bay__splitter::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 2px;
-  height: 14px;
-  margin: -7px 0 0 -1px;
-  background:
-    radial-gradient(circle at 50% 30%, rgba(255,255,255,0.18) 0%, transparent 70%),
-    var(--c-chassis-low);
-  border-radius: 1px;
-  box-shadow:
-    inset 0 0 0 1px rgba(0,0,0,0.4);
-}
-
-/* Hover: reveal a faint amber accent line down the middle, echoing
- * the chassis lamps without becoming a noisy seam. */
-.bay__splitter:hover {
-  background:
-    linear-gradient(180deg,
-      rgba(255,255,255,0.04) 0%,
-      rgba(255,255,255,0.10) 50%,
-      rgba(255,255,255,0.04) 100%);
-  box-shadow: inset 0 0 0 1px rgba(240,168,48,0.30);
 }
 
 /* Mid-drag: the body gets this class so iframes don't swallow
@@ -615,6 +573,12 @@ body.bay--resizing iframe { pointer-events: none; }
   overflow: hidden;
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
+  /* Operator can select + copy the message text. Glyph / direction
+   * label / timestamp stay non-selectable so a triple-click or
+   * drag-select grabs only the message body. */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 /* Inbound: amber phosphor (matches the chassis lamp). */
@@ -697,24 +661,21 @@ body.bay--resizing iframe { pointer-events: none; }
 /* ═════════════ Console (chat) ═════════════ */
 
 .console {
-  /* Two columns: latch (always 32px, slot-facing edge) | body (fills).
-   * When collapsed the body hides and the whole column shrinks to 32px
-   * via the .bay :has() rule, leaving only the latch visible. */
+  /* Two columns: rail (8px, slot-facing edge — the splitter) | body
+   * (fills). When collapsed the body hides and the whole column
+   * shrinks to the rail width via the .bay :has() rule. */
   display: grid;
-  grid-template-columns: 32px 1fr;
+  grid-template-columns: var(--rail-w) 1fr;
   background: var(--c-console);
-  border-left: 1px solid var(--c-edge);
-  border-image:
-    linear-gradient(180deg, var(--c-edge), transparent) 1 100%;
   position: relative;
   min-height: 0;
   overflow: hidden;
 }
 .console::before {
-  /* warm vertical seam highlight on the inboard edge */
+  /* warm vertical seam highlight on the inboard edge of the body */
   content: "";
   position: absolute;
-  left: 32px; top: 0; bottom: 0;  /* shifted to sit between latch and body */
+  left: var(--rail-w); top: 0; bottom: 0;
   width: 1px;
   background: linear-gradient(180deg,
     rgba(255,255,255,0.06) 0%,
@@ -735,72 +696,87 @@ body.bay--resizing iframe { pointer-events: none; }
   display: none;
 }
 
-/* ── Latch: vertical machined pull-tab on the slot-facing edge ──
+/* ── Rail: combined splitter + collapse latch ──
  *
- * Two faux screws (re-uses .screw geometry) bracket a centered chevron.
- * On hover the chevron picks up the amber lamp glow. The whole rail
- * gets a subtle brushed-metal gradient consistent with the chassis.
+ * 8px-wide vertical rail at the slot-facing edge of the console.
+ * Pointer drag resizes the console (cursor: col-resize). A click
+ * without drag toggles `data-collapsed`. The chevron in the middle
+ * tells you which way the lever throws.
+ *
+ * Brushed-metal gradient + faint vertical scribe line keep it
+ * consistent with the chassis without the visual weight of the older
+ * 32px panel + screws.
  */
 .console__latch {
   grid-column: 1;
   grid-row: 1;
   align-self: stretch;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  padding: 18px 0;
   background:
-    linear-gradient(180deg,
-      var(--c-chassis-hi) 0%,
-      var(--c-chassis) 50%,
-      var(--c-chassis-low) 100%);
-  border: none;
+    linear-gradient(90deg,
+      rgba(255,255,255,0.02) 0%,
+      rgba(255,255,255,0.06) 50%,
+      rgba(255,255,255,0.02) 100%);
+  border: 0;
+  border-left:  1px solid var(--c-edge);
   border-right: 1px solid var(--c-edge);
-  cursor: pointer;
-  color: var(--c-text-dim);
+  cursor: col-resize;
+  color: var(--c-text-faint);
   font-family: var(--font-display);
-  font-size: 11px;
-  letter-spacing: 0.08em;
   position: relative;
-  transition: color .15s, background .15s;
+  padding: 0;
+  transition: background .15s, box-shadow .15s, color .15s;
 }
 
-.console__latch::after {
+.console__latch::before {
   /* Faint vertical scribe line down the center — reads as the seam
-   * where the panel hinges. */
+   * where the panel hinges. Sits behind the chevron. */
   content: "";
   position: absolute;
-  top: 8px; bottom: 8px;
+  top: 6px; bottom: 6px;
   left: 50%;
   width: 1px;
+  margin-left: -0.5px;
   background: linear-gradient(180deg,
     transparent 0%,
-    rgba(0,0,0,0.4) 12%,
-    rgba(0,0,0,0.4) 88%,
+    rgba(0,0,0,0.4) 8%,
+    rgba(0,0,0,0.4) 92%,
     transparent 100%);
   pointer-events: none;
 }
 
 .console__latch:hover {
+  background:
+    linear-gradient(90deg,
+      rgba(255,255,255,0.04) 0%,
+      rgba(255,255,255,0.10) 50%,
+      rgba(255,255,255,0.04) 100%);
+  box-shadow: inset 0 0 0 1px rgba(240,168,48,0.30);
   color: var(--c-amber);
 }
 .console__latch:hover .console__latch-glyph {
   text-shadow: 0 0 6px var(--c-amber-glow);
 }
 
-.console__latch-screw {
-  /* override the inline-block default from .screw */
-  flex-shrink: 0;
-}
-
 .console__latch-glyph {
-  font-size: 12px;
+  position: relative;          /* stack above the ::before scribe line */
+  width: 12px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
   line-height: 1;
   letter-spacing: 0;
   user-select: none;
-  transition: text-shadow .15s;
+  background: var(--c-chassis-low);
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  transition: text-shadow .15s, border-color .15s;
+}
+.console__latch:hover .console__latch-glyph {
+  border-color: var(--c-amber-deep);
 }
 
 /* ── Tabbed box: tab strip ── */

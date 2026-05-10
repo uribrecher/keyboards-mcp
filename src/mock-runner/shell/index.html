@@ -77,23 +77,18 @@
       </section>
     </div>
 
-    <div class="bay__splitter" id="bay-splitter" aria-hidden="true"
-         title="Drag to resize · double-click to reset"></div>
-
     <aside class="console" id="console" data-collapsed="false">
       <!--
-        Vertical machined latch — pinned to the slot-facing edge of the
-        console. Click toggles `data-collapsed` on `.console`, which the
-        bay grid responds to via :has(). When expanded shows ▶ (push to
-        collapse); when collapsed shows ◀ (pull to expand) and is the
-        only visible affordance on the 32px-wide rail.
+        Combined rail — both the splitter (pointer drag resizes the
+        console) and the collapse toggle (pure click flips
+        data-collapsed). Sits at the slot-facing edge of the console;
+        cursor: col-resize on hover, click without movement toggles the
+        drawer. Chevron in the middle reads as the lever.
       -->
       <button class="console__latch" id="console-latch"
               aria-expanded="true" aria-controls="console-body"
-              title="Collapse console">
-        <span class="console__latch-screw screw" aria-hidden="true"></span>
+              title="Drag to resize · click to collapse">
         <span class="console__latch-glyph" id="console-latch-glyph">▶</span>
-        <span class="console__latch-screw screw" aria-hidden="true"></span>
       </button>
 
       <div class="console__body" id="console-body">
