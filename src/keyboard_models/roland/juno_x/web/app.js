@@ -130,15 +130,18 @@ function updateEngineSelect(partData) {
 
 // ── Slider / value display update ──
 
+/**
+ * Stage-5 state shape: `partData.params` is keyed by canonical param
+ * NAME (e.g. "as_lfo_rate") rather than by `cc<N>`. Each entry includes
+ * `cc` when the param is CC-mapped, which we use to find the matching
+ * widget. Values are USER-DOMAIN (post-stage-5) — for continuous
+ * params they equal the slider position (0-127); for scaled discretes
+ * (max < 127) the value is the index, not the wire byte.
+ */
 function updateControlLabels(partData) {
   // Override hardcoded HTML labels with displayName from the midi-map.
-  //
   // The curated HTML labels (e.g. "PW", "SAW") are the fallback when
-  // displayName is absent, so we don't paste long param names like
-  // "OSC PW Level" into slim columns. We cache the original text once in
-  // data-default-label so we can restore it when the active part/engine
-  // brings a CC into view that has no displayName (otherwise stale text
-  // from a previous engine would persist).
+  // displayName is absent, cached in `data-default-label`.
   const params = partData.params;
   if (!params) return;
   for (const target of document.querySelectorAll("[data-cc]")) {
@@ -149,9 +152,9 @@ function updateControlLabels(partData) {
     if (slot.dataset.defaultLabel === undefined) {
       slot.dataset.defaultLabel = slot.textContent;
     }
-    const entry = params["cc" + cc];
-    const isObj = typeof entry === "object" && entry !== null;
-    const next = isObj && entry.displayName ? entry.displayName : slot.dataset.defaultLabel;
+    // Find param entry whose cc matches the widget.
+    const entry = findEntryByCc(params, cc);
+    const next = entry && entry.displayName ? entry.displayName : slot.dataset.defaultLabel;
     slot.textContent = next;
   }
 }
@@ -162,47 +165,42 @@ function labelSlotFor(target) {
   return document.querySelector(`label[for="${target.id}"]`);
 }
 
+function findEntryByCc(params, cc) {
+  for (const entry of Object.values(params)) {
+    if (entry && typeof entry === "object" && entry.cc === cc) return entry;
+  }
+  return null;
+}
+
 function updatePartParams(partData) {
   updateControlLabels(partData);
   const params = partData.params;
   if (!params) return;
 
-  for (const [key, entry] of Object.entries(params)) {
-    // key is like "cc3", "cc9", etc.
-    if (!key.startsWith("cc")) continue;
-    const cc = parseInt(key.slice(2), 10);
-    if (isNaN(cc)) continue;
-
-    // Entry can be a plain number (legacy/unknown CC) or an object with metadata
-    const value = typeof entry === "object" && entry !== null ? entry.value : entry;
+  for (const entry of Object.values(params)) {
+    if (!entry || typeof entry !== "object" || entry.cc === undefined) continue;
+    const cc = entry.cc;
+    const value = entry.value;
 
     // Update range slider
     const slider = document.querySelector(`[data-cc="${cc}"].vslider`);
-    if (slider) {
-      slider.value = value;
-    }
+    if (slider) slider.value = value;
 
-    // Update select with matching data-cc (e.g. HPF, LFO waveform)
+    // Update select with matching data-cc
     const selectEl = document.querySelector(`select[data-cc="${cc}"]`);
     if (selectEl) {
-      // Find closest option value
       let bestOpt = null;
       let bestDist = Infinity;
       for (const opt of selectEl.options) {
         const dist = Math.abs(parseInt(opt.value, 10) - value);
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestOpt = opt;
-        }
+        if (dist < bestDist) { bestDist = dist; bestOpt = opt; }
       }
       if (bestOpt) selectEl.value = bestOpt.value;
     }
 
     // Update value display
     const valEl = document.getElementById("val-cc-" + cc);
-    if (valEl) {
-      valEl.textContent = value;
-    }
+    if (valEl) valEl.textContent = value;
   }
 }
 

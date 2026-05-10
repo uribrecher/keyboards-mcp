@@ -96,6 +96,39 @@ export function resolveValue(param: KeyboardParameter, value: number | string): 
   );
 }
 
+/**
+ * Inverse of `resolveValue` — convert a wire-byte (MIDI 0-127) value back to
+ * a canonical user-domain numeric value.
+ *
+ * For continuous params the wire byte and user value are identical; for
+ * scaled discretes / drawbars / model-index / one-based / custom encodings,
+ * we apply the proper inverse so the handler's user-domain state is the
+ * mirror of what `resolveValue` would have produced for the same input.
+ *
+ * String labels are NOT returned here — `formatValue` is the right helper
+ * for display strings. This always returns a number that callers can pass
+ * back into `resolveValue` and get the same wire byte.
+ */
+export function wireToUserValue(param: KeyboardParameter, wireValue: number): number {
+  const enc = param.encoding;
+  switch (enc.kind) {
+    case "drawbar":
+      return midiToDrawbar(wireValue, enc.positions);
+    case "model-index":
+      return midiToModelIndex(wireValue, enc.table);
+    case "one-based":
+      return Math.max(0, Math.min(127, Math.round(wireValue))) + 1;
+    case "custom":
+      return enc.fromMidi(wireValue);
+    case "raw":
+    default:
+      if (param.type === "discrete" || param.type === "toggle") {
+        return midiToDiscrete(wireValue, param.max);
+      }
+      return Math.max(0, Math.min(127, Math.round(wireValue)));
+  }
+}
+
 /** Format a MIDI value back to a human-readable display string */
 export function formatValue(param: KeyboardParameter, midiValue: number): string {
   const enc = param.encoding;

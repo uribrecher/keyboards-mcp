@@ -169,22 +169,24 @@ export interface MockHandler {
    */
   set_params?(refs: ParamRef[]): MockHandlerResult;
   /**
-   * Param-domain read. Returns wire-byte values keyed by canonical
-   * parameter name. Pass `part` for per-part params.
+   * Param-domain read. Returns user-domain numeric values keyed by
+   * canonical parameter name. Pass `part` for per-part params.
+   *
+   * Stage 5: values are user-domain (the same numbers `set_params`
+   * accepts). The codec handles wire-byte translation when the engine
+   * needs raw bytes for protocol-level requests like RQ1.
    */
   get_params?(names: string[], part?: number): Record<string, number>;
   /**
-   * Bytes-level read used by the engine to fulfill protocol-level
-   * requests (e.g. Roland RQ1) without the handler having to know
-   * anything about the protocol. Returns `size` bytes starting at
-   * `address` from the handler's internal address-keyed storage.
-   * Bytes the handler hasn't seen are reported as 0.
-   *
-   * Stage 4: replaces the handler-side RQ1→DT1 sysexOut path. The
-   * engine now does codec.parseRequest → handler.read_bytes → codec.buildResponse
-   * and emits the reply on the device's MIDI Out itself.
+   * Apply a Program Change with the given (already-resolved) bank and
+   * slot. Stage 5: the engine accumulates bank-select MSB/LSB across
+   * CC sequences and finalizes via this method when the PC arrives.
    */
-  read_bytes?(address: number[], size: number): number[];
+  load_program?(bank: number, slot: number): MockHandlerResult;
+  /* read_bytes removed in stage 5. The engine no longer needs a
+   * bytes-level read on the handler — RQ1 fulfillment uses
+   * codec.paramsAtAddress + handler.get_params + codec.encodeBytes,
+   * keeping the handler purely in the param domain. */
   /**
    * @deprecated Use `set_params` instead. Kept for backward compatibility
    * with engine WS handlers that still emit `{type:"param"}`.

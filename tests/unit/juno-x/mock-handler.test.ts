@@ -1,8 +1,14 @@
+/**
+ * JUNO-X mock handler — stage 5 (pure param-domain handler).
+ *
+ * The handler no longer speaks MIDI. Tests verify the public API:
+ * `set_params`, `get_params`, `load_program`, `getFullState` shape.
+ * `onMIDI` is a no-op stub kept only for interface compatibility.
+ */
+
 import { describe, it, beforeEach } from "node:test";
 import { strict as assert } from "node:assert";
 import { createJunoXMockHandler } from "../../../src/keyboard_models/roland/juno_x/mock-handler.js";
-import { buildDT1 } from "../../../src/shared/roland-dt1.js";
-import { JUNO_X_MODEL_ID } from "../../../src/keyboard_models/roland/juno_x/engines/engine-types.js";
 import type { MockHandler } from "../../../src/shared/keyboard-model.js";
 
 const LOWER_CH = 0;
@@ -10,22 +16,17 @@ const UPPER_CH = 1;
 
 let handler: MockHandler;
 
-describe("JUNO-X mock handler", () => {
+describe("JUNO-X mock handler (stage 5 — pure param domain)", () => {
   beforeEach(() => {
     handler = createJunoXMockHandler();
     handler.init(LOWER_CH, UPPER_CH);
   });
 
-  // ── State shape ──
-
   describe("state shape", () => {
     it("getFullState has expected top-level keys", () => {
       const state = handler.getFullState(false);
       const keys = Object.keys(state).sort();
-      // `params` is the stage-3 name-keyed view of scene-global params
-      // (chorus_*, delay_*, etc.) — added alongside `sceneGlobal` for UIs
-      // that prefer the param domain over byte-level addr keys.
-      const expected = ["model", "params", "part1", "part2", "part3", "part4", "part5", "scene", "sceneGlobal"].sort();
+      const expected = ["model", "params", "part1", "part2", "part3", "part4", "part5", "scene"].sort();
       assert.deepStrictEqual(keys, expected);
     });
 
@@ -34,14 +35,13 @@ describe("JUNO-X mock handler", () => {
       assert.strictEqual(state.model, "Roland JUNO-X");
     });
 
-    it("each part has engine, engineName, params, sceneParams", () => {
+    it("each part has engine, engineName, and a name-keyed params record", () => {
       const state = handler.getFullState(false);
       for (let i = 1; i <= 5; i++) {
         const part = state[`part${i}`];
         assert.ok("engine" in part, `part${i} missing engine`);
         assert.ok("engineName" in part, `part${i} missing engineName`);
-        assert.ok("params" in part, `part${i} missing params`);
-        assert.ok("sceneParams" in part, `part${i} missing sceneParams`);
+        assert.ok(typeof part.params === "object" && part.params !== null, `part${i}.params missing`);
       }
     });
 
@@ -50,122 +50,82 @@ describe("JUNO-X mock handler", () => {
       assert.ok("bank" in state.scene, "scene missing bank");
       assert.ok("program" in state.scene, "scene missing program");
     });
-  });
 
-  // ── CC routing ──
-
-  describe("CC routing", () => {
-    it("CC on lower channel routes to part1", () => {
-      handler.onMIDI({ type: "cc", controller: 16, value: 100, channel: LOWER_CH });
+    it("params is name-keyed and starts empty", () => {
       const state = handler.getFullState(false);
-      // Param entries are objects with metadata; CC 16 (PW) is in AnalogSynth.
-      assert.strictEqual(state.part1.params.cc16.value, 100);
-    });
-
-    it("CC on upper channel routes to part2", () => {
-      handler.onMIDI({ type: "cc", controller: 17, value: 80, channel: UPPER_CH });
-      const state = handler.getFullState(false);
-      assert.strictEqual(state.part2.params.cc17.value, 80);
-    });
-
-    it("CC on unmapped channel does not crash", () => {
-      const result = handler.onMIDI({ type: "cc", controller: 16, value: 50, channel: 15 });
-      assert.ok(result.log);
-    });
-
-    it("Bank Select MSB (CC 0) does not route to part params", () => {
-      handler.onMIDI({ type: "cc", controller: 0, value: 5, channel: LOWER_CH });
-      const state = handler.getFullState(false);
-      assert.strictEqual(state.part1.params.cc0, undefined);
-    });
-
-    it("Bank Select LSB (CC 32) does not route to part params", () => {
-      handler.onMIDI({ type: "cc", controller: 32, value: 3, channel: LOWER_CH });
-      const state = handler.getFullState(false);
-      assert.strictEqual(state.part1.params.cc32, undefined);
-    });
-
-    it("onMIDI returns state and log for mapped CC", () => {
-      const result = handler.onMIDI({ type: "cc", controller: 16, value: 64, channel: LOWER_CH });
-      assert.ok(result.state, "expected state");
-      assert.ok(result.log, "expected log");
+      assert.deepEqual(state.params, {});
     });
   });
 
-  // ── Per-CC entry metadata ──
-
-  describe("per-CC entry metadata", () => {
-    it("CC entry includes name and section from midi-map", () => {
-      const state = handler.getFullState(false);
-      // CC 29 = LFO Rate in AnalogSynth (seeded with default in initParts)
-      const entry = state.part1.params.cc29;
-      assert.ok(entry, "expected cc29 entry to exist (seeded from defaults)");
-      assert.strictEqual(entry.name, "LFO Rate");
-      assert.strictEqual(entry.section, "lfo");
+  describe("set_params + get_params (param-domain API)", () => {
+    it("set_params writes a scene-global param; get_params reads it back as user-domain", () => {
+      handler.set_params!([{ name: "chorus_switch", value: 1 }, { name: "chorus_level", value: 80 }]);
+      const values = handler.get_params!(["chorus_switch", "chorus_level"]);
+      assert.equal(values.chorus_switch, 1);  // user-domain — NOT 127
+      assert.equal(values.chorus_level, 80);
     });
 
-    it("CC entry includes displayName when set in midi-map", () => {
-      const state = handler.getFullState(false);
-      // as_lfo_rate has displayName "RATE"
-      assert.strictEqual(state.part1.params.cc29.displayName, "RATE");
+    it("string label is normalized to user-domain index", () => {
+      handler.set_params!([{ name: "chorus_switch", value: "ON" }]);
+      const values = handler.get_params!(["chorus_switch"]);
+      assert.equal(values.chorus_switch, 1);
     });
 
-    it("CC entry has no displayName when not set", () => {
-      const state = handler.getFullState(false);
-      // CC 20 = OSC Pitch — no displayName in midi-map
-      const entry = state.part1.params.cc20;
-      assert.ok(entry, "expected cc20 entry");
-      assert.strictEqual(entry.displayName, undefined);
+    it("set_params writes a per-part CC param to the named part", () => {
+      handler.set_params!([{ name: "as_lfo_rate", value: 64, part: 1 }]);
+      handler.set_params!([{ name: "as_lfo_rate", value: 100, part: 3 }]);
+      assert.equal(handler.get_params!(["as_lfo_rate"], 1).as_lfo_rate, 64);
+      assert.equal(handler.get_params!(["as_lfo_rate"], 3).as_lfo_rate, 100);
     });
-  });
 
-  // ── Program change ──
+    it("set_params returns state for broadcast and a log line", () => {
+      const result = handler.set_params!([{ name: "chorus_switch", value: 1 }]);
+      assert.ok(result.state);
+      assert.match(result.log ?? "", /Chorus Switch/);
+    });
 
-  describe("program change", () => {
-    it("program change updates scene bank and program", () => {
-      // Set bank MSB + LSB
-      handler.onMIDI({ type: "cc", controller: 0, value: 1, channel: LOWER_CH });
-      handler.onMIDI({ type: "cc", controller: 32, value: 2, channel: LOWER_CH });
-      // Program change
-      handler.onMIDI({ type: "program", number: 5, channel: LOWER_CH });
-      const state = handler.getFullState(false);
-      assert.strictEqual(state.scene.program, 5);
-      // Bank = (MSB << 7) | LSB = (1 << 7) | 2 = 130
-      assert.strictEqual(state.scene.bank, 130);
+    it("unknown param name is logged but doesn't throw", () => {
+      const result = handler.set_params!([{ name: "definitely_not_a_param", value: 1 }]);
+      assert.match(result.log ?? "", /unknown/i);
+    });
+
+    it("get_params returns the param's defaultValue when unset", () => {
+      const values = handler.get_params!(["chorus_level"]);
+      // chorus_level defaultValue is 64.
+      assert.equal(values.chorus_level, 64);
     });
   });
 
-  // ── SysEx DT1 ──
-
-  describe("SysEx DT1", () => {
-    it("DT1 to scene global address updates sceneGlobal", () => {
-      // Address 0x01, 0x00, 0x00, 0x00 = Temporary Scene, global area
-      const sysex = buildDT1(JUNO_X_MODEL_ID, 0x10, [0x01, 0x00, 0x00, 0x00], [42]);
-      const result = handler.onMIDI({ type: "sysex", bytes: sysex });
-      assert.ok(result.state, "expected state broadcast");
+  describe("load_program", () => {
+    it("updates scene bank and program", () => {
+      handler.load_program!(130, 5);
       const state = handler.getFullState(false);
-      // sceneGlobal should have an entry
-      assert.ok(Object.keys(state.sceneGlobal).length > 0, "sceneGlobal should have entries");
+      assert.equal(state.scene.bank, 130);
+      assert.equal(state.scene.program, 5);
     });
+  });
 
-    it("DT1 to part address updates part sceneParams", () => {
-      // Address 0x01, 0x10, 0x00, 0x00 = Temporary Scene, Part 1
-      const sysex = buildDT1(JUNO_X_MODEL_ID, 0x10, [0x01, 0x10, 0x00, 0x00], [99]);
-      handler.onMIDI({ type: "sysex", bytes: sysex });
+  describe("onMIDI is a no-op in stage 5", () => {
+    it("returns an empty result and does not affect state", () => {
+      const before = handler.getFullState(false);
+      const result = handler.onMIDI({ type: "cc", controller: 16, value: 100, channel: 0 });
+      assert.deepEqual(result, {});
+      const after = handler.getFullState(false);
+      assert.deepEqual(after, before);
+    });
+  });
+
+  describe("broadcast `params` view", () => {
+    it("surfaces written scene-global params by name", () => {
+      handler.set_params!([
+        { name: "chorus_switch", value: 1 },
+        { name: "delay_switch", value: 1 },
+        { name: "chorus_level", value: 90 },
+      ]);
       const state = handler.getFullState(false);
-      assert.ok(Object.keys(state.part1.sceneParams).length > 0, "part1 sceneParams should have entries");
-    });
-
-    it("invalid SysEx does not crash", () => {
-      const result = handler.onMIDI({ type: "sysex", bytes: [0xF0, 0x7E, 0xF7] });
-      assert.ok(result.log);
-    });
-
-    it("DT1 with wrong model ID is ignored", () => {
-      const wrongModel = { bytes: [0x00, 0x00, 0x00, 0x00, 0xFF] };
-      const sysex = buildDT1(wrongModel, 0x10, [0x01, 0x00, 0x00, 0x00], [42]);
-      const result = handler.onMIDI({ type: "sysex", bytes: sysex });
-      assert.ok(result.log!.includes("ignored"), `expected 'ignored' in log: "${result.log}"`);
+      assert.equal(state.params.chorus_switch, 1);
+      assert.equal(state.params.delay_switch, 1);
+      assert.equal(state.params.chorus_level, 90);
     });
   });
 });

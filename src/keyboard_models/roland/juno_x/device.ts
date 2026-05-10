@@ -138,8 +138,13 @@ export class JunoXDevice extends BaseKeyboardDevice {
         );
         const events = this.junoCodec.decode(replyMsg);
         const paramEvent = events.find(e => e.kind === "param" && e.name === key);
-        const value = paramEvent && paramEvent.kind === "param" ? paramEvent.value : (data[0] ?? 0);
-        const display = this.junoCodec.formatWireValue(key, value);
+        // codec.decode returns user-domain values (stage 5). Fall back to
+        // wire→user translation if the param event is missing for any
+        // reason (shouldn't happen for known params).
+        const userValue = paramEvent && paramEvent.kind === "param"
+          ? paramEvent.value
+          : this.junoCodec.wireToUserValue(key, data[0] ?? 0);
+        const display = this.junoCodec.formatValue(key, userValue);
         return { key, line: `  ${param.name}: ${display}` };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

@@ -56,16 +56,15 @@ describe("MCP sysex receive: RQ1 round-trip via real MIDI", { concurrency: 1, sk
       midi.connect(portName);
       midi.connectInput(portName);
 
-      // Pre-set chorus_switch=1 via DT1 so we have something non-default
-      // to read. Send the RQ1 via requestRolandValue — the helper waits
-      // until the matching DT1 arrives, so we don't need a fixed sleep
-      // before the request; the mock's RQ1 handler is synchronous and
-      // the OS-level MIDI loopback is fast enough.
-      const setMsg = buildDT1(JUNO_X_MODEL_ID, 0x10, CHORUS_SWITCH_ADDR, [0x01]);
+      // Pre-set chorus_switch=ON via DT1 so we have something non-default
+      // to read. The wire byte 0x7F is the canonical "ON" for this max=1
+      // discrete (stage-5 user-domain storage means only canonical wire
+      // bytes round-trip exactly through the mock).
+      const setMsg = buildDT1(JUNO_X_MODEL_ID, 0x10, CHORUS_SWITCH_ADDR, [0x7F]);
       midi.sendSysEx(setMsg);
 
       const data = await requestRolandValue(midi, JUNO_X_MODEL_ID, 0x10, CHORUS_SWITCH_ADDR, 1, 1000);
-      assert.deepStrictEqual(data, [0x01], "expected chorus_switch=1 from RQ1 round-trip");
+      assert.deepStrictEqual(data, [0x7F], "expected chorus_switch=ON (wire 0x7F) from RQ1 round-trip");
 
       midi.disconnect();
     } finally {
