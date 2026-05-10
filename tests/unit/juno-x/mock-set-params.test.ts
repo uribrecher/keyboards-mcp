@@ -1,21 +1,21 @@
 /**
- * JUNO-X mock-handler: set_params / get_params API (#30 stage 3).
+ * JUNO-X mock-handler: set_params / get_params API (#30 stages 3–4).
  *
- * Verifies the new param-domain API on the handler:
- *   - set_params writes are equivalent to UI param messages and update
- *     internal state by way of the existing handleSysEx / handleCC paths
- *     (so RQ1 readback continues to work).
+ * Verifies the param-domain API on the handler:
+ *   - set_params updates internal state by way of the byte-level
+ *     handleSysEx / handleCC paths (so read_bytes continues to work).
  *   - get_params returns wire-byte values keyed by canonical param name.
  *   - The broadcast `params` view exposes scene-global params by name.
+ *
+ * Stage 4: set_params no longer returns ccOut/sysexOut/programOut —
+ * MIDI emission is the engine's responsibility now.
  */
 
 import { describe, it, beforeEach } from "node:test";
 import { strict as assert } from "node:assert";
 import { JunoXMockHandler } from "../../../src/keyboard_models/roland/juno_x/mock-handler.js";
-import { JUNO_X_MODEL_ID, SCENE_BASE } from "../../../src/keyboard_models/roland/juno_x/engines/engine-types.js";
-import { buildRQ1, parseDT1, addAddresses } from "../../../src/shared/roland-dt1.js";
-
-const DEVICE_ID = 0x10;
+import { SCENE_BASE } from "../../../src/keyboard_models/roland/juno_x/engines/engine-types.js";
+import { addAddresses } from "../../../src/shared/roland-dt1.js";
 
 let handler: JunoXMockHandler;
 beforeEach(() => {
@@ -24,21 +24,20 @@ beforeEach(() => {
 });
 
 describe("JUNO-X mock set_params + get_params", () => {
-  it("set_params chorus_switch=1 → readable via get_params and via RQ1", () => {
+  it("set_params chorus_switch=1 → readable via get_params and via read_bytes", () => {
     const result = handler.set_params([{ name: "chorus_switch", value: 1 }]);
-    // Result has the encoded sysexOut packet for the engine to emit.
-    assert.ok(result.sysexOut && result.sysexOut.length === 1);
+    // Stage 4: handler no longer emits via the result channel.
+    assert.equal((result as any).sysexOut, undefined);
+    assert.equal((result as any).ccOut, undefined);
 
     // get_params returns the wire byte (127 = scaled "ON" for max=1 discrete).
     const values = handler.get_params(["chorus_switch"]);
     assert.equal(values.chorus_switch, 0x7F);
 
-    // RQ1 round-trip on the same address returns the same byte.
+    // The same byte is visible to read_bytes — engine uses this for RQ1.
     const addr = addAddresses(SCENE_BASE, [0x00, 0x50, 0x00, 0x00]);
-    const rq = buildRQ1(JUNO_X_MODEL_ID, DEVICE_ID, addr, [0, 0, 0, 1]);
-    const reply = handler.onMIDI({ type: "sysex", bytes: rq });
-    const dt1 = parseDT1(reply.sysexOut![0], JUNO_X_MODEL_ID);
-    assert.deepStrictEqual(dt1!.data, [0x7F]);
+    const data = handler.read_bytes(addr, 1);
+    assert.deepStrictEqual(data, [0x7F]);
   });
 
   it("get_params returns 0 for unset params", () => {
