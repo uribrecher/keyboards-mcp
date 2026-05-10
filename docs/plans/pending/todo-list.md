@@ -170,3 +170,36 @@ Likely culprits:
 
 Quick fix is likely a one-character HTML change.
 
+
+### 30. Move per-model MIDI status line to the mock runner shell
+
+**Status:** Ready to plan.
+
+Today every mock UI (Nord, Prophet, JUNO-X) renders its own "last MIDI change" status line at the bottom of the panel, with model-specific formatting (e.g. JUNO-X writes `lfo_rate = 64 (Part 1)`). That breaks the architectural boundary established by stage 5: the mock UI should speak param domain, not MIDI.
+
+Move the status line to the **mock runner shell** instead — the chassis around the per-model iframes. The shell logs raw MIDI events as they happen on each tab's virtual MIDI ports, formatted generically:
+
+- `CC93=32 ch=0` for control change
+- `PC=12 ch=2` for program change
+- `SysEx 16 bytes [F0 41 10 .. F7]` for sysex (head/tail summary, like the existing engine logs)
+
+No model-specific interpretation in the shell — just raw MIDI. Per-model meaning lives in the codec/handler layer where it belongs.
+
+Scope:
+- Drop `setLastChange` calls and the `#last-change` element from each model's `web/index.html` and `web/app.js`.
+- Add a status strip to `src/mock-runner/shell/` (next to the existing tab bar / chat console) that shows the most recent MIDI event(s) per active tab.
+- Wire the engine's existing `MIDI-IN` / `MIDI-OUT` log lines (`src/mock-runner/engine.ts` already prints them) through to the shell — either via the existing `state-changed` event with a new payload type, or a dedicated WS broadcast for raw MIDI events.
+
+### 31. JUNO-X part selector not actually selecting the active part
+
+**Status:** Bug.
+
+Clicking the part buttons (Part 1..5) in the JUNO-X mock UI updates the visual `active` class on the button but doesn't actually drive the param state — the displayed slider values continue to reflect the previously-selected part.
+
+Likely culprit in `src/keyboard_models/roland/juno_x/web/app.js`:
+- `initPartButtons` updates `activePart` and the button styling, but the next `handleState` broadcast might still render `data["part" + activePart]` from a stale state object (state hasn't changed since the last broadcast).
+- Or `updatePartParams` is only called when the broadcast fires, not when `activePart` changes locally — so switching parts in the UI doesn't repaint.
+
+Fix sketch: when `activePart` changes, immediately re-render from the last received state (cache it on the WS handler and re-invoke `handleState` with that cached state).
+
+The bug pre-dates stage 5 — it's a UI state-flow issue, not a state-shape issue.

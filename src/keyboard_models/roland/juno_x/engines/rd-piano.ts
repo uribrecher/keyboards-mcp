@@ -5,7 +5,7 @@ export const RD_PIANO_ENGINE = JunoXEngine.RDPiano;
 
 export function createRDPianoParams(): Record<string, KeyboardParameter> {
   return {
-    rd_level: {
+    amp_level: {
       name: "Tone Level",
       section: "rd-tone",
       cc: 110,
@@ -17,7 +17,7 @@ export function createRDPianoParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    rd_symreso_switch: {
+    symreso_switch: {
       name: "SymReso Switch",
       section: "rd-symreso",
       min: 0,
@@ -31,7 +31,7 @@ export function createRDPianoParams(): Record<string, KeyboardParameter> {
       sysexSize: 1,
       perPart: true,
     },
-    rd_symreso_depth: {
+    symreso_depth: {
       name: "SymReso Depth",
       section: "rd-symreso",
       min: 0,
@@ -44,7 +44,7 @@ export function createRDPianoParams(): Record<string, KeyboardParameter> {
       sysexSize: 1,
       perPart: true,
     },
-    rd_cabinet_reso: {
+    cabinet_reso: {
       name: "Cabinet Reso",
       section: "rd-symreso",
       min: 0,

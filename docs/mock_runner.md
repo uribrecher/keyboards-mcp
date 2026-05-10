@@ -163,9 +163,11 @@ Tests use this via `tests/helpers/mock-process.ts` (headless spawn + WebSocket a
 | `src/keyboard_models/<mfr>/<model>/mock-handler.ts` | Per-model state, MIDI handling, `onUIParam`, `getFullState` / `setFullState` |
 | `src/keyboard_models/<mfr>/<model>/web/` | Per-model UI loaded into the tab iframe |
 
-## Engine and handler — runtime contract
+## Engine, codec, handler — runtime contract
 
-The mock runner has two collaborators: a **MockEngine** (transport) and a per-model **MockHandler** (logic). Knowing where the boundary is — and why the routing has the shape it does — saves a lot of head-scratching when a feature crosses both.
+The mock runner has three collaborators: a **MockEngine** (transport), a per-model **MidiCodec** (param ↔ MIDI translation), and a per-model **MockHandler** (state). Knowing where the boundary is — and why the routing has the shape it does — saves a lot of head-scratching when a feature crosses them.
+
+> Stage-5 status (#30): the handler is now purely param-domain — no MIDI bytes, no addresses. All MIDI ownership lives in the engine + codec. The diagrams below were originally written for the pre-stage-5 two-collaborator split; they're still useful for the source-aware routing rules but the "MockHandler returns sysexOut/ccOut" parts are stale. Treat them as historical until this section is revised.
 
 ### Topology
 

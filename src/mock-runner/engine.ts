@@ -9,7 +9,7 @@ import { createServer, type Server } from "node:http";
 import { EventEmitter } from "node:events";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { MockHandler, MidiMessage, MockHandlerResult } from "../shared/keyboard-model.js";
-import type { EncodedMessage } from "../shared/midi-codec.js";
+import type { EncodedMessage, MidiCodec, ParamRef } from "../shared/midi-codec.js";
 import * as registry from "../shared/mock-registry.js";
 
 const HEARTBEAT_MS = 30_000;
@@ -47,6 +47,14 @@ export class MockEngine extends EventEmitter {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   /** Actual OS-assigned MIDI port name (Core MIDI suffixes duplicates). */
   private actualPortName: string;
+  /**
+   * Stage-5 bank-select accumulator. CC 0 (MSB) and CC 32 (LSB) are
+   * stateful predecessors to a Program Change — the engine accumulates
+   * them per channel and finalizes a `load_program(bank, slot)` call when
+   * the matching PC arrives. Codec.decode is stateless so it can't do
+   * this; the responsibility lives in the engine.
+   */
+  private pendingBankByCh = new Map<number, { msb: number; lsb: number }>();
 
   constructor(handler: MockHandler, opts: EngineOptions) {
     super();
@@ -305,34 +313,134 @@ export class MockEngine extends EventEmitter {
 
   /**
    * Dispatch a `MidiMessage` (synthesized from a UI WS command, or read
-   * from the virtual MIDI In) through the right path:
+   * from the virtual MIDI In) through the codec → handler param-domain
+   * path. Stage 5: the handler never sees raw MIDI.
    *
-   * - **External-source SysEx that's a Roland RQ1 request** is handled
-   *   entirely in the engine: codec.parseRequest → handler.read_bytes →
-   *   codec.buildResponse → emit. The handler doesn't see the request.
-   * - Everything else goes to `handler.onMIDI(msg)` for state updates.
-   *   For UI-source `cc` / `program`, the engine also echoes the inbound
-   *   message to the device's MIDI Out (panel-knob analogue). External
-   *   inbound is never echoed — would feedback-loop on bridges.
+   * - **External SysEx that's a Roland RQ1**: codec.parseRequest →
+   *   codec.paramsAtAddress → handler.get_params → codec.encodeBytes →
+   *   codec.buildResponse → emit. Handler is read-only here.
+   * - **External CC bank-select (CC 0 / CC 32)**: stateful, engine
+   *   accumulates per channel. No handler call until the PC arrives.
+   * - **External Program Change**: combine accumulated bank with PC slot
+   *   and call `handler.load_program(bank, slot)`.
+   * - **Everything else**: `codec.decode(msg)` → for each `param` event
+   *   call `handler.set_params([{name, value, part}])` (value is
+   *   user-domain, normalized by the codec).
+   * - **UI-source bare cc/program**: also echo the raw inbound to the
+   *   device's MIDI Out (panel-knob analogue). External MIDI is never
+   *   echoed (loop prevention on bridges).
    */
   private dispatch(msg: MidiMessage, source: "ui" | "external"): void {
-    // Stage 4: engine handles RQ1 directly via codec — no handler involvement.
-    if (source === "external" && msg.type === "sysex" && this.handler.codec) {
-      const codec = this.handler.codec;
-      const req = codec.parseRequest({ type: "sysex", bytes: msg.bytes });
-      if (req && this.handler.read_bytes) {
-        const data = this.handler.read_bytes(req.address, req.size);
-        const reply = codec.buildResponse(req, data);
-        if (reply.type === "sysex") {
-          console.log(`${this.tag()} RQ1 → DT1 ${MockEngine.summarizeSysex(reply.bytes)} (engine-handled)`);
-          this.emitOne(reply);
+    const codec = this.handler.codec;
+
+    if (codec && source === "external") {
+      // Engine-handled RQ1.
+      if (msg.type === "sysex") {
+        const req = codec.parseRequest({ type: "sysex", bytes: msg.bytes });
+        if (req) {
+          this.fulfillRequest(codec, req);
+          return;
+        }
+      }
+      // Engine-managed bank-select + program-change.
+      if (msg.type === "cc" && (msg.controller === 0 || msg.controller === 32)) {
+        const ch = msg.channel;
+        const acc = this.pendingBankByCh.get(ch) ?? { msb: 0, lsb: 0 };
+        if (msg.controller === 0) acc.msb = msg.value;
+        else acc.lsb = msg.value;
+        this.pendingBankByCh.set(ch, acc);
+        console.log(`${this.tag()} bank-select ${msg.controller === 0 ? "MSB" : "LSB"}=${msg.value} ch=${ch}`);
+        return;
+      }
+      if (msg.type === "program") {
+        const acc = this.pendingBankByCh.get(msg.channel) ?? { msb: 0, lsb: 0 };
+        const bank = (acc.msb << 7) | acc.lsb;
+        this.pendingBankByCh.delete(msg.channel);
+        console.log(`${this.tag()} load_program bank=${bank} slot=${msg.number} ch=${msg.channel}`);
+        if (this.handler.load_program) {
+          const result = this.handler.load_program(bank, msg.number);
+          this.applyHandlerResult(result, null);
         }
         return;
       }
+      // Everything else: codec.decode → set_params per param event.
+      const events = codec.decode(this.toEncoded(msg));
+      this.applySetEvents(events);
+      return;
     }
 
-    const result = this.handler.onMIDI(msg);
+    // Legacy fallback for handlers without a codec (Nord, Prophet) and
+    // for UI-source bare messages (the WS-handler "cc" / "program"
+    // branches that don't go through {type:"setParam"}). The handler's
+    // onMIDI updates state; UI-source also gets the panel-knob echo.
+    const result = this.handler.onMIDI ? this.handler.onMIDI(msg) : {};
     this.applyHandlerResult(result, source === "ui" ? msg : null);
+  }
+
+  private toEncoded(msg: MidiMessage): EncodedMessage {
+    if (msg.type === "cc") return { type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel };
+    if (msg.type === "program") return { type: "program", number: msg.number, channel: msg.channel };
+    return { type: "sysex", bytes: msg.bytes };
+  }
+
+  /**
+   * Apply codec-decoded events to the handler. `param` events become
+   * `set_params` calls; `loadProgram` is already handled at dispatch
+   * (engine accumulates bank-select); `unknown` is logged and dropped.
+   */
+  private applySetEvents(events: ReadonlyArray<import("../shared/midi-codec.js").DecodedEvent>): void {
+    if (!this.handler.set_params) return;
+    const refs: ParamRef[] = [];
+    for (const e of events) {
+      if (e.kind === "param") {
+        const ref: ParamRef = { name: e.name, value: e.value };
+        if (e.part !== undefined) ref.part = e.part;
+        if (e.engine !== undefined) ref.engine = e.engine;
+        refs.push(ref);
+      } else if (e.kind === "unknown") {
+        console.log(`${this.tag()} decode: unknown — ignored`);
+      }
+    }
+    if (refs.length === 0) return;
+    const result = this.handler.set_params(refs);
+    if (result.state) this.broadcast(result.state);
+    if (result.log) console.log(`${this.tag()} ${result.log}`);
+  }
+
+  /**
+   * Engine-side RQ1 fulfillment: codec tells us which params live in the
+   * request range, handler tells us their user-domain values, codec
+   * packs each back to wire bytes.
+   */
+  private fulfillRequest(codec: MidiCodec, req: import("../shared/midi-codec.js").RequestDescriptor): void {
+    const refs = codec.paramsAtAddress(req.address, req.size);
+    const data = new Array(req.size).fill(0);
+
+    if (refs.length > 0 && this.handler.get_params) {
+      // Group by part so we issue minimal handler calls.
+      const byPart = new Map<number | undefined, typeof refs>();
+      for (const r of refs) {
+        const list = byPart.get(r.part);
+        if (list) list.push(r);
+        else byPart.set(r.part, [r]);
+      }
+      for (const [part, list] of byPart) {
+        const values = this.handler.get_params(list.map(r => r.name), part);
+        for (const r of list) {
+          const userValue = values[r.name] ?? 0;
+          const bytes = codec.encodeBytes(r.name, userValue, r.part);
+          for (let i = 0; i < bytes.length && r.byteOffset + i < req.size; i++) {
+            data[r.byteOffset + i] = bytes[i];
+          }
+        }
+      }
+    }
+
+    const reply = codec.buildResponse(req, data);
+    if (reply.type === "sysex") {
+      console.log(`${this.tag()} RQ1 → DT1 ${MockEngine.summarizeSysex(reply.bytes)} (engine-handled)`);
+      this.emitOne(reply);
+    }
   }
 
   /**
