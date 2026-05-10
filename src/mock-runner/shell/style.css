@@ -355,7 +355,7 @@ body > .bay { height: 100vh; }
    * the drag-resize and the collapse-toggle roles. The slot has an
    * implicit floor of 600px enforced by the latch drag clamp in app.js.
    * When collapsed, the console column shrinks to just the rail width. */
-  --rail-w: 8px;
+  --rail-w: 12px;
   grid-template-columns:
     1fr var(--console-w, clamp(484px, 35vw, 616px));
   gap: 0;
@@ -762,8 +762,8 @@ body.bay--resizing iframe { pointer-events: none; }
 
 .console__latch-glyph {
   position: relative;          /* stack above the ::before scribe line */
-  width: 12px;
-  height: 14px;
+  width: 14px;
+  height: 26px;
   display: grid;
   place-items: center;
   font-size: 9px;

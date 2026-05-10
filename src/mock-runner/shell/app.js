@@ -1264,7 +1264,7 @@ const SPLITTER_STORAGE_KEY = "mock-runner:console-w";
 const CONSOLE_MIN_PX = 380;
 const CONSOLE_MAX_PX = 800;
 const SLOT_FLOOR_PX  = 600;
-const RAIL_PX        = 8;
+const RAIL_PX        = 12;
 const DRAG_THRESHOLD_PX = 4;
 
 const bayEl = document.querySelector(".bay");
