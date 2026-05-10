@@ -31,7 +31,7 @@
  * stored values. The UI consumes user-domain throughout.
  */
 
-import type { MockHandler, MidiMessage, MockHandlerResult } from "../../../shared/keyboard-model.js";
+import type { MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
 import type { ParamRef } from "../../../shared/midi-codec.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
 import { PARAMS } from "./midi-map.js";
@@ -577,11 +577,6 @@ export function createNordElectro5DMockHandler(): MockHandler {
       resetState();
       backupCache.load(activeLabel);
       buildInventoryFromCache();
-    },
-
-    /** Handler doesn't speak MIDI; engine + codec own all wire I/O. */
-    onMIDI(_msg: MidiMessage): MockHandlerResult {
-      return {};
     },
 
     set_params(refs: ParamRef[]): MockHandlerResult {

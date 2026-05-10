@@ -64,9 +64,4 @@ describe("JUNO-X mock RQ1 — engine fulfillment via public API", () => {
     assert.ok(ev && ev.kind === "param");
     assert.equal(ev.value, 1);
   });
-
-  it("onMIDI is a no-op in stage 5 (handler doesn't speak MIDI)", () => {
-    const result = handler.onMIDI({ type: "sysex", bytes: [0xF0, 0xF7] });
-    assert.deepEqual(result, {});
-  });
 });

@@ -156,22 +156,4 @@ describe("Prophet-6 mock handler", () => {
     });
   });
 
-  // ── onMIDI is a no-op (codec path bypasses it) ──
-
-  describe("onMIDI no-op", () => {
-    it("returns empty result for cc message", () => {
-      const result = handler.onMIDI({ type: "cc", controller: 67, value: 100, channel: 0 });
-      assert.deepStrictEqual(result, {});
-    });
-
-    it("returns empty result for program change", () => {
-      const result = handler.onMIDI({ type: "program", number: 5, channel: 0 });
-      assert.deepStrictEqual(result, {});
-    });
-
-    it("returns empty result for sysex", () => {
-      const result = handler.onMIDI({ type: "sysex", bytes: [0xF0, 0x7E, 0xF7] });
-      assert.deepStrictEqual(result, {});
-    });
-  });
 });

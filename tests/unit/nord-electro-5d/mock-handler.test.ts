@@ -198,25 +198,6 @@ describe("Nord Electro 5D mock handler", () => {
     });
   });
 
-  // ── onMIDI is a no-op (codec path bypasses it) ──
-
-  describe("onMIDI no-op", () => {
-    it("returns empty result for cc message", () => {
-      const result = handler.onMIDI({ type: "cc", controller: 16, value: 127, channel: LOWER_CH });
-      assert.deepStrictEqual(result, {});
-    });
-
-    it("returns empty result for sysex", () => {
-      const result = handler.onMIDI({ type: "sysex", bytes: [0xF0, 0x7E, 0xF7] });
-      assert.deepStrictEqual(result, {});
-    });
-
-    it("returns empty result for program change", () => {
-      const result = handler.onMIDI({ type: "program", number: 5, channel: LOWER_CH });
-      assert.deepStrictEqual(result, {});
-    });
-  });
-
   // ── Unknown param ──
 
   describe("set_params unknown", () => {

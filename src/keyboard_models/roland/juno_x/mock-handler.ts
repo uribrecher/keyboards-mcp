@@ -14,7 +14,7 @@
  * real-HW behavior.
  */
 
-import type { MidiMessage, MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
+import type { MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
 import type { ParamRef } from "../../../shared/midi-codec.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
 import { JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT } from "./engines/engine-types.js";
@@ -231,9 +231,6 @@ export function createJunoXMockHandler(): MockHandler {
       initParts(lowerChannel, upperChannel);
     },
 
-    /** Handler doesn't speak MIDI; engine + codec own all wire I/O. */
-    onMIDI(_msg: MidiMessage): MockHandlerResult { return {}; },
-
     set_params(refs: ParamRef[]): MockHandlerResult {
       return applySet(refs);
     },
@@ -267,7 +264,6 @@ export class JunoXMockHandler implements MockHandler {
   private inner: MockHandler;
   constructor() { this.inner = createJunoXMockHandler(); }
   init(l: number, u: number, label?: string): void { this.inner.init(l, u, label); }
-  onMIDI(msg: MidiMessage): MockHandlerResult { return this.inner.onMIDI(msg); }
   set_params(refs: ParamRef[]): MockHandlerResult { return this.inner.set_params!(refs); }
   get_params(names: string[], part?: number): Record<string, number> { return this.inner.get_params!(names, part); }
   load_program(bank: number, slot: number): MockHandlerResult { return this.inner.load_program!(bank, slot); }

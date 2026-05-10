@@ -6,7 +6,7 @@
  * speak MIDI; the codec owns all wire-byte translation.
  */
 
-import type { MockHandler, MidiMessage, MockHandlerResult } from "../../../shared/keyboard-model.js";
+import type { MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
 import type { ParamRef } from "../../../shared/midi-codec.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
 import { PARAMS } from "./midi-map.js";
@@ -118,11 +118,6 @@ export function createProphet6MockHandler(): MockHandler {
     codec,
     init(_lowerChannel: number, _upperChannel: number, _label?: string): void {
       initState();
-    },
-
-    /** Handler doesn't speak MIDI; engine + codec own all wire I/O. */
-    onMIDI(_msg: MidiMessage): MockHandlerResult {
-      return {};
     },
 
     set_params(refs: ParamRef[]): MockHandlerResult {
