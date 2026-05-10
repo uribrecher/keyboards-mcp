@@ -116,7 +116,7 @@ export function createProphet6MockHandler(): MockHandler {
 
   return {
     codec,
-    init(): void {
+    init(_lowerChannel: number, _upperChannel: number, _label?: string): void {
       initState();
     },
 
