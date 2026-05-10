@@ -393,7 +393,10 @@ export class MockEngine extends EventEmitter {
     const refs: ParamRef[] = [];
     for (const e of events) {
       if (e.kind === "param") {
-        refs.push(e.part !== undefined ? { name: e.name, value: e.value, part: e.part } : { name: e.name, value: e.value });
+        const ref: ParamRef = { name: e.name, value: e.value };
+        if (e.part !== undefined) ref.part = e.part;
+        if (e.engine !== undefined) ref.engine = e.engine;
+        refs.push(ref);
       } else if (e.kind === "unknown") {
         console.log(`${this.tag()} decode: unknown — ignored`);
       }

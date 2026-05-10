@@ -116,8 +116,10 @@ export function wireToUserValue(param: KeyboardParameter, wireValue: number): nu
       return midiToDrawbar(wireValue, enc.positions);
     case "model-index":
       return midiToModelIndex(wireValue, enc.table);
-    case "one-based":
-      return Math.max(0, Math.min(127, Math.round(wireValue))) + 1;
+    case "one-based": {
+      const userValue = Math.max(0, Math.min(127, Math.round(wireValue))) + 1;
+      return Math.max(param.min, Math.min(param.max, userValue));
+    }
     case "custom":
       return enc.fromMidi(wireValue);
     case "raw":
