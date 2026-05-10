@@ -9,7 +9,6 @@ function makeStubHandler(): MockHandler {
   const state: Record<string, any> = { foo: 0 };
   return {
     init(l, u, lab) { lower = l; upper = u; label = lab; },
-    onMIDI: () => ({}),
     getFullState: () => ({ ...state, _meta: { lower, upper, label } }),
     setFullState(snap) { Object.assign(state, snap); },
   };

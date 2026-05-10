@@ -9,13 +9,13 @@ describe("Nord setFullState round-trip", () => {
   it("setFullState(getFullState(false)) restores the same state", () => {
     const a = createNordElectro5DMockHandler();
     a.init(LOWER_CH, UPPER_CH);
-    // upper drawbar_1 (CC 16) → upper channel
-    a.onMIDI({ type: "cc", controller: 16, value: 100, channel: UPPER_CH });
-    // lower drawbar_1 (CC 16) → lower channel
-    a.onMIDI({ type: "cc", controller: 16, value: 50, channel: LOWER_CH });
-    // global reverb_type (CC 96) — global params read from lowerChannel in
-    // the existing buildFullState() implementation, so set it on lowerCh.
-    a.onMIDI({ type: "cc", controller: 96, value: 4, channel: LOWER_CH });
+    // Drawbar writes (perPart). part 1 auto-propagates to both parts;
+    // sending part 2 afterwards leaves only the upper part with the upper
+    // value, exercising the lower != upper case for round-trip.
+    a.set_params!([{ name: "drawbar_1", value: 3, part: 1 }]);
+    a.set_params!([{ name: "drawbar_1", value: 6, part: 2 }]);
+    // Global reverb_type — non-perPart, lands in globalParams.
+    a.set_params!([{ name: "reverb_type", value: 4 }]);
     const before = a.getFullState(false);
 
     const b = createNordElectro5DMockHandler();
@@ -42,5 +42,26 @@ describe("Nord setFullState round-trip", () => {
     const a = createNordElectro5DMockHandler();
     a.init(LOWER_CH, UPPER_CH);
     assert.doesNotThrow(() => a.setFullState!({ rubbish: 123, mystery: "x" }));
+  });
+
+  it("syncs activePreset from restored organ_preset_select", () => {
+    // Snapshot a state where Preset 2 is active.
+    const a = createNordElectro5DMockHandler();
+    a.init(LOWER_CH, UPPER_CH);
+    a.set_params!([{ name: "organ_preset_select", value: 1 }]);
+    a.set_params!([{ name: "drawbar_1", value: 8, part: 1 }]);
+    const snapshot = a.getFullState(false);
+    assert.strictEqual(snapshot.preset2Drawbars.drawbar_1.position, 8);
+
+    // Restore into a fresh handler and verify a subsequent drawbar write
+    // routes to preset2 (not preset1, which would be the case if
+    // activePreset wasn't synced).
+    const b = createNordElectro5DMockHandler();
+    b.init(LOWER_CH, UPPER_CH);
+    b.setFullState!(JSON.parse(JSON.stringify(snapshot)));
+    b.set_params!([{ name: "drawbar_2", value: 5, part: 1 }]);
+    const after = b.getFullState(false);
+    assert.strictEqual(after.preset2Drawbars.drawbar_2.position, 5);
+    assert.strictEqual(after.preset1Drawbars.drawbar_2.position, 0);
   });
 });

@@ -6,13 +6,6 @@ import type { MockHandler } from "../../../src/shared/keyboard-model.js";
 const LOWER_CH = 1;
 const UPPER_CH = 2;
 
-// Key CCs from Nord MIDI map
-const CC_DRAWBAR_1 = 16;
-const CC_ORGAN_PRESET_SELECT = 3;
-const CC_VIBRATO_ENABLE = 85;
-const CC_PERCUSSION = 87;
-const CC_ORGAN_MODEL = 9;
-
 let handler: MockHandler;
 
 describe("Nord Electro 5D mock handler", () => {
@@ -31,7 +24,6 @@ describe("Nord Electro 5D mock handler", () => {
         "global", "lower", "upper",
         "preset1Drawbars", "preset2Drawbars",
         "presetOrganToggles",
-        // Raw set-list / program fields exposed for plan #9 setFullState round-trip
         "currentBank", "currentProgram", "programLoaded",
         "setListMode", "currentSetList", "currentSong", "currentPart",
       ].sort();
@@ -50,105 +42,118 @@ describe("Nord Electro 5D mock handler", () => {
       assert.ok(state.upper.drawbar_1, "upper missing drawbar_1");
     });
 
-    it("global contains non-per-part params", () => {
+    it("global does not contain per-part params", () => {
       const state = handler.getFullState(false);
-      // organ_model is perPart, should be in lower/upper not global
       assert.ok(!state.global.drawbar_1, "drawbar_1 should not be in global");
     });
   });
 
-  // ── Drawbar CC routing ──
+  // ── set_params: drawbar routing ──
 
-  describe("drawbar CC routing", () => {
-    it("drawbar CC on lower channel updates state", () => {
-      handler.onMIDI({ type: "cc", controller: CC_DRAWBAR_1, value: 127, channel: LOWER_CH });
+  describe("drawbar routing", () => {
+    it("drawbar set with part 1 propagates to upper (auto-propagate)", () => {
+      handler.set_params!([{ name: "drawbar_1", value: 8, part: 1 }]);
       const state = handler.getFullState(false);
-      // Per-part on lower channel propagates to upper
-      assert.strictEqual(state.upper.drawbar_1.value, 127);
+      assert.strictEqual(state.upper.drawbar_1.value, 8);
       assert.strictEqual(state.upper.drawbar_1.position, 8);
+      assert.strictEqual(state.lower.drawbar_1.position, 8);
     });
 
-    it("drawbar CC updates active preset drawbar state", () => {
+    it("drawbar set updates active preset drawbar state", () => {
       // Default preset is preset1
-      handler.onMIDI({ type: "cc", controller: CC_DRAWBAR_1, value: 127, channel: LOWER_CH });
+      handler.set_params!([{ name: "drawbar_1", value: 8, part: 1 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.preset1Drawbars.drawbar_1.position, 8);
     });
   });
 
-  // ── Preset routing ──
+  // ── set_params: preset routing ──
 
   describe("preset routing", () => {
-    it("switching to preset2 routes drawbar CCs to preset2", () => {
-      // Switch to preset2 (value >= 64)
-      handler.onMIDI({ type: "cc", controller: CC_ORGAN_PRESET_SELECT, value: 127, channel: LOWER_CH });
-      // Send drawbar CC
-      handler.onMIDI({ type: "cc", controller: CC_DRAWBAR_1, value: 127, channel: LOWER_CH });
+    it("switching active preset routes drawbar writes to preset2", () => {
+      // Switch to Preset 2 (user value 1)
+      handler.set_params!([{ name: "organ_preset_select", value: 1 }]);
+      handler.set_params!([{ name: "drawbar_1", value: 8, part: 1 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.preset2Drawbars.drawbar_1.position, 8);
     });
 
     it("preset1 drawbars remain unchanged when modifying preset2", () => {
-      // Set preset1 drawbar to position 4
-      handler.onMIDI({ type: "cc", controller: CC_DRAWBAR_1, value: 64, channel: LOWER_CH });
-      // Switch to preset2
-      handler.onMIDI({ type: "cc", controller: CC_ORGAN_PRESET_SELECT, value: 127, channel: LOWER_CH });
-      // Set preset2 drawbar to position 8
-      handler.onMIDI({ type: "cc", controller: CC_DRAWBAR_1, value: 127, channel: LOWER_CH });
+      handler.set_params!([{ name: "drawbar_1", value: 4, part: 1 }]);
+      handler.set_params!([{ name: "organ_preset_select", value: 1 }]);
+      handler.set_params!([{ name: "drawbar_1", value: 8, part: 1 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.preset1Drawbars.drawbar_1.position, 4);
       assert.strictEqual(state.preset2Drawbars.drawbar_1.position, 8);
     });
   });
 
-  // ── Per-part CC routing ──
+  // ── set_params: per-part routing ──
 
-  describe("per-part CC routing", () => {
-    it("CC on upper channel routes to upper part", () => {
-      handler.onMIDI({ type: "cc", controller: CC_ORGAN_MODEL, value: 95, channel: UPPER_CH });
+  describe("per-part routing", () => {
+    it("set with part 2 routes to upper only", () => {
+      handler.set_params!([{ name: "organ_model", value: 3, part: 2 }]);
       const state = handler.getFullState(false);
-      assert.strictEqual(state.upper.organ_model.value, 95);
+      assert.strictEqual(state.upper.organ_model.value, 3);
+    });
+
+    it("set without part defaults to lower and propagates to upper", () => {
+      handler.set_params!([{ name: "organ_model", value: 3 }]);
+      const state = handler.getFullState(false);
+      assert.strictEqual(state.lower.organ_model.value, 3);
+      assert.strictEqual(state.upper.organ_model.value, 3);
     });
   });
 
   // ── Vibrato/percussion toggle routing ──
 
   describe("vibrato/percussion toggles", () => {
-    it("vibrato enable routes to active preset toggles", () => {
-      // Default is preset1
-      handler.onMIDI({ type: "cc", controller: CC_VIBRATO_ENABLE, value: 127, channel: LOWER_CH });
+    it("vibrato_enable on default preset (1) updates pst1Vib", () => {
+      handler.set_params!([{ name: "vibrato_enable", value: 1, part: 1 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.presetOrganToggles.pst1Vib, true);
     });
 
-    it("percussion enable routes to active preset toggles", () => {
-      handler.onMIDI({ type: "cc", controller: CC_PERCUSSION, value: 127, channel: LOWER_CH });
+    it("percussion on default preset (1) updates pst1Prc", () => {
+      handler.set_params!([{ name: "percussion", value: 1, part: 1 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.presetOrganToggles.pst1Prc, true);
     });
 
     it("vibrato on preset2 updates pst2Vib", () => {
-      // Switch to preset2
-      handler.onMIDI({ type: "cc", controller: CC_ORGAN_PRESET_SELECT, value: 127, channel: LOWER_CH });
-      handler.onMIDI({ type: "cc", controller: CC_VIBRATO_ENABLE, value: 127, channel: LOWER_CH });
+      handler.set_params!([{ name: "organ_preset_select", value: 1 }]);
+      handler.set_params!([{ name: "vibrato_enable", value: 1, part: 1 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.presetOrganToggles.pst2Vib, true);
       assert.strictEqual(state.presetOrganToggles.pst1Vib, false);
     });
   });
 
-  // ── Program change ──
+  // ── load_program ──
 
-  describe("program change", () => {
-    it("program change updates state with bank/slot", () => {
-      // Set bank via CC 32
-      handler.onMIDI({ type: "cc", controller: 32, value: 0, channel: LOWER_CH });
-      // Program change
-      handler.onMIDI({ type: "program", number: 3, channel: LOWER_CH });
+  describe("load_program", () => {
+    it("updates state with bank/slot", () => {
+      handler.load_program!(0, 3);
       const state = handler.getFullState(false);
       assert.ok(state.program, "expected program in state");
       assert.strictEqual(state.program.bank, 1);
-      assert.strictEqual(state.program.slot, 4); // 0-based program + 1
+      assert.strictEqual(state.program.slot, 4);
+    });
+  });
+
+  // ── Active engine getters/setters ──
+
+  describe("active engine", () => {
+    it("get_active_engine returns 'organ' by default", () => {
+      assert.strictEqual(handler.get_active_engine!(1), "organ");
+      assert.strictEqual(handler.get_active_engine!(2), "organ");
+    });
+
+    it("set_active_engine routes to the right per-part engine selector", () => {
+      handler.set_active_engine!(2, "piano");
+      assert.strictEqual(handler.get_active_engine!(2), "piano");
+      // Lower part unchanged.
+      assert.strictEqual(handler.get_active_engine!(1), "organ");
     });
   });
 
@@ -156,8 +161,7 @@ describe("Nord Electro 5D mock handler", () => {
 
   describe("dynamic UI labels in state", () => {
     it("discrete param entry includes labels object from MIDI map", () => {
-      // organ_model is discrete (perPart) with labels { 0: "B3", 1: "B3+Bass", ... }
-      handler.onMIDI({ type: "cc", controller: CC_ORGAN_MODEL, value: 0, channel: UPPER_CH });
+      handler.set_params!([{ name: "organ_model", value: 0, part: 2 }]);
       const state = handler.getFullState(false);
       const entry = state.upper.organ_model;
       assert.ok(entry.labels, "expected labels on discrete entry");
@@ -165,14 +169,13 @@ describe("Nord Electro 5D mock handler", () => {
     });
 
     it("continuous param entry has no labels field", () => {
-      handler.onMIDI({ type: "cc", controller: CC_DRAWBAR_1, value: 64, channel: LOWER_CH });
+      handler.set_params!([{ name: "drawbar_1", value: 4, part: 1 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.lower.drawbar_1.labels, undefined);
     });
 
     it("toggle param entry has no labels field", () => {
-      // vibrato_enable is type 'toggle' with labels in MIDI map; should NOT surface in state
-      handler.onMIDI({ type: "cc", controller: CC_VIBRATO_ENABLE, value: 127, channel: LOWER_CH });
+      handler.set_params!([{ name: "vibrato_enable", value: 1, part: 1 }]);
       const state = handler.getFullState(false);
       assert.strictEqual(state.lower.vibrato_enable.labels, undefined);
     });
@@ -186,28 +189,21 @@ describe("Nord Electro 5D mock handler", () => {
 
     it("displayName flows from midi-map to state entry when set", () => {
       const state = handler.getFullState(false);
-      // effect1_rate has displayName "RATE" in the midi-map.
       assert.strictEqual(state.global.effect1_rate.displayName, "RATE");
     });
 
     it("displayName is absent from state entry when not set", () => {
       const state = handler.getFullState(false);
-      // master_volume has no displayName.
       assert.strictEqual(state.global.master_volume.displayName, undefined);
     });
   });
 
-  // ── No-crash messages ──
+  // ── Unknown param ──
 
-  describe("no-crash messages", () => {
-    it("unmapped CC does not throw", () => {
-      const result = handler.onMIDI({ type: "cc", controller: 120, value: 0, channel: LOWER_CH });
-      assert.ok(result.log);
-    });
-
-    it("sysex does not throw", () => {
-      const result = handler.onMIDI({ type: "sysex", bytes: [0xF0, 0x7E, 0xF7] });
-      assert.ok(result.log);
+  describe("set_params unknown", () => {
+    it("logs unknown name without throwing", () => {
+      const result = handler.set_params!([{ name: "totally_made_up", value: 1 }]);
+      assert.ok(result.log!.includes("unknown"), `expected 'unknown' in log: "${result.log}"`);
     });
   });
 });
