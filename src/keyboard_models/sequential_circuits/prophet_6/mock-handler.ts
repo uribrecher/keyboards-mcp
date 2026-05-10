@@ -71,7 +71,6 @@ export function createProphet6MockHandler(): MockHandler {
       msg.lastChange = {
         key: lastChangeKey,
         name: param.name,
-        cc: param.cc,
         value: userValue,
         label: labelFor(param, userValue),
       };
