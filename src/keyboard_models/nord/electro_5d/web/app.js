@@ -347,23 +347,30 @@ function updateEngineParams(data) {
     }
   }
 
-  // Piano model display (section shows #N, full name stored for program bar)
+  // Piano model display (section shows #N, full name stored for program bar).
+  // piano_model and piano_variation are model-index encoded — user value is
+  // 1-based (matching the Nord hardware display). Subtract 1 for 0-based
+  // array lookups; display the user value directly.
   if (params.piano_type) {
     const typeIdx = params.piano_type.index ?? params.piano_type.value;
     const models = PIANO_MODELS[typeIdx] || [];
-    let modelIdx = 0;
+    let modelNum = 1;
     if (typeIdx === 4) {
-      if (params.piano_model) modelIdx = params.piano_model.value;
-      const baseName = models[modelIdx] || `#${modelIdx + 1}`;
-      const varIdx = params.piano_variation ? params.piano_variation.value : 0;
-      const varLetter = "ABCD"[varIdx] || "A";
+      if (params.piano_model) modelNum = params.piano_model.value;
+      const baseName = models[modelNum - 1] || `#${modelNum}`;
+      const varNum = params.piano_variation ? params.piano_variation.value : 1;
+      const varLetter = "ABCD"[varNum - 1] || "A";
       lastPianoName = `${baseName} ${varLetter}`;
     } else {
-      if (params.piano_model) modelIdx = params.piano_model.value;
-      lastPianoName = models[modelIdx] || `#${modelIdx + 1}`;
+      if (params.piano_model) modelNum = params.piano_model.value;
+      lastPianoName = models[modelNum - 1] || `#${modelNum}`;
     }
     const el = document.getElementById("val-piano_model");
-    if (el) el.textContent = typeIdx === 4 ? ("ABCD"[params.piano_variation ? params.piano_variation.value : 0] || "A") : `#${modelIdx + 1}`;
+    if (el) {
+      el.textContent = typeIdx === 4
+        ? ("ABCD"[(params.piano_variation ? params.piano_variation.value : 1) - 1] || "A")
+        : `#${modelNum}`;
+    }
   }
 
   // Knobs (engine params)
