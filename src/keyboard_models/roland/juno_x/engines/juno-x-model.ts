@@ -5,7 +5,7 @@ export const JUNO_X_MODEL_ENGINE = JunoXEngine.JunoXModel;
 
 export function createJunoXModelParams(): Record<string, KeyboardParameter> {
   return {
-    jx_lfo_waveform: {
+    lfo_waveform: {
       name: "LFO Waveform",
       section: "lfo",
       cc: 35,
@@ -18,7 +18,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_lfo_rate: {
+    lfo_rate: {
       name: "LFO Rate",
       section: "lfo",
       cc: 29,
@@ -30,7 +30,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_lfo_delay_time: {
+    lfo_delay_time: {
       name: "LFO Delay Time",
       section: "lfo",
       cc: 27,
@@ -42,7 +42,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_osc_lfo_mod: {
+    osc_lfo_mod: {
       name: "OSC LFO Mod",
       section: "osc",
       cc: 26,
@@ -54,7 +54,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_pw_level: {
+    pw_level: {
       name: "PW Level",
       section: "osc",
       cc: 16,
@@ -66,7 +66,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_saw_level: {
+    saw_level: {
       name: "SAW Level",
       section: "osc",
       cc: 17,
@@ -78,7 +78,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_sub_level: {
+    sub_level: {
       name: "SUB Level",
       section: "osc",
       cc: 18,
@@ -90,7 +90,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_noise_level: {
+    noise_level: {
       name: "Noise Level",
       section: "osc",
       cc: 19,
@@ -102,7 +102,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_cutoff: {
+    cutoff: {
       name: "Cutoff",
       section: "filter",
       cc: 3,
@@ -114,7 +114,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_resonance: {
+    resonance: {
       name: "Resonance",
       section: "filter",
       cc: 9,
@@ -126,7 +126,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_flt_env_depth: {
+    flt_env_depth: {
       name: "Filter Env Depth",
       section: "filter",
       cc: 81,
@@ -138,7 +138,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_amp_level: {
+    amp_level: {
       name: "AMP Level",
       section: "amp",
       cc: 110,
@@ -150,7 +150,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_env_attack: {
+    env_attack: {
       name: "ENV Attack",
       section: "env",
       cc: 89,
@@ -162,7 +162,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_env_decay: {
+    env_decay: {
       name: "ENV Decay",
       section: "env",
       cc: 90,
@@ -174,7 +174,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_env_sustain: {
+    env_sustain: {
       name: "ENV Sustain",
       section: "env",
       cc: 102,
@@ -186,7 +186,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_env_release: {
+    env_release: {
       name: "ENV Release",
       section: "env",
       cc: 103,
@@ -198,7 +198,7 @@ export function createJunoXModelParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    jx_key_mode: {
+    key_mode: {
       name: "Key Mode",
       section: "performance",
       cc: 119,

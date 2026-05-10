@@ -74,8 +74,8 @@ describe("JUNO-X parameter map", () => {
   });
 
   it("getEngineForParam returns engine for engine-specific params", () => {
-    // as_cutoff is an Analog Synth param
-    const engine = map.getEngineForParam("as_cutoff");
+    // cutoff is an Analog Synth param
+    const engine = map.getEngineForParam("cutoff");
     assert.strictEqual(engine, JunoXEngine.AnalogSynth);
   });
 

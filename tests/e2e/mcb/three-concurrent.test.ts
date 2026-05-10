@@ -70,7 +70,7 @@ describe("E2E: three concurrent mocks (plan #6)", { concurrency: 1, skip: !!proc
     assert.match(r1.content[0].text, /Drawbar 1/);
     assert.doesNotMatch(r1.content[0].text, /Osc 1 Freq/);
 
-    const r2 = await trio.callTool("set_parameters", { device: 2, parameters: [{ name: "as_env_attack", value: 100 }] });
+    const r2 = await trio.callTool("set_parameters", { device: 2, parameters: [{ name: "env_attack", value: 100 }] });
     assert.ok(!r2.isError);
 
     const r3 = await trio.callTool("set_parameters", { device: 3, parameters: [{ name: "osc1_freq", value: 60 }] });

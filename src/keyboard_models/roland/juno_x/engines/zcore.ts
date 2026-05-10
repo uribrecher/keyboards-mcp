@@ -26,7 +26,7 @@ export function createZCoreParams(): Record<string, KeyboardParameter> {
 
   for (let pn = 1; pn <= 4; pn++) {
     const idx = pn - 1;
-    const prefix = `zc_p${pn}_`;
+    const prefix = `p${pn}_`;
     const section = `partial-${pn}`;
 
     const continuous = (
@@ -104,7 +104,7 @@ export function createZCoreParams(): Record<string, KeyboardParameter> {
     );
   }
 
-  params["zc_amp_level"] = {
+  params["amp_level"] = {
     name: "Tone Level",
     section: "tone-common",
     cc: 110,

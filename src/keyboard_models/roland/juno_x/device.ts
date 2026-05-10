@@ -1,10 +1,6 @@
-/**
- * Roland JUNO-X device implementation.
- *
- * Routes parameter sends to either Roland DT1 SysEx or MIDI CC based on
- * the parameter's addressing. SysEx-addressed params use the DT1 protocol;
- * CC-addressed params are sent on the channel matching the part index (0-4).
- */
+/** Roland JUNO-X device. Outgoing param writes go through the codec
+ *  (DT1 SysEx for sysex-addressed params, CC otherwise). `getState`
+ *  fans out RQ1 reads and renders the live device values. */
 
 import type { KeyboardModel } from "../../../shared/keyboard-model.js";
 import { BaseKeyboardDevice, type BaseDeviceDeps } from "../../../shared/base-keyboard-device.js";
@@ -22,11 +18,7 @@ export class JunoXDevice extends BaseKeyboardDevice {
     super(model, deps);
   }
 
-  /**
-   * Concrete codec for this model. Reuses the lazy `this.codec` from the
-   * base class so device + codec share the same instance and can't drift.
-   * Throws on missing codec — JUNO-X requires one to encode DT1 SysEx.
-   */
+  /** The model's codec (lazy from the base class). Throws if missing. */
   private get junoCodec(): MidiCodec {
     const c = this.codec;
     if (!c) throw new Error("JUNO-X model is missing createCodec()");
@@ -83,8 +75,7 @@ export class JunoXDevice extends BaseKeyboardDevice {
     return { content: [{ type: "text", text }] };
   }
 
-  /** Sections that #23 wired to live RQ1 reads. Other sections return a
-   *  "not yet supported" tool result. */
+  /** Sections that have live RQ1 read support. */
   private static readonly RQ1_SUPPORTED_SECTIONS: readonly string[] = [
     "scene-chorus", "scene-delay", "scene-reverb", "scene-drive",
   ];
@@ -101,13 +92,11 @@ export class JunoXDevice extends BaseKeyboardDevice {
     } else {
       return textResult(
         `JUNO-X get_current_state is not yet supported for section "${section}". ` +
-        `Currently supported: ${supported.join(", ")}. ` +
-        `Other sections (scene-common, scene-part, scene-modify, partials, etc.) ` +
-        `are tracked as follow-ups beyond this PR.`,
+        `Currently supported: ${supported.join(", ")}.`,
       );
     }
 
-    // Look up every param in the requested sections that has a sysexAddress.
+    // Sysex-addressed params in the requested sections.
     const paramsToRead: Array<{ key: string; param: KeyboardParameter }> = [];
     for (const [key, param] of Object.entries(this.parameterMap.params)) {
       if (!sectionsToRead.includes(param.section)) continue;
@@ -115,14 +104,9 @@ export class JunoXDevice extends BaseKeyboardDevice {
       paramsToRead.push({ key, param });
     }
 
-    // Fire one RQ1 per param in parallel. Per-param timeouts surface in
-    // the result text but don't fail the whole call. The RQ1 round-trip
-    // orchestration (send + await reply with timeout) lives here in the
-    // MCP per the design — `requestRolandValue` is its current home. The
-    // codec is responsible for *decoding* the reply: we synthesize a DT1
-    // from the data bytes and ask the codec to decode it back to a param
-    // event. This validates the codec's decode path against live wire
-    // data and prepares the way for stage 2 (mock-side decoding).
+    // Fire one RQ1 per param in parallel; per-param timeouts surface in
+    // the rendered text but don't fail the whole call. `requestRolandValue`
+    // owns the request/response orchestration; the codec decodes each reply.
     const PER_PARAM_TIMEOUT_MS = 500;
     const results = await Promise.all(paramsToRead.map(async ({ key, param }) => {
       const fullAddr = addAddresses(SCENE_BASE, param.sysexAddress!);
@@ -138,8 +122,12 @@ export class JunoXDevice extends BaseKeyboardDevice {
         );
         const events = this.junoCodec.decode(replyMsg);
         const paramEvent = events.find(e => e.kind === "param" && e.name === key);
-        const value = paramEvent && paramEvent.kind === "param" ? paramEvent.value : (data[0] ?? 0);
-        const display = this.junoCodec.formatWireValue(key, value);
+        // Fallback wire→user is only reached when decode misses the
+        // expected key (shouldn't happen for known params).
+        const userValue = paramEvent && paramEvent.kind === "param"
+          ? paramEvent.value
+          : this.junoCodec.wireToUserValue(key, data[0] ?? 0);
+        const display = this.junoCodec.formatValue(key, userValue);
         return { key, line: `  ${param.name}: ${display}` };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -151,7 +139,7 @@ export class JunoXDevice extends BaseKeyboardDevice {
       return textResult(`No SysEx-addressed parameters in section "${section ?? "(all)"}".`);
     }
 
-    // Group by section for readable output.
+    // Group by section for the rendered output.
     const bySection = new Map<string, string[]>();
     for (const { key, line } of results) {
       const sec = this.parameterMap.params[key]!.section;

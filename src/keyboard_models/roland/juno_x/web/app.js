@@ -64,19 +64,15 @@ function handleState(data) {
     updatePartParams(partData);
   }
 
-  // Mirror scene-global FX switches into the UI button states. Stage 3
-  // moved this from byte-keyed `data.sceneGlobal[<addr>]` to the
-  // name-keyed `data.params.<name>` view that the mock now broadcasts.
-  if (data.params) {
-    syncFxUI(data.params);
-  }
+  // Mirror scene-global FX switches into UI button states.
+  if (data.params) syncFxUI(data.params);
 }
 
 // ── Scene-global FX state → UI button mirror ──
 
 function syncFxUI(params) {
-  // Chorus mode buttons: switch off → OFF; switch on → first non-OFF
-  // button (mode disambiguation is blocked on todo #11 wiring chorus_mode).
+  // Chorus mode disambiguation depends on todo #11 (chorus_mode wiring);
+  // for now: switch off → OFF, switch on → first non-OFF button.
   const chorusOn = (params.chorus_switch ?? 0) > 0;
   const chorusButtons = document.querySelectorAll("button.fx-chorus[data-mode]");
   let alreadyActive = false;
@@ -130,28 +126,28 @@ function updateEngineSelect(partData) {
 
 // ── Slider / value display update ──
 
+/**
+ * `partData.params` is keyed by canonical param name (e.g. `cutoff`),
+ * matching widget `data-param` attributes. Values are user-domain —
+ * continuous params equal the slider 0-127; scaled discretes are the
+ * index, not the wire byte.
+ */
 function updateControlLabels(partData) {
   // Override hardcoded HTML labels with displayName from the midi-map.
-  //
   // The curated HTML labels (e.g. "PW", "SAW") are the fallback when
-  // displayName is absent, so we don't paste long param names like
-  // "OSC PW Level" into slim columns. We cache the original text once in
-  // data-default-label so we can restore it when the active part/engine
-  // brings a CC into view that has no displayName (otherwise stale text
-  // from a previous engine would persist).
+  // displayName is absent, cached in `data-default-label`.
   const params = partData.params;
   if (!params) return;
-  for (const target of document.querySelectorAll("[data-cc]")) {
-    const cc = parseInt(target.dataset.cc, 10);
-    if (isNaN(cc)) continue;
+  for (const target of document.querySelectorAll("[data-param]")) {
+    const name = target.dataset.param;
+    if (!name) continue;
     const slot = labelSlotFor(target);
     if (!slot) continue;
     if (slot.dataset.defaultLabel === undefined) {
       slot.dataset.defaultLabel = slot.textContent;
     }
-    const entry = params["cc" + cc];
-    const isObj = typeof entry === "object" && entry !== null;
-    const next = isObj && entry.displayName ? entry.displayName : slot.dataset.defaultLabel;
+    const entry = params[name];
+    const next = entry && entry.displayName ? entry.displayName : slot.dataset.defaultLabel;
     slot.textContent = next;
   }
 }
@@ -167,42 +163,26 @@ function updatePartParams(partData) {
   const params = partData.params;
   if (!params) return;
 
-  for (const [key, entry] of Object.entries(params)) {
-    // key is like "cc3", "cc9", etc.
-    if (!key.startsWith("cc")) continue;
-    const cc = parseInt(key.slice(2), 10);
-    if (isNaN(cc)) continue;
+  for (const [name, entry] of Object.entries(params)) {
+    if (!entry || typeof entry !== "object") continue;
+    const value = entry.value;
 
-    // Entry can be a plain number (legacy/unknown CC) or an object with metadata
-    const value = typeof entry === "object" && entry !== null ? entry.value : entry;
+    const slider = document.querySelector(`[data-param="${name}"].vslider`);
+    if (slider) slider.value = value;
 
-    // Update range slider
-    const slider = document.querySelector(`[data-cc="${cc}"].vslider`);
-    if (slider) {
-      slider.value = value;
-    }
-
-    // Update select with matching data-cc (e.g. HPF, LFO waveform)
-    const selectEl = document.querySelector(`select[data-cc="${cc}"]`);
+    const selectEl = document.querySelector(`select[data-param="${name}"]`);
     if (selectEl) {
-      // Find closest option value
       let bestOpt = null;
       let bestDist = Infinity;
       for (const opt of selectEl.options) {
         const dist = Math.abs(parseInt(opt.value, 10) - value);
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestOpt = opt;
-        }
+        if (dist < bestDist) { bestDist = dist; bestOpt = opt; }
       }
       if (bestOpt) selectEl.value = bestOpt.value;
     }
 
-    // Update value display
-    const valEl = document.getElementById("val-cc-" + cc);
-    if (valEl) {
-      valEl.textContent = value;
-    }
+    const valEl = document.getElementById("val-" + name);
+    if (valEl) valEl.textContent = value;
   }
 }
 
@@ -222,58 +202,47 @@ function initPartButtons() {
 
 // ── Outgoing controls ──
 
-function sendCC(cc, value) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({
-    type: "cc",
-    controller: parseInt(cc, 10),
-    value: parseInt(value, 10),
-    channel: activePart - 1,
-  }));
-}
-
 function setLastChange(text) {
   const el = document.getElementById("last-change");
   if (el) el.textContent = text;
 }
 
 function initSliderControls() {
-  for (const el of document.querySelectorAll("input.vslider[data-cc]")) {
+  for (const el of document.querySelectorAll("input.vslider[data-param]")) {
     el.addEventListener("input", () => {
-      const cc = el.dataset.cc;
-      const value = el.value;
-      const valEl = document.getElementById("val-cc-" + cc);
+      const name = el.dataset.param;
+      const value = parseInt(el.value, 10);
+      const valEl = document.getElementById("val-" + name);
       if (valEl) valEl.textContent = value;
-      sendCC(cc, value);
-      setLastChange(`CC${cc} = ${value} (Part ${activePart})`);
+      sendUIParam(name, value);
+      setLastChange(`${name} = ${value} (Part ${activePart})`);
     });
   }
 }
 
 function initSelectControls() {
-  for (const el of document.querySelectorAll("select[data-cc]")) {
+  for (const el of document.querySelectorAll("select[data-param]")) {
     el.addEventListener("change", () => {
-      const cc = el.dataset.cc;
+      const name = el.dataset.param;
       const value = parseInt(el.value, 10);
-      const valEl = document.getElementById("val-cc-" + cc);
+      const valEl = document.getElementById("val-" + name);
       if (valEl) valEl.textContent = value;
-      sendCC(cc, value);
-      setLastChange(`CC${cc} = ${value} (Part ${activePart})`);
+      sendUIParam(name, value);
+      setLastChange(`${name} = ${value} (Part ${activePart})`);
     });
   }
 }
 
 function initToggleButtons() {
-  for (const el of document.querySelectorAll("button.tog-btn[data-cc]")) {
+  for (const el of document.querySelectorAll("button.tog-btn[data-param]")) {
     el.addEventListener("click", () => {
       el.classList.toggle("active");
-      const cc = el.dataset.cc;
+      const name = el.dataset.param;
       const isOn = el.classList.contains("active");
-      const value = isOn
-        ? parseInt(el.dataset.valOn ?? "127", 10)
-        : parseInt(el.dataset.valOff ?? "0", 10);
-      sendCC(cc, value);
-      setLastChange(`CC${cc} = ${value} (Part ${activePart})`);
+      // Toggles use 0/1 user-domain values; the codec scales to wire bytes.
+      const value = isOn ? 1 : 0;
+      sendUIParam(name, value);
+      setLastChange(`${name} = ${isOn ? "ON" : "OFF"} (Part ${activePart})`);
     });
   }
 }
@@ -315,12 +284,7 @@ function initFxButtons() {
   }
 }
 
-/**
- * Send a named parameter value from the UI. Stage 3: canonical
- * `{type:"setParam", name, value, part?}` shape. The legacy
- * `{type:"param"}` and `{type:"cc"}` shapes still work on the engine
- * side for backward compat but new code should use this.
- */
+/** Send a named parameter value from the UI. */
 function sendUIParam(name, value) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: "setParam", name, value, part: activePart }));
