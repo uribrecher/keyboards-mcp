@@ -1,14 +1,18 @@
 /**
- * Source-aware MIDI routing in MockEngine (#24).
+ * Source-aware MIDI routing in MockEngine (#24, updated for #30 stage 4).
  *
- * The engine fans out handler-explicit emissions (`sysexOut`, `ccOut`,
- * `programOut`) to the device's virtual MIDI Out regardless of source.
- * UI-source bare `cc`/`program` messages are echoed (panel-knob analogue);
- * external-MIDI-source messages are NOT echoed (would feedback-loop on
- * bridges).
+ * Stage 4 dropped MockHandlerResult.{ccOut, sysexOut, programOut}. The
+ * engine now handles emission directly:
  *
- * The engine is tested with `noMidi: true` (no real virtual port) and a
- * fake `midiOutput` injected via `(engine as any).midiOutput = sink`.
+ * - UI-source bare cc/program is echoed to MIDI Out (panel-knob analogue)
+ * - External-source MIDI is never echoed (would feedback-loop on bridges)
+ * - RQ1 → DT1 is handled in the engine via codec.parseRequest +
+ *   handler.read_bytes + codec.buildResponse → emit
+ * - UI-source setParam (separate WS path) is encoded via codec and
+ *   emitted (tested elsewhere, end-to-end)
+ *
+ * The engine is tested with `noMidi: true` and a fake `midiOutput`
+ * injected via `(engine as any).midiOutput = sink`.
  */
 
 import { describe, it } from "node:test";
@@ -37,7 +41,7 @@ function makeEngine(handler: MockHandler): { engine: MockEngine; sent: SentMsg[]
   return { engine, sent };
 }
 
-describe("MockEngine source-aware MIDI routing (#24)", () => {
+describe("MockEngine source-aware MIDI routing", () => {
   it("UI-sourced CC is echoed to MIDI Out", () => {
     const { engine, sent } = makeEngine(makeHandler({}));
     const msg: MidiMessage = { type: "cc", controller: 7, value: 100, channel: 0 };
@@ -67,37 +71,27 @@ describe("MockEngine source-aware MIDI routing (#24)", () => {
     assert.equal(sent.length, 0);
   });
 
-  it("handler-explicit ccOut is emitted regardless of source", () => {
-    const handler = makeHandler({ ccOut: [{ controller: 91, value: 64, channel: 2 }] });
-    const { engine, sent } = makeEngine(handler);
-    (engine as any).dispatch({ type: "cc", controller: 1, value: 1, channel: 0 }, "external");
-    const ccs = sent.filter(s => s.type === "cc");
-    assert.equal(ccs.length, 1, "handler ccOut must be emitted even on external source");
-    assert.deepEqual(ccs[0].data, { controller: 91, value: 64, channel: 2 });
-  });
-
-  it("handler-explicit sysexOut is emitted regardless of source (RQ1→DT1 path)", () => {
-    const dt1 = [0xF0, 0x41, 0x10, 0x00, 0x00, 0x00, 0x00, 0x12, 0x12, 0x01, 0x50, 0x00, 0x00, 0x01, 0x2E, 0xF7];
-    const handler = makeHandler({ sysexOut: [dt1] });
-    const { engine, sent } = makeEngine(handler);
-    (engine as any).dispatch({ type: "sysex", bytes: [0xF0, 0xF7] }, "external");
-    const sx = sent.filter(s => s.type === "sysex");
-    assert.equal(sx.length, 1);
-    assert.deepEqual(sx[0].data, dt1);
-  });
-
-  it("handler-explicit programOut is emitted regardless of source", () => {
-    const handler = makeHandler({ programOut: [{ number: 5, channel: 0 }] });
-    const { engine, sent } = makeEngine(handler);
-    (engine as any).dispatch({ type: "cc", controller: 1, value: 1, channel: 0 }, "external");
-    const pcs = sent.filter(s => s.type === "program");
-    assert.equal(pcs.length, 1);
-    assert.deepEqual(pcs[0].data, { number: 5, channel: 0 });
-  });
-
-  it("UI-sourced sysex is NOT auto-echoed (handler controls re-emission via sysexOut)", () => {
+  it("UI-sourced sysex is NOT auto-echoed (engine handles emission via codec for setParam)", () => {
     const { engine, sent } = makeEngine(makeHandler({}));
     (engine as any).dispatch({ type: "sysex", bytes: [0xF0, 0x7E, 0xF7] }, "ui");
-    assert.equal(sent.length, 0, "UI-source sysex must not auto-echo — handler decides via sysexOut");
+    assert.equal(sent.length, 0, "UI-source sysex must not auto-echo");
+  });
+
+  it("external sysex without codec falls through to handler.onMIDI (no engine RQ1 handling)", () => {
+    // Without a codec on the handler, the engine can't recognize RQ1 and
+    // simply hands the message to handler.onMIDI for state updates.
+    let receivedBytes: number[] | undefined;
+    const handler: MockHandler = {
+      init() {},
+      onMIDI: (msg) => {
+        if (msg.type === "sysex") receivedBytes = msg.bytes;
+        return {};
+      },
+      getFullState: () => ({}),
+    };
+    const { engine, sent } = makeEngine(handler);
+    (engine as any).dispatch({ type: "sysex", bytes: [0xF0, 0x42, 0xF7] }, "external");
+    assert.deepEqual(receivedBytes, [0xF0, 0x42, 0xF7], "handler.onMIDI must receive the sysex");
+    assert.equal(sent.length, 0, "no auto-emission for external sysex");
   });
 });

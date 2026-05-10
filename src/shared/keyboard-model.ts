@@ -120,30 +120,33 @@ export interface MockHandlerResult {
   state?: Record<string, any>;
   /** Console log line */
   log?: string;
-  /**
-   * Outgoing SysEx messages emitted by the handler. Each entry is one
-   * full SysEx packet (F0..F7). The engine writes each packet to the
-   * mock's virtual MIDI Out port (the device's MIDI Out socket).
-   */
-  sysexOut?: number[][];
-  /**
-   * Outgoing CC messages emitted by the handler. The engine writes each
-   * to the mock's virtual MIDI Out port. Handler-explicit emissions are
-   * always written, regardless of input source.
-   */
-  ccOut?: Array<{ controller: number; value: number; channel: number }>;
-  /**
-   * Outgoing program-change messages emitted by the handler. The engine
-   * writes each to the mock's virtual MIDI Out port.
-   */
-  programOut?: Array<{ number: number; channel: number }>;
 }
+
+/* Stage 4 (#30) note:
+ *
+ * MockHandlerResult used to carry `sysexOut` / `ccOut` / `programOut`
+ * channels for the engine to emit on the device's MIDI Out. Those
+ * channels are gone — emission is now the engine's responsibility:
+ *   - UI setParam: engine calls handler.set_params for state, then asks
+ *     codec.encodeParams to produce the wire bytes and emits.
+ *   - RQ1: engine sees the request directly (codec.parseRequest), reads
+ *     state via handler.read_bytes, builds the reply via codec, emits.
+ *   - External MIDI in: handler updates state; engine never echoes
+ *     external input back out (loop prevention).
+ */
 
 /**
  * Mock handler interface for the thin engine architecture.
  * The handler owns ALL state and logic — the engine is just MIDI I/O + WebSocket.
  */
 export interface MockHandler {
+  /**
+   * The codec the handler uses for param ↔ MIDI translation. Stage-4
+   * engines read this to handle RQ1 directly and to encode UI setParam
+   * writes for outbound emission. Optional for backward compat with
+   * handlers that don't have a codec.
+   */
+  readonly codec?: MidiCodec;
   /**
    * Called once when the mock engine starts.
    * `label` (optional) selects which per-instance backup cache to load —
@@ -153,21 +156,16 @@ export interface MockHandler {
   /** Process any MIDI message. Returns state to broadcast and/or a log line. */
   onMIDI(msg: MidiMessage): MockHandlerResult;
   /**
-   * Param-domain write (#30 stage 3). The canonical way for the engine
+   * Param-domain write (#30 stages 3–4). The canonical way for the engine
    * (and UI WS messages of shape `{type:"setParam", name, value, part?}`)
    * to update a parameter on the mock. The handler updates internal state
-   * and returns a `MockHandlerResult`.
+   * and returns a `MockHandlerResult` with `state` and `log` only.
    *
-   * Stage-3 contract (current): handlers may surface the encoded outbound
-   * packets in the result's `ccOut` / `sysexOut` / `programOut` channels
-   * for the engine to emit on the device's MIDI Out (panel-knob analogue).
-   * This is what JUNO-X does today — `set_params` runs each ref through
-   * the codec and includes the encoded messages in the result.
-   *
-   * Stage-4 plan: emission moves out of the handler. The engine will ask
-   * the codec to encode the same write and emit on the device's MIDI Out
-   * directly, leaving `ccOut`/`sysexOut`/`programOut` for handler-explicit
-   * emissions only (e.g. RQ1→DT1 reply).
+   * Outbound MIDI emission is the engine's responsibility (stage 4).
+   * For UI-source writes the engine asks the codec to encode the same
+   * write and writes the bytes to the device's MIDI Out (panel-knob
+   * analogue). The handler MUST NOT carry MIDI bytes in the result —
+   * those channels are gone.
    */
   set_params?(refs: ParamRef[]): MockHandlerResult;
   /**
@@ -175,6 +173,18 @@ export interface MockHandler {
    * parameter name. Pass `part` for per-part params.
    */
   get_params?(names: string[], part?: number): Record<string, number>;
+  /**
+   * Bytes-level read used by the engine to fulfill protocol-level
+   * requests (e.g. Roland RQ1) without the handler having to know
+   * anything about the protocol. Returns `size` bytes starting at
+   * `address` from the handler's internal address-keyed storage.
+   * Bytes the handler hasn't seen are reported as 0.
+   *
+   * Stage 4: replaces the handler-side RQ1→DT1 sysexOut path. The
+   * engine now does codec.parseRequest → handler.read_bytes → codec.buildResponse
+   * and emits the reply on the device's MIDI Out itself.
+   */
+  read_bytes?(address: number[], size: number): number[];
   /**
    * @deprecated Use `set_params` instead. Kept for backward compatibility
    * with engine WS handlers that still emit `{type:"param"}`.

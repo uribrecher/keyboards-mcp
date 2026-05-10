@@ -9,6 +9,7 @@ import { createServer, type Server } from "node:http";
 import { EventEmitter } from "node:events";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { MockHandler, MidiMessage, MockHandlerResult } from "../shared/keyboard-model.js";
+import type { EncodedMessage } from "../shared/midi-codec.js";
 import * as registry from "../shared/mock-registry.js";
 
 const HEARTBEAT_MS = 30_000;
@@ -137,18 +138,30 @@ export class MockEngine extends EventEmitter {
                 : { log: `UI: ${msg.name} = ${msg.value} (handler has no onUIParam)` };
               this.applyHandlerResult(result, null);
             } else if (msg.type === "setParam") {
-              console.log(`${this.tag()} WS-IN setParam ${msg.name}=${msg.value} part=${msg.part ?? 1}`);
-              // Stage 3 canonical path: UI talks param-domain to the mock.
-              // Handler updates internal state via set_params; the engine
-              // surfaces the encoded packets in the result so they reach
-              // MIDI Out (panel-knob analogue) — stage 4 will move this
-              // emission off the result channel and onto the engine.
+              // Default `part` to 1 once at the boundary so set_params,
+              // codec.encodeParams, and the log line all see the same value.
+              const part = msg.part ?? 1;
+              console.log(`${this.tag()} WS-IN setParam ${msg.name}=${msg.value} part=${part}`);
+              // Stage 4: engine handles emission via codec, not the handler.
+              // 1. handler.set_params updates state (no emission channel).
+              // 2. engine asks codec to encode and writes to MIDI Out
+              //    (panel-knob analogue — UI is a closed-loop source).
               const result = this.handler.set_params
-                ? this.handler.set_params([{ name: msg.name, value: msg.value, part: msg.part }])
+                ? this.handler.set_params([{ name: msg.name, value: msg.value, part }])
                 : (this.handler.onUIParam
-                    ? this.handler.onUIParam(msg.name, msg.value, ((msg.part ?? 1) - 1))
+                    ? this.handler.onUIParam(msg.name, msg.value, part - 1)
                     : { log: `UI: ${msg.name} = ${msg.value} (handler has no set_params or onUIParam)` });
-              this.applyHandlerResult(result, null);
+              if (result.state) this.broadcast(result.state);
+              if (result.log) console.log(`${this.tag()} ${result.log}`);
+              const codec = this.handler.codec;
+              if (codec) {
+                try {
+                  const encoded = codec.encodeParams([{ name: msg.name, value: msg.value, part }]);
+                  for (const enc of encoded) this.emitOne(enc);
+                } catch (err) {
+                  console.error(`${this.tag()} setParam emit failed:`, err);
+                }
+              }
             }
           } catch { /* ignore */ }
         });
@@ -291,74 +304,87 @@ export class MockEngine extends EventEmitter {
   // ── Private ──
 
   /**
-   * Central dispatcher: feeds a `MidiMessage` (synthesized from a UI WS
-   * command, or read from the virtual MIDI In) into the handler and
-   * routes the result with source-aware emission rules.
+   * Dispatch a `MidiMessage` (synthesized from a UI WS command, or read
+   * from the virtual MIDI In) through the right path:
    *
-   * - `"ui"`: the message originated from a UI WS command (panel-knob
-   *   analogue). After the handler updates state, the engine ALSO writes
-   *   the inbound `cc` / `program` to the device's MIDI Out so external
-   *   listeners see the panel change. SysEx is not auto-echoed for UI
-   *   source — the handler emits sysex explicitly via `result.sysexOut`.
-   * - `"external"`: the message arrived on the virtual MIDI In port. The
-   *   handler updates state but the engine MUST NOT echo back to MIDI
-   *   Out (would feedback-loop on bridges).
-   *
-   * Handler-explicit emissions (`result.sysexOut` / `ccOut` / `programOut`)
-   * are always written to MIDI Out, regardless of source.
+   * - **External-source SysEx that's a Roland RQ1 request** is handled
+   *   entirely in the engine: codec.parseRequest → handler.read_bytes →
+   *   codec.buildResponse → emit. The handler doesn't see the request.
+   * - Everything else goes to `handler.onMIDI(msg)` for state updates.
+   *   For UI-source `cc` / `program`, the engine also echoes the inbound
+   *   message to the device's MIDI Out (panel-knob analogue). External
+   *   inbound is never echoed — would feedback-loop on bridges.
    */
   private dispatch(msg: MidiMessage, source: "ui" | "external"): void {
+    // Stage 4: engine handles RQ1 directly via codec — no handler involvement.
+    if (source === "external" && msg.type === "sysex" && this.handler.codec) {
+      const codec = this.handler.codec;
+      const req = codec.parseRequest({ type: "sysex", bytes: msg.bytes });
+      if (req && this.handler.read_bytes) {
+        const data = this.handler.read_bytes(req.address, req.size);
+        const reply = codec.buildResponse(req, data);
+        if (reply.type === "sysex") {
+          console.log(`${this.tag()} RQ1 → DT1 ${MockEngine.summarizeSysex(reply.bytes)} (engine-handled)`);
+          this.emitOne(reply);
+        }
+        return;
+      }
+    }
+
     const result = this.handler.onMIDI(msg);
     this.applyHandlerResult(result, source === "ui" ? msg : null);
   }
 
   /**
-   * Apply a `MockHandlerResult`: broadcast state, log, and emit MIDI to the
-   * device's MIDI Out per the source-aware rule. `uiSource`, when non-null,
-   * is the raw inbound UI-source message to echo on MIDI Out.
+   * Apply a `MockHandlerResult`: broadcast state, log, and emit any
+   * UI-source bare cc/program echo (panel-knob analogue).
    */
   private applyHandlerResult(result: MockHandlerResult, uiSource: MidiMessage | null): void {
     if (result.state) this.broadcast(result.state);
     if (result.log) console.log(`${this.tag()} ${result.log}`);
-    this.emitToMidiOut(result, uiSource);
+    this.emitUiEcho(uiSource);
   }
 
-  private emitToMidiOut(result: MockHandlerResult, uiSource: MidiMessage | null): void {
+  /** Echo a UI-source bare cc/program out on MIDI Out (panel-knob analogue). */
+  private emitUiEcho(uiSource: MidiMessage | null): void {
+    if (!uiSource || !this.midiOutput) return;
+    try {
+      if (uiSource.type === "cc") {
+        console.log(`${this.tag()} MIDI-OUT (ui-echo) cc CC=${uiSource.controller} val=${uiSource.value} ch=${uiSource.channel}`);
+        this.midiOutput.send("cc", { controller: uiSource.controller, value: uiSource.value, channel: uiSource.channel });
+      } else if (uiSource.type === "program") {
+        console.log(`${this.tag()} MIDI-OUT (ui-echo) program n=${uiSource.number} ch=${uiSource.channel}`);
+        this.midiOutput.send("program", { number: uiSource.number, channel: uiSource.channel });
+      }
+    } catch (err) { console.error(`${this.tag()} MIDI-OUT (ui-echo) send failed:`, err); }
+  }
+
+  /**
+   * Send one codec-encoded message to the virtual MIDI Out.
+   *
+   * The codec contract is "undefined channel → use the connection's
+   * configured default." On the mock side that maps to `lowerChannel`
+   * from `init` — the same channel global params receive on inbound.
+   * easymidi.Output has no default-channel facility, so the engine
+   * resolves the default before calling `send`.
+   */
+  private emitOne(msg: EncodedMessage): void {
     if (!this.midiOutput) return;
-    if (result.sysexOut) {
-      for (const bytes of result.sysexOut) {
-        console.log(`${this.tag()} MIDI-OUT ${MockEngine.summarizeSysex(bytes)}`);
-        try { this.midiOutput.send("sysex", bytes); }
-        catch (err) { console.error(`${this.tag()} MIDI-OUT sysex send failed:`, err); }
+    const defaultChannel = this.opts.lowerChannel;
+    try {
+      if (msg.type === "cc") {
+        const channel = msg.channel ?? defaultChannel;
+        console.log(`${this.tag()} MIDI-OUT cc CC=${msg.controller} val=${msg.value} ch=${channel}`);
+        this.midiOutput.send("cc", { controller: msg.controller, value: msg.value, channel });
+      } else if (msg.type === "program") {
+        const channel = msg.channel ?? defaultChannel;
+        console.log(`${this.tag()} MIDI-OUT program n=${msg.number} ch=${channel}`);
+        this.midiOutput.send("program", { number: msg.number, channel });
+      } else if (msg.type === "sysex") {
+        console.log(`${this.tag()} MIDI-OUT ${MockEngine.summarizeSysex(msg.bytes)}`);
+        this.midiOutput.send("sysex", msg.bytes);
       }
-    }
-    if (result.ccOut) {
-      for (const cc of result.ccOut) {
-        console.log(`${this.tag()} MIDI-OUT cc CC=${cc.controller} val=${cc.value} ch=${cc.channel}`);
-        try { this.midiOutput.send("cc", cc); }
-        catch (err) { console.error(`${this.tag()} MIDI-OUT cc send failed:`, err); }
-      }
-    }
-    if (result.programOut) {
-      for (const pc of result.programOut) {
-        console.log(`${this.tag()} MIDI-OUT program n=${pc.number} ch=${pc.channel}`);
-        try { this.midiOutput.send("program", pc); }
-        catch (err) { console.error(`${this.tag()} MIDI-OUT program send failed:`, err); }
-      }
-    }
-    // UI-source echo for bare cc / program (panel-knob analogue). SysEx is
-    // not auto-echoed — handlers that want to re-emit fill `sysexOut`.
-    if (uiSource) {
-      try {
-        if (uiSource.type === "cc") {
-          console.log(`${this.tag()} MIDI-OUT (ui-echo) cc CC=${uiSource.controller} val=${uiSource.value} ch=${uiSource.channel}`);
-          this.midiOutput.send("cc", { controller: uiSource.controller, value: uiSource.value, channel: uiSource.channel });
-        } else if (uiSource.type === "program") {
-          console.log(`${this.tag()} MIDI-OUT (ui-echo) program n=${uiSource.number} ch=${uiSource.channel}`);
-          this.midiOutput.send("program", { number: uiSource.number, channel: uiSource.channel });
-        }
-      } catch (err) { console.error(`${this.tag()} MIDI-OUT (ui-echo) send failed:`, err); }
-    }
+    } catch (err) { console.error(`${this.tag()} MIDI-OUT send failed:`, err); }
   }
 
   private broadcast(msg: Record<string, any>): void {
