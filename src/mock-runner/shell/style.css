@@ -497,7 +497,9 @@ body.bay--resizing iframe { pointer-events: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 10px 3px;
+  /* Right padding leaves room for the chevron (18px wide + 6px margin)
+   * so the "N events" count never runs under the toggle button. */
+  padding: 4px 32px 3px 10px;
   border-bottom: 1px solid var(--c-edge);
   background:
     linear-gradient(180deg, rgba(255,255,255,0.025) 0%, transparent 100%);
@@ -635,14 +637,16 @@ body.bay--resizing iframe { pointer-events: none; }
   position: absolute;
   right: 6px;
   bottom: 4px;
-  width: 18px;
-  height: 14px;
+  width: 20px;
+  height: 16px;
   display: grid;
   place-items: center;
-  background: transparent;
-  border: 1px solid transparent;
+  /* At rest: a subtle amber-tinted bezel so the operator sees it as
+   * interactive without it shouting. Hover saturates. */
+  background: rgba(240,168,48,0.04);
+  border: 1px solid var(--c-edge);
   border-radius: 2px;
-  color: var(--c-text-faint);
+  color: var(--c-amber-deep);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
@@ -651,7 +655,8 @@ body.bay--resizing iframe { pointer-events: none; }
 .midi-drawer__chevron:hover {
   color: var(--c-amber);
   border-color: var(--c-amber-deep);
-  background: rgba(240,168,48,0.06);
+  background: rgba(240,168,48,0.12);
+  box-shadow: 0 0 6px var(--c-amber-glow);
 }
 .midi-drawer[data-state="expanded"] .midi-drawer__chevron {
   top: 3px;
@@ -723,7 +728,7 @@ body.bay--resizing iframe { pointer-events: none; }
   border-left:  1px solid var(--c-edge);
   border-right: 1px solid var(--c-edge);
   cursor: col-resize;
-  color: var(--c-text-faint);
+  color: var(--c-amber-deep);
   font-family: var(--font-display);
   position: relative;
   padding: 0;
@@ -770,10 +775,12 @@ body.bay--resizing iframe { pointer-events: none; }
   line-height: 1;
   letter-spacing: 0;
   user-select: none;
-  background: var(--c-chassis-low);
-  border: 1px solid var(--c-edge);
+  /* Resting state: subtle amber bezel — visible enough to read as a
+   * lever, not bright enough to fight the chassis. Hover saturates. */
+  background: rgba(240,168,48,0.04);
+  border: 1px solid var(--c-amber-deep);
   border-radius: 2px;
-  transition: text-shadow .15s, border-color .15s;
+  transition: text-shadow .15s, border-color .15s, background .15s;
 }
 .console__latch:hover .console__latch-glyph {
   border-color: var(--c-amber-deep);
