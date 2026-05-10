@@ -9,6 +9,7 @@ import type { KeyboardParameter } from "./types.js";
 import type { MidiSender } from "./midi-sender.js";
 import type { MidiConnection } from "./midi-connection.js";
 import type { ToolResult } from "./tool-result.js";
+import type { MidiCodec } from "./midi-codec.js";
 
 // ── Model metadata ──
 
@@ -229,6 +230,13 @@ export interface KeyboardModel {
 
   /** Create a new device instance for this model */
   createDevice?(): KeyboardDevice;
+
+  /**
+   * Create a per-model `MidiCodec`. Single source of truth for param ↔ MIDI
+   * translation, used by both the mock-runner (incoming MIDI → set_params)
+   * and the MCP-side device (outgoing set_params → MIDI bytes). Plan #30.
+   */
+  createCodec?(): MidiCodec;
 
   /** Create a mock device handler for this model */
   createMockHandler?(): MockHandler;

@@ -7,6 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { KeyboardModel } from "../../../shared/keyboard-model.js";
 import { createParameterMap } from "./midi-map.js";
+import { createJunoXCodec } from "./midi-codec.js";
 import { JunoXDevice } from "./device.js";
 import { JunoXMockHandler } from "./mock-handler.js";
 
@@ -89,6 +90,10 @@ NOTES:
       parameterMap,
       systemPromptTemplate: model.agentSystemPrompt,
     });
+  },
+
+  createCodec() {
+    return createJunoXCodec();
   },
 
   createMockHandler() {
