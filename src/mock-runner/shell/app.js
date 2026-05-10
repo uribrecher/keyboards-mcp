@@ -114,9 +114,14 @@ function paintMidiStrip(ev) {
   slotMidiDir.textContent   = ev.direction === "in" ? "IN"  : "OUT";
   slotMidiTime.textContent  = formatMidiTime(ev.ts);
   slotMidiBody.textContent  = formatMidiBody(ev);
-  // Trigger the flash keyframe by re-applying the class on the next frame.
-  void slotMidiEl.offsetWidth;
-  slotMidiEl.classList.add("slot__midi--flash");
+  // Restart the flash keyframe via rAF double-pump — toggling on the next
+  // frame avoids a forced synchronous layout (offsetWidth read) on every
+  // event, which matters under MIDI bursts (RQ1 round-trips).
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      slotMidiEl.classList.add("slot__midi--flash");
+    });
+  });
   staleTimer = setTimeout(() => {
     slotMidiEl.classList.add("slot__midi--stale");
     staleTimer = null;

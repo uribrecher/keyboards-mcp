@@ -80,19 +80,36 @@ export class MockEngine extends EventEmitter {
     return `[${this.actualPortName}:${this.opts.label ?? "_default"}]`;
   }
 
-  /** Compact one-line summary of a sysex packet — head + tail bytes. */
+  /**
+   * Compact one-line summary of a sysex packet. Short packets (≤5 bytes)
+   * are shown in full; longer packets show first 4 + " .. " + last byte
+   * so the elision marker only appears when there's actually a middle
+   * being dropped. Stays consistent with `structuredSysex`.
+   */
   private static summarizeSysex(bytes: number[]): string {
-    const head = bytes.slice(0, 4).map(b => b.toString(16).padStart(2, "0")).join(" ");
-    const tail = bytes.length > 5 ? ` .. ${bytes[bytes.length - 1].toString(16).padStart(2, "0")}` : "";
-    return `sysex ${bytes.length} bytes [${head}${tail}]`;
+    const fmt = (b: number) => b.toString(16).padStart(2, "0");
+    if (bytes.length <= 5) {
+      return `sysex ${bytes.length} bytes [${bytes.map(fmt).join(" ")}]`;
+    }
+    const head = bytes.slice(0, 4).map(fmt).join(" ");
+    const tail = fmt(bytes[bytes.length - 1]);
+    return `sysex ${bytes.length} bytes [${head} .. ${tail}]`;
   }
 
-  /** Structured sysex summary for the `midi-event` payload. */
+  /**
+   * Structured sysex summary for the `midi-event` payload. Mirrors
+   * `summarizeSysex`'s rule: short packets carry every byte in `head`
+   * with no `tailByte`; longer packets carry first 4 in `head` plus the
+   * last byte in `tailByte`.
+   */
   private static structuredSysex(bytes: number[]): { byteCount: number; head: number[]; tailByte?: number } {
+    if (bytes.length <= 5) {
+      return { byteCount: bytes.length, head: bytes.slice() };
+    }
     return {
       byteCount: bytes.length,
       head: bytes.slice(0, 4),
-      ...(bytes.length > 5 ? { tailByte: bytes[bytes.length - 1] } : {}),
+      tailByte: bytes[bytes.length - 1],
     };
   }
 
@@ -466,21 +483,23 @@ export class MockEngine extends EventEmitter {
   private emitOne(msg: EncodedMessage): void {
     if (!this.midiOutput) return;
     const defaultChannel = this.opts.lowerChannel;
+    // Emit `midi-event` only AFTER `send` returns successfully — otherwise
+    // the UI strip would show traffic that never made it to the wire.
     try {
       if (msg.type === "cc") {
         const channel = msg.channel ?? defaultChannel;
         console.log(`${this.tag()} MIDI-OUT cc CC=${msg.controller} val=${msg.value} ch=${channel}`);
-        this.emit("midi-event", { direction: "out", kind: "cc", controller: msg.controller, value: msg.value, channel } satisfies MidiEventPayload);
         this.midiOutput.send("cc", { controller: msg.controller, value: msg.value, channel });
+        this.emit("midi-event", { direction: "out", kind: "cc", controller: msg.controller, value: msg.value, channel } satisfies MidiEventPayload);
       } else if (msg.type === "program") {
         const channel = msg.channel ?? defaultChannel;
         console.log(`${this.tag()} MIDI-OUT program n=${msg.number} ch=${channel}`);
-        this.emit("midi-event", { direction: "out", kind: "program", number: msg.number, channel } satisfies MidiEventPayload);
         this.midiOutput.send("program", { number: msg.number, channel });
+        this.emit("midi-event", { direction: "out", kind: "program", number: msg.number, channel } satisfies MidiEventPayload);
       } else if (msg.type === "sysex") {
         console.log(`${this.tag()} MIDI-OUT ${MockEngine.summarizeSysex(msg.bytes)}`);
-        this.emit("midi-event", { direction: "out", kind: "sysex", ...MockEngine.structuredSysex(msg.bytes) } satisfies MidiEventPayload);
         this.midiOutput.send("sysex", msg.bytes);
+        this.emit("midi-event", { direction: "out", kind: "sysex", ...MockEngine.structuredSysex(msg.bytes) } satisfies MidiEventPayload);
       }
     } catch (err) { console.error(`${this.tag()} MIDI-OUT send failed:`, err); }
   }
