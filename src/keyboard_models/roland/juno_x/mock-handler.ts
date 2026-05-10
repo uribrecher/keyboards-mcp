@@ -7,14 +7,14 @@
 
 import type { MidiMessage, MockHandler, MockHandlerResult } from "../../../shared/keyboard-model.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
-import { parseDT1, parseRQ1, buildDT1, addAddresses, decodeRolandSize, packNibbles } from "../../../shared/roland-dt1.js";
-import { JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
+import { parseDT1, addAddresses } from "../../../shared/roland-dt1.js";
+import { JUNO_X_MODEL_ID, JunoXEngine, ENGINE_DISPLAY_NAMES, PART_COUNT, SCENE_BASE, SCENE_PART_OFFSETS } from "./engines/engine-types.js";
 import { createAnalogSynthParams } from "./engines/analog-synth.js";
 import { createZCoreParams } from "./engines/zcore.js";
 import { createJunoXModelParams } from "./engines/juno-x-model.js";
 import { createRDPianoParams } from "./engines/rd-piano.js";
 import { createSceneParams } from "./scene-params.js";
-import { createParameterMap } from "./midi-map.js";
+import { createJunoXCodec } from "./midi-codec.js";
 
 // ── Internal part state ──
 
@@ -126,7 +126,10 @@ export function createJunoXMockHandler(): MockHandler {
   const ccLookup: Map<number, string> = buildCcLookup();
   const engineCcLookups = buildEngineCcLookups();
   const sysexLookup: Map<string, string> = buildSysexLookup();
-  const paramMap = createParameterMap();
+  // Codec is the source of truth for param ↔ MIDI translation. Parsing
+  // RQ1, building DT1 replies, and encoding UI-driven param writes all
+  // delegate here so the same wire-encoding rules are shared with the MCP.
+  const codec = createJunoXCodec();
 
   function initParts(lowerChannel: number, upperChannel: number): void {
     channels = [lowerChannel, upperChannel, 2, 3, 4];
@@ -235,110 +238,101 @@ export function createJunoXMockHandler(): MockHandler {
   }
 
   function handleSysEx(bytes: number[]): MockHandlerResult {
-    // Try RQ1 first — if it matches, respond with a DT1 carrying the
-    // requested bytes from our scene state. Real JUNO-X hardware does the
-    // same; we mirror that so the MCP can use get_current_state once the
-    // receive plumbing lands (todo #22) and getState is wired (todo #23).
-    const rq1 = parseRQ1(bytes, JUNO_X_MODEL_ID);
-    if (rq1) {
-      const sizeBytes = decodeRolandSize(rq1.size);
-      const baseKey = addrKey(rq1.address);
+    const message = { type: "sysex", bytes } as const;
+
+    // Codec recognizes Roland RQ1 → request descriptor. Real JUNO-X
+    // hardware responds to RQ1 with a DT1 carrying the requested bytes;
+    // the mock mirrors that so the MCP can use `get_current_state`.
+    const req = codec.parseRequest(message);
+    if (req) {
+      const baseKey = addrKey(req.address);
       const data: number[] = [];
-      for (let i = 0; i < sizeBytes; i++) {
+      for (let i = 0; i < req.size; i++) {
         data.push(sceneGlobal[`${baseKey}[${i}]`] ?? 0);
       }
-      // Echo the requester's device ID so clients filtering by ID match.
-      const dt1Response = buildDT1(JUNO_X_MODEL_ID, rq1.deviceId, rq1.address, data);
+      // `buildResponse` echoes the requester's device ID into the DT1.
+      const dt1Response = codec.buildResponse(req, data);
+      const replyBytes = dt1Response.type === "sysex" ? dt1Response.bytes : [];
       return {
-        log: `RQ1: addr=${baseKey} size=${sizeBytes} dev=0x${rq1.deviceId.toString(16)} → DT1 ${data.join(",")}`,
-        sysexOut: [dt1Response],
+        log: `RQ1: addr=${baseKey} size=${req.size} dev=0x${req.deviceId.toString(16)} → DT1 ${data.join(",")}`,
+        sysexOut: [replyBytes],
       };
     }
 
+    // For DT1, the codec tells us the param identity (name / part); we still
+    // parse the raw address+data here because state is keyed byte-level by
+    // address (stage 3 will re-key by name and drop this last raw parse).
     const dt1 = parseDT1(bytes, JUNO_X_MODEL_ID);
     if (!dt1) {
       return { log: `SysEx (${bytes.length} bytes) — not a JUNO-X DT1, ignored` };
     }
-
     const { address, data } = dt1;
     const ak = addrKey(address);
     const paramName = sysexLookup.get(ak);
 
-    // Route by address[0]
     if (address[0] === 0x01) {
-      // Temporary Scene
       const subAddr = address[1];
       if (subAddr >= 0x10 && subAddr <= 0x14) {
         // Scene Part (partIndex 0-4)
         const partIdx = subAddr - 0x10;
         for (let i = 0; i < data.length; i++) {
-          const key = `${ak}[${i}]`;
-          parts[partIdx].sceneParams[key] = data[i];
+          parts[partIdx].sceneParams[`${ak}[${i}]`] = data[i];
         }
         const label = paramName ?? `addr ${ak}`;
-        return {
-          state: getFullStateObj(),
-          log: `DT1: ${label} = ${data.join(",")}`,
-        };
+        return { state: getFullStateObj(), log: `DT1: ${label} = ${data.join(",")}` };
       } else {
         // Scene global params
         for (let i = 0; i < data.length; i++) {
-          const key = `${ak}[${i}]`;
-          sceneGlobal[key] = data[i];
+          sceneGlobal[`${ak}[${i}]`] = data[i];
         }
         const label = paramName ?? `Scene @ ${ak}`;
-        return {
-          state: getFullStateObj(),
-          log: `DT1: ${label} = ${data.join(",")}`,
-        };
+        return { state: getFullStateObj(), log: `DT1: ${label} = ${data.join(",")}` };
       }
     }
 
-    // Any other DT1 prefix — just log
     const label = paramName ?? `addr ${ak}`;
     return { log: `DT1: ${label} = ${data.join(",")} (not routed)` };
   }
 
   function handleUIParam(name: string, value: number | string, channel: number): MockHandlerResult {
-    const found = paramMap.findParam(name);
+    const found = codec.map.findParam(name);
     if (!found) {
       return { log: `UI: unknown param "${name}"` };
     }
 
-    const midiValue = paramMap.resolveValue(found.param, value);
+    // 1-based part for the codec (channel is 0-based MIDI channel).
+    const part = channel + 1;
+    let messages;
+    try {
+      messages = codec.encodeParams([{ name: found.key, value, part }]);
+    } catch (err) {
+      return { log: `UI: ${found.param.name}: ${err instanceof Error ? err.message : String(err)}` };
+    }
 
-    // SysEx-addressed param → encode as DT1, route through own onMIDI to update state.
-    if (found.param.sysexAddress !== undefined) {
-      const partIdx = Math.max(0, channel | 0);
-      let fullAddress: number[];
-      if (found.param.perPart) {
-        const partOffset = SCENE_PART_OFFSETS[partIdx] ?? SCENE_PART_OFFSETS[0];
-        fullAddress = addAddresses(addAddresses(SCENE_BASE, partOffset), found.param.sysexAddress);
-      } else {
-        fullAddress = addAddresses(SCENE_BASE, found.param.sysexAddress);
+    // Apply each encoded message to internal state and collect emit packets.
+    const ccOut: MockHandlerResult["ccOut"] = [];
+    const sysexOut: number[][] = [];
+    let lastInner: MockHandlerResult = {};
+    for (const msg of messages) {
+      if (msg.type === "sysex") {
+        lastInner = handleSysEx(msg.bytes);
+        sysexOut.push(msg.bytes);
+      } else if (msg.type === "cc") {
+        const ch = msg.channel ?? channel;
+        lastInner = handleCC(msg.controller, msg.value, ch);
+        ccOut.push({ controller: msg.controller, value: msg.value, channel: ch });
+      } else if (msg.type === "program") {
+        lastInner = handleProgram(msg.number, msg.channel ?? channel);
       }
-      const sysexSize = found.param.sysexSize ?? 1;
-      const data = sysexSize > 1 ? packNibbles(midiValue, sysexSize * 2) : [midiValue];
-      const dt1 = buildDT1(JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, fullAddress, data);
-      const inner = handleSysEx(dt1);
-      return {
-        ...inner,
-        sysexOut: [dt1],
-        log: `UI: ${found.param.name} = ${midiValue} → DT1 @ ${addrKey(fullAddress)}`,
-      };
     }
 
-    // CC-mapped param → emit CC, route through own onMIDI to update state.
-    if (found.param.cc !== undefined) {
-      const inner = handleCC(found.param.cc, midiValue, channel);
-      return {
-        ...inner,
-        ccOut: [{ controller: found.param.cc, value: midiValue, channel }],
-        log: `UI: ${found.param.name} = ${midiValue} → CC${found.param.cc} (ch${channel})`,
-      };
-    }
-
-    return { log: `UI: ${found.param.name} has no transport address (no sysexAddress or cc)` };
+    const result: MockHandlerResult = {
+      state: lastInner.state,
+      log: `UI: ${found.param.name} = ${codec.formatValue(found.key, value)}`,
+    };
+    if (sysexOut.length > 0) result.sysexOut = sysexOut;
+    if (ccOut.length > 0) result.ccOut = ccOut;
+    return result;
   }
 
   // ── MockHandler implementation ──
