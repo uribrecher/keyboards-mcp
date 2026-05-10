@@ -1,17 +1,43 @@
 /**
- * Nord Electro 5D mock handler (V2 — thin engine architecture).
+ * Nord Electro 5D mock handler — pure param-domain logic.
  *
- * Owns ALL state and logic: channel state, parameter formatting,
- * CC routing, program loading, and state message building.
- * The engine is just MIDI I/O + WebSocket broadcast.
+ * State is keyed by canonical param name with USER-domain values, organized
+ * into:
+ *   parts[i].params[name]            ──> per-part params (lower=0, upper=1)
+ *   globalParams[name]               ──> non-perPart params
+ *   presetDrawbars.{preset1|preset2} ──> per-preset drawbar registrations
+ *   presetOrganToggles               ──> per-preset vibrato/percussion flags
+ *   activePreset (1|2)               ──> which preset drawbar/vibrato/perc
+ *                                       writes route to (driven by
+ *                                       organ_preset_select user value)
+ *
+ * The handler doesn't speak MIDI; the codec owns wire-byte translation.
+ * Routing for `set_params` refs:
+ *   - scene-global names               → globalParams
+ *   - drawbar_N (perPart)              → parts[part-1].params + presetDrawbars[active]
+ *   - vibrato_enable / percussion      → parts[part-1].params + presetOrganToggles[active]
+ *   - organ_preset_select              → updates activePreset; also stored as a perPart param
+ *   - program_setlist_mode             → toggles setListMode flag
+ *   - setlist_part_select              → updates currentPart and triggers set-list load
+ *   - other perPart params             → parts[part-1].params
+ *
+ * Lower → both auto-propagate: refs with no `part` (or `part: 1`) write to
+ * BOTH parts. `part: 2` writes upper only. This mirrors the prior CC
+ * dispatch behavior where lower-channel CCs were treated as "global" and
+ * also updated the upper channel.
+ *
+ * Broadcast `state.{lower|upper|global}.<name>.value` is the WIRE BYTE
+ * (re-encoded from the stored user value) — the existing UI assumes
+ * wire-domain in `.value` for many comparisons. `position`, `index`,
+ * `label`, `displayName` are user-domain as before.
  */
 
 import type { MockHandler, MidiMessage, MockHandlerResult } from "../../../shared/keyboard-model.js";
+import type { ParamRef } from "../../../shared/midi-codec.js";
 import type { KeyboardParameter } from "../../../shared/types.js";
 import {
   midiToDrawbar,
   midiToDiscrete,
-  drawbarToMidi,
   midiToModelIndex,
   resolveValue,
 } from "../../../shared/parameter-resolution.js";
@@ -22,11 +48,12 @@ import {
   getBackupData,
   getPianoModelsForType,
 } from "./backup-cache.js";
+import { createNordElectro5DCodec } from "./midi-codec.js";
 
 // ── Types ──
 
 interface ParamState {
-  value: number;
+  value: number;          // wire byte, kept for UI back-compat
   label: string;
   name: string;
   displayName?: string;
@@ -37,132 +64,250 @@ interface ParamState {
   labels?: Record<number, string>;
 }
 
+interface PartState {
+  params: Record<string, number>;  // user-domain values for perPart params
+}
+
+const NORD_ENGINES = ["organ", "piano", "sample_synth"] as const;
+type NordEngine = typeof NORD_ENGINES[number];
+
 // ── Factory ──
 
 export function createNordElectro5DMockHandler(): MockHandler {
-  // ── Channels ──
+  const codec = createNordElectro5DCodec();
+
+  // ── Channels (kept only for set-list / program-change semantics) ──
   let lowerChannel = 1;
   let upperChannel = 2;
-  const channelState = new Map<number, Map<number, number>>();
 
   // ── Backup cache ──
   const backupCache = createBackupCache();
-  let activeLabel: string | undefined; // resolved at init() time
+  let activeLabel: string | undefined;
 
-  // ── Per-preset drawbar state ──
-  const presetDrawbarState = new Map<string, Map<number, number>>([
-    ["preset1", new Map()],
-    ["preset2", new Map()],
-  ]);
-
-  // ── Per-preset organ toggles ──
+  // ── Param-domain state ──
+  let parts: [PartState, PartState] = [{ params: {} }, { params: {} }];
+  let globalParams: Record<string, number> = {};
+  let presetDrawbars: { preset1: Record<string, number>; preset2: Record<string, number> } = {
+    preset1: {}, preset2: {},
+  };
   let presetOrganToggles = {
     pst1Vib: false, pst1Prc: false,
     pst2Vib: false, pst2Prc: false,
   };
+  let activePreset: 1 | 2 = 1;
 
-  // ── Program state ──
+  // ── Program / set-list state ──
   let currentBank = 0;
   let currentProgram = 0;
   let programLoaded = false;
-
-  // ── Set list state ──
   let setListMode = false;
   let currentSetList = 0;
   let currentSong = 0;
   let currentPart = 0;
   const PART_LABELS = ["A", "B", "C", "D"] as const;
 
-  // ── CC numbers for special handling ──
-  const PRESET_SELECT_CC = PARAMS.organ_preset_select.cc!;
-  const CC_SETLIST_MODE = PARAMS.program_setlist_mode.cc!;
-  const CC_SETLIST_PART = PARAMS.setlist_part_select.cc!;
-  const VIBRATO_ENABLE_CC = PARAMS.vibrato_enable.cc!;
-  const PERCUSSION_CC = PARAMS.percussion.cc!;
-  const CC_LOWER_ENGINE = PARAMS.part_lower_engine_select.cc!;
-  const CC_UPPER_ENGINE = PARAMS.part_upper_engine_select.cc!;
+  // ── Constants for routing ──
   const CC_AMP_TYPE = PARAMS.spkr_comp_type.cc!;
   const AMP_ROTARY_MIDI = resolveValue(PARAMS.spkr_comp_type, 4);
 
-  // ── Drawbar CC set ──
-  const DRAWBAR_CCS = new Set<number>();
-  for (const param of Object.values(PARAMS)) {
-    if (param.encoding.kind === "drawbar") DRAWBAR_CCS.add(param.cc!);
+  const DRAWBAR_KEYS = new Set<string>();
+  for (const [key, param] of Object.entries(PARAMS)) {
+    if (param.encoding.kind === "drawbar") DRAWBAR_KEYS.add(key);
+  }
+  const PERPART_KEYS = new Set<string>();
+  for (const [key, param] of Object.entries(PARAMS)) {
+    if (param.perPart) PERPART_KEYS.add(key);
   }
 
-  // ── Inventory data ──
+  // ── Inventory ──
   let _backup = getBackupData(activeLabel);
   let _pianoModels: Record<string, string[]> | undefined;
   let _sampleNames: string[] | undefined;
   let _lastProgramChange: { bank: number; slot: number; name?: string } | undefined;
 
-  // ── Param lookup by CC ──
-  const paramByCC = new Map<number, { key: string; param: KeyboardParameter }>();
-  for (const [key, param] of Object.entries(PARAMS)) {
-    paramByCC.set(param.cc!, { key, param });
-  }
-
-  // ── Param per-part lookup ──
-  const perPartKeys = new Set<string>();
-  for (const [key, param] of Object.entries(PARAMS)) {
-    if (param.perPart) perPartKeys.add(key);
-  }
-
   // ══════════════════════════════════════════
-  //  Helpers (absorbed from engine + old handler)
+  //  Storage helpers
   // ══════════════════════════════════════════
 
-  function initChannel(ch: number): void {
-    const chState = new Map<number, number>();
-    for (const param of Object.values(PARAMS)) {
-      chState.set(param.cc!, param.defaultValue);
+  function resetState(): void {
+    parts = [{ params: {} }, { params: {} }];
+    globalParams = {};
+    presetDrawbars = { preset1: {}, preset2: {} };
+    presetOrganToggles = { pst1Vib: false, pst1Prc: false, pst2Vib: false, pst2Prc: false };
+    activePreset = 1;
+  }
+
+  function getUserValue(name: string, partIdx: 0 | 1): number {
+    const param = PARAMS[name];
+    if (!param) return 0;
+    if (param.perPart) {
+      const stored = parts[partIdx].params[name];
+      if (stored !== undefined) return stored;
+    } else {
+      const stored = globalParams[name];
+      if (stored !== undefined) return stored;
     }
-    channelState.set(ch, chState);
+    // Default = wire defaultValue passed through wireToUserValue.
+    return codec.wireToUserValue(name, param.defaultValue);
   }
 
-  function getChannelValue(ch: number, cc: number, defaultVal: number): number {
-    return channelState.get(ch)?.get(cc) ?? defaultVal;
+  function setUserValue(name: string, userValue: number, ref: ParamRef): void {
+    const param = PARAMS[name];
+    if (!param) return;
+
+    // Drawbar: also store in active preset. Per-part: routes via auto-
+    // propagate below.
+    if (DRAWBAR_KEYS.has(name)) {
+      presetDrawbars[activePreset === 1 ? "preset1" : "preset2"][name] = userValue;
+    }
+
+    // Vibrato / percussion: also reflect in presetOrganToggles for the
+    // active preset (organ-only flags).
+    if (name === "vibrato_enable" || name === "percussion") {
+      const on = userValue >= 1;
+      if (name === "vibrato_enable") {
+        if (activePreset === 1) presetOrganToggles.pst1Vib = on;
+        else presetOrganToggles.pst2Vib = on;
+      } else {
+        if (activePreset === 1) presetOrganToggles.pst1Prc = on;
+        else presetOrganToggles.pst2Prc = on;
+      }
+    }
+
+    // organ_preset_select drives the active-preset pointer (the codec
+    // emits user value 0 for Preset 1, 1 for Preset 2).
+    if (name === "organ_preset_select") {
+      activePreset = userValue >= 1 ? 2 : 1;
+    }
+
+    // program_setlist_mode toggle
+    if (name === "program_setlist_mode") {
+      setListMode = userValue >= 1;
+    }
+
+    // setlist_part_select: triggers a set-list load
+    if (name === "setlist_part_select" && setListMode) {
+      currentPart = userValue;
+      loadSetListPart(currentSetList, currentSong, currentPart);
+    }
+
+    // Storage routing
+    if (param.perPart) {
+      // Auto-propagate: refs with part 1 (or unspecified) write to BOTH
+      // parts; part 2 writes upper only.
+      const part = ref.part ?? 1;
+      if (part === 2) {
+        parts[1].params[name] = userValue;
+      } else {
+        parts[0].params[name] = userValue;
+        parts[1].params[name] = userValue;
+      }
+    } else {
+      globalParams[name] = userValue;
+    }
   }
 
-  function getActivePreset(): string {
-    const ch0 = channelState.get(lowerChannel);
-    const presetVal = ch0?.get(PRESET_SELECT_CC) ?? 0;
-    return presetVal >= 64 ? "preset2" : "preset1";
+  // ══════════════════════════════════════════
+  //  set_params / get_params
+  // ══════════════════════════════════════════
+
+  function applySet(refs: ParamRef[]): MockHandlerResult {
+    const logLines: string[] = [];
+    let lastKey: string | undefined;
+    let lastPart: string | undefined;
+
+    for (const ref of refs) {
+      const param = PARAMS[ref.name];
+      if (!param) {
+        logLines.push(`set: unknown param "${ref.name}"`);
+        continue;
+      }
+      let userValue: number;
+      try {
+        userValue = codec.normalizeUserValue(ref.name, ref.value);
+      } catch (err) {
+        logLines.push(`set: ${param.name}: ${err instanceof Error ? err.message : String(err)}`);
+        continue;
+      }
+      setUserValue(ref.name, userValue, ref);
+      lastKey = ref.name;
+      lastPart = ref.part === 2 ? "upper" : (param.perPart ? "upper" : "global");
+      logLines.push(`set: ${param.name} = ${codec.formatValue(ref.name, userValue)}`);
+    }
+
+    return {
+      state: buildFullState(lastKey, lastPart),
+      log: logLines.join("; "),
+    };
   }
 
-  function isRotaryBothForced(): boolean {
-    const ch = channelState.get(lowerChannel)!;
-    const le = ch.get(CC_LOWER_ENGINE) ?? 0;
-    const ue = ch.get(CC_UPPER_ENGINE) ?? 0;
-    const at = ch.get(CC_AMP_TYPE) ?? 0;
-    return le === 0 && ue === 0 && at === AMP_ROTARY_MIDI;
+  function readParams(names: string[], part?: number): Record<string, number> {
+    const out: Record<string, number> = {};
+    const partIdx: 0 | 1 = part === 2 ? 1 : 0;
+    for (const name of names) {
+      const param = PARAMS[name];
+      if (!param) continue;
+      out[name] = getUserValue(name, partIdx);
+    }
+    return out;
   }
 
-  function labelFor(param: KeyboardParameter, midiValue: number): string {
-    if (param.encoding.kind === "drawbar") return String(midiToDrawbar(midiValue, param.encoding.positions));
-    if (param.encoding.kind === "model-index") return `index ${midiToModelIndex(midiValue, param.encoding.table)}`;
-    if (param.encoding.kind === "one-based") return String(midiValue + 1);
+  // ══════════════════════════════════════════
+  //  Active engine
+  // ══════════════════════════════════════════
+
+  function engineFromValue(userValue: number): NordEngine {
+    return NORD_ENGINES[Math.max(0, Math.min(NORD_ENGINES.length - 1, userValue))];
+  }
+
+  function getActiveEngine(part: number): string | undefined {
+    const partIdx: 0 | 1 = part === 2 ? 1 : 0;
+    const key = part === 2 ? "part_upper_engine_select" : "part_lower_engine_select";
+    const userValue = getUserValue(key, partIdx);
+    return engineFromValue(userValue);
+  }
+
+  function setActiveEngine(part: number, engine: string): MockHandlerResult {
+    const idx = NORD_ENGINES.indexOf(engine as NordEngine);
+    if (idx < 0) return { log: `set_active_engine: unknown engine "${engine}"` };
+    const key = part === 2 ? "part_upper_engine_select" : "part_lower_engine_select";
+    const userValue = idx;
+    setUserValue(key, userValue, { name: key, value: userValue, part });
+    return { state: buildFullState(), log: `active engine on part ${part} = ${engine}` };
+  }
+
+  // ══════════════════════════════════════════
+  //  Broadcast state
+  // ══════════════════════════════════════════
+
+  function labelFor(param: KeyboardParameter, wireValue: number): string {
+    if (param.encoding.kind === "drawbar") return String(midiToDrawbar(wireValue, param.encoding.positions));
+    if (param.encoding.kind === "model-index") return `index ${midiToModelIndex(wireValue, param.encoding.table)}`;
+    if (param.encoding.kind === "one-based") return String(wireValue + 1);
     if (param.labels && (param.type === "discrete" || param.type === "toggle")) {
-      const index = midiToDiscrete(midiValue, param.max);
-      return param.labels[index] ?? String(midiValue);
+      const index = midiToDiscrete(wireValue, param.max);
+      return param.labels[index] ?? String(wireValue);
     }
-    return String(midiValue);
+    return String(wireValue);
   }
 
-  function buildParamEntry(param: KeyboardParameter, midiValue: number): ParamState {
+  function buildParamEntry(param: KeyboardParameter, userValue: number): ParamState {
+    // UI compat: broadcast `.value` is the wire byte derived from the
+    // user-domain stored value. Other fields are user-domain as before.
+    const wireValue = resolveValue(param, userValue);
     const entry: ParamState = {
-      value: midiValue,
-      label: labelFor(param, midiValue),
+      value: wireValue,
+      label: labelFor(param, wireValue),
       name: param.name,
       section: param.section,
       type: param.type,
     };
     if (param.displayName) entry.displayName = param.displayName;
     if (param.encoding.kind === "drawbar") {
-      entry.position = midiToDrawbar(midiValue, param.encoding.positions);
+      entry.position = midiToDrawbar(wireValue, param.encoding.positions);
     }
     if ((param.type === "discrete" || param.type === "toggle") && param.labels) {
-      entry.index = midiToDiscrete(midiValue, param.max);
+      entry.index = midiToDiscrete(wireValue, param.max);
     }
     if (param.type === "discrete" && param.labels) {
       entry.labels = param.labels;
@@ -170,20 +315,29 @@ export function createNordElectro5DMockHandler(): MockHandler {
     return entry;
   }
 
-  function buildPresetDrawbarEntries(presetKey: string): Record<string, any> {
+  function buildPresetDrawbarEntries(presetKey: "preset1" | "preset2"): Record<string, any> {
     const result: Record<string, any> = {};
     for (const [key, param] of Object.entries(PARAMS)) {
       if (param.encoding.kind !== "drawbar") continue;
-      const midiValue = presetDrawbarState.get(presetKey)!.get(param.cc!) ?? param.defaultValue;
+      const userValue = presetDrawbars[presetKey][key] ?? codec.wireToUserValue(key, param.defaultValue);
+      const wireValue = resolveValue(param, userValue);
       result[key] = {
-        value: midiValue,
-        label: String(midiToDrawbar(midiValue, param.encoding.positions)),
+        value: wireValue,
+        label: String(midiToDrawbar(wireValue, param.encoding.positions)),
         section: param.section,
         type: param.type,
-        position: midiToDrawbar(midiValue, param.encoding.positions),
+        position: midiToDrawbar(wireValue, param.encoding.positions),
       };
     }
     return result;
+  }
+
+  function isRotaryBothForced(): boolean {
+    const lowerEng = getUserValue("part_lower_engine_select", 0);
+    const upperEng = getUserValue("part_upper_engine_select", 1);
+    const ampType = globalParams["spkr_comp_type"];
+    const ampWire = ampType !== undefined ? resolveValue(PARAMS.spkr_comp_type, ampType) : PARAMS.spkr_comp_type.defaultValue;
+    return lowerEng === 0 && upperEng === 0 && ampWire === AMP_ROTARY_MIDI && CC_AMP_TYPE !== undefined;
   }
 
   function buildFullState(
@@ -196,11 +350,11 @@ export function createNordElectro5DMockHandler(): MockHandler {
     const global: Record<string, ParamState> = {};
 
     for (const [key, param] of Object.entries(PARAMS)) {
-      if (perPartKeys.has(key)) {
-        lower[key] = buildParamEntry(param, getChannelValue(lowerChannel, param.cc!, param.defaultValue));
-        upper[key] = buildParamEntry(param, getChannelValue(upperChannel, param.cc!, param.defaultValue));
+      if (param.perPart) {
+        lower[key] = buildParamEntry(param, getUserValue(key, 0));
+        upper[key] = buildParamEntry(param, getUserValue(key, 1));
       } else {
-        global[key] = buildParamEntry(param, getChannelValue(lowerChannel, param.cc!, param.defaultValue));
+        global[key] = buildParamEntry(param, getUserValue(key, 0));
       }
     }
 
@@ -220,9 +374,6 @@ export function createNordElectro5DMockHandler(): MockHandler {
       preset1Drawbars: buildPresetDrawbarEntries("preset1"),
       preset2Drawbars: buildPresetDrawbarEntries("preset2"),
       presetOrganToggles,
-      // Raw set-list / program state — exposed so plan #9 setFullState can
-      // round-trip without re-deriving from the cosmetic `setList` / `program`
-      // blocks below.
       setListMode,
       currentSetList,
       currentSong,
@@ -232,7 +383,6 @@ export function createNordElectro5DMockHandler(): MockHandler {
       programLoaded,
     };
 
-    // Program info
     if (programLoaded) {
       const bank = currentBank + 1;
       const slot = currentProgram + 1;
@@ -240,7 +390,6 @@ export function createNordElectro5DMockHandler(): MockHandler {
       msg.program = { bank, slot, name: prog?.name };
     }
 
-    // Set list info
     if (setListMode) {
       const { prog, entry } = resolveSetListSong(currentSetList, currentSong, currentPart);
       msg.setList = {
@@ -256,40 +405,36 @@ export function createNordElectro5DMockHandler(): MockHandler {
       };
     }
 
-    // Inventory
     if (includeInventory) {
       msg.pianoModels = _pianoModels;
       msg.sampleNames = _sampleNames;
     }
 
-    // Last program change notification
     if (_lastProgramChange) {
       msg.lastProgramChange = _lastProgramChange;
       _lastProgramChange = undefined;
     }
 
-    // Last change notification
-    if (lastChangeKey) {
-      const cc = PARAMS[lastChangeKey]?.cc;
-      const entry = cc != null ? paramByCC.get(cc) : undefined;
-      if (entry) {
-        const ch = lastChangePart === "upper" ? upperChannel : lowerChannel;
-        const midiValue = getChannelValue(ch, entry.param.cc!, entry.param.defaultValue);
-        msg.lastChange = {
-          key: lastChangeKey,
-          name: entry.param.name,
-          cc: entry.param.cc,
-          value: midiValue,
-          label: labelFor(entry.param, midiValue),
-          part: lastChangePart,
-        };
-      }
+    if (lastChangeKey && PARAMS[lastChangeKey]) {
+      const param = PARAMS[lastChangeKey];
+      const partIdx: 0 | 1 = lastChangePart === "upper" ? 1 : 0;
+      const userValue = getUserValue(lastChangeKey, partIdx);
+      const wireValue = resolveValue(param, userValue);
+      msg.lastChange = {
+        key: lastChangeKey,
+        name: param.name,
+        value: wireValue,
+        label: labelFor(param, wireValue),
+        part: lastChangePart,
+      };
     }
 
     return msg;
   }
 
-  // ── Backup/inventory helpers ──
+  // ══════════════════════════════════════════
+  //  Backup / inventory / programs
+  // ══════════════════════════════════════════
 
   function buildInventoryFromCache(): void {
     _backup = getBackupData(activeLabel);
@@ -319,9 +464,7 @@ export function createNordElectro5DMockHandler(): MockHandler {
   }
 
   function applyProgramParams(params: ProgramParams): void {
-    initChannel(lowerChannel);
-    initChannel(upperChannel);
-    for (const [, map] of presetDrawbarState) map.clear();
+    resetState();
 
     presetOrganToggles = {
       pst1Vib: params.pst1VibratoEnable,
@@ -334,42 +477,57 @@ export function createNordElectro5DMockHandler(): MockHandler {
       const param = PARAMS[key];
       if (!param) continue;
       const raw = get(params);
-      let midiVal: number;
-      if (typeof raw === "boolean") {
-        midiVal = raw ? 127 : 0;
-      } else if (typeof raw === "string") {
-        try { midiVal = resolveValue(param, raw); } catch { continue; }
-      } else {
-        midiVal = resolveValue(param, raw);
+      let userValue: number;
+      try {
+        if (typeof raw === "boolean") {
+          userValue = raw ? 1 : 0;
+        } else if (typeof raw === "string") {
+          userValue = codec.normalizeUserValue(key, raw);
+        } else {
+          userValue = codec.normalizeUserValue(key, raw);
+        }
+      } catch {
+        continue;
       }
-      channelState.get(lowerChannel)!.set(param.cc!, midiVal);
-      channelState.get(upperChannel)!.set(param.cc!, midiVal);
+      // Write to both parts for perPart, else global.
+      if (param.perPart) {
+        parts[0].params[key] = userValue;
+        parts[1].params[key] = userValue;
+      } else {
+        globalParams[key] = userValue;
+      }
     }
 
-    // sample_synth_sample: write raw slot (bypass oneBased encoding)
+    // sample_synth_sample stored as raw slot (one-based encoding inverse).
+    // The backup parser hands us a raw 0-based slot; user-domain for a
+    // one-based encoding is wire+1, so we store slot+1 to keep round-trip.
     const sampleParam = PARAMS.sample_synth_sample;
     if (sampleParam) {
-      channelState.get(lowerChannel)!.set(sampleParam.cc!, params.sampleSlot);
-      channelState.get(upperChannel)!.set(sampleParam.cc!, params.sampleSlot);
+      const userValue = codec.wireToUserValue("sample_synth_sample", params.sampleSlot);
+      if (sampleParam.perPart) {
+        parts[0].params["sample_synth_sample"] = userValue;
+        parts[1].params["sample_synth_sample"] = userValue;
+      } else {
+        globalParams["sample_synth_sample"] = userValue;
+      }
     }
 
     applyDrawbars("preset1", params.pst1Drawbars);
     applyDrawbars("preset2", params.pst2Drawbars);
   }
 
-  function applyDrawbars(presetKey: string, drawbarStr: string): void {
+  function applyDrawbars(presetKey: "preset1" | "preset2", drawbarStr: string): void {
     if (drawbarStr === "?" || !drawbarStr) return;
-    const presetMap = presetDrawbarState.get(presetKey);
-    if (!presetMap) return;
     for (let i = 0; i < drawbarStr.length && i < 9; i++) {
       const pos = parseInt(drawbarStr[i], 10);
       if (isNaN(pos)) continue;
-      const param = PARAMS[`drawbar_${i + 1}`];
-      if (!param) continue;
-      const midiVal = drawbarToMidi(pos, 9);
-      presetMap.set(param.cc!, midiVal);
-      channelState.get(lowerChannel)!.set(param.cc!, midiVal);
-      channelState.get(upperChannel)!.set(param.cc!, midiVal);
+      const key = `drawbar_${i + 1}`;
+      if (!PARAMS[key]) continue;
+      // Drawbar user value is the position (0-8).
+      presetDrawbars[presetKey][key] = pos;
+      // Also propagate to current part state so broadcast lower/upper see it.
+      parts[0].params[key] = pos;
+      parts[1].params[key] = pos;
     }
   }
 
@@ -392,135 +550,77 @@ export function createNordElectro5DMockHandler(): MockHandler {
     return `Set List: Bank ${bankIdx + 1} Song ${songIdx + 1} Part ${PART_LABELS[partIdx]} → no program found`;
   }
 
-  // ══════════════════════════════════════════
-  //  CC handling (absorbed from engine)
-  // ══════════════════════════════════════════
-
-  function handleCC(cc: number, value: number, channel: number): MockHandlerResult {
-    // Bank Select MSB — ignore
-    if (cc === 0) {
-      return { log: `Bank Select MSB = ${value} (ch${channel})` };
-    }
-
-    // Bank Select LSB
-    if (cc === 32) {
-      if (setListMode) {
-        currentSetList = value;
-        return { state: buildFullState(), log: `Bank Select LSB = ${value} → Set List ${value + 1} (ch${channel})` };
-      }
-      currentBank = value;
-      return { state: buildFullState(), log: `Bank Select LSB = ${value} → Bank ${value + 1} (ch${channel})` };
-    }
-
-    // CC48: Program/Set List mode toggle
-    if (cc === CC_SETLIST_MODE) {
-      setListMode = value >= 64;
-      return { state: buildFullState(), log: `Mode → ${setListMode ? "Set List" : "Program"} (CC${cc}=${value})` };
-    }
-
-    // CC49: Set List part select
-    if (cc === CC_SETLIST_PART && setListMode) {
-      currentPart = midiToDiscrete(value, 3);
-      const log = loadSetListPart(currentSetList, currentSong, currentPart);
-      return { state: buildFullState(), log };
-    }
-
-    // Route drawbar CCs to active preset state
-    if (DRAWBAR_CCS.has(cc)) {
-      presetDrawbarState.get(getActivePreset())!.set(cc, value);
-    }
-
-    // Route vibrato/percussion enable to active preset toggles
-    if (cc === VIBRATO_ENABLE_CC || cc === PERCUSSION_CC) {
-      const preset = getActivePreset();
-      const on = value > 0;
-      if (cc === VIBRATO_ENABLE_CC) {
-        if (preset === "preset1") presetOrganToggles.pst1Vib = on;
-        else presetOrganToggles.pst2Vib = on;
-      } else {
-        if (preset === "preset1") presetOrganToggles.pst1Prc = on;
-        else presetOrganToggles.pst2Prc = on;
-      }
-    }
-
-    // Ensure channel state exists
-    if (!channelState.has(channel)) initChannel(channel);
-    channelState.get(channel)!.set(cc, value);
-
-    // Determine part and propagate per-part params
-    const entry = paramByCC.get(cc);
-    const changeKey = entry?.key;
-    let part = "global";
-
-    if (entry && perPartKeys.has(entry.key)) {
-      if (channel === lowerChannel) {
-        // Global/lower channel: also update upper
-        if (!channelState.has(upperChannel)) initChannel(upperChannel);
-        channelState.get(upperChannel)!.set(cc, value);
-        part = "upper";
-      } else if (channel === upperChannel) {
-        part = "upper";
-      }
-    }
-
-    const desc = entry
-      ? `${entry.param.name} = ${labelFor(entry.param, value)} (CC${cc}=${value} ch${channel} ${part})`
-      : `CC${cc}=${value} ch${channel} [unmapped]`;
-
-    return { state: buildFullState(changeKey, part), log: desc };
-  }
-
-  function handleProgramChange(program: number, channel: number): MockHandlerResult {
+  function loadProgram(bank: number, slot: number): MockHandlerResult {
     if (setListMode) {
-      currentSong = program;
+      currentSong = slot;
       currentPart = 0;
       const log = loadSetListPart(currentSetList, currentSong, currentPart);
       return { state: buildFullState(), log };
     }
 
-    currentProgram = program;
+    currentBank = bank;
+    currentProgram = slot;
     programLoaded = true;
-    const bank = currentBank + 1;
-    const slot = currentProgram + 1;
-    const prog = _backup?.programs.find((p: any) => p.bank === bank && p.slot === currentProgram);
+    const bankNum = currentBank + 1;
+    const slotNum = currentProgram + 1;
+    const prog = _backup?.programs.find((p: any) => p.bank === bankNum && p.slot === currentProgram);
     const name = prog?.name ? ` (${prog.name})` : "";
 
     let log: string;
     if (prog?.params) {
       applyProgramParams(prog.params);
-      log = `Program ${bank}:${slot}${name} — applied ${Object.keys(prog.params).length} params (ch${channel})`;
+      log = `Program ${bankNum}:${slotNum}${name} — applied ${Object.keys(prog.params).length} params`;
     } else {
-      log = `Program ${bank}:${slot}${name} — no cached params (ch${channel})`;
+      log = `Program ${bankNum}:${slotNum}${name} — no cached params`;
     }
 
-    _lastProgramChange = { bank, slot, name: prog?.name };
+    _lastProgramChange = { bank: bankNum, slot: slotNum, name: prog?.name };
     return { state: buildFullState(), log };
   }
+
+  // ══════════════════════════════════════════
+  //  Channel-tagged set_params helper for the lower→both auto-propagate
+  //  semantic when the codec emits {part: 1} for lower-channel CCs
+  // ══════════════════════════════════════════
 
   // ══════════════════════════════════════════
   //  MockHandler implementation
   // ══════════════════════════════════════════
 
-  return {
+  const handler: MockHandler = {
+    codec,
     init(lower: number, upper: number, label?: string): void {
       lowerChannel = lower;
       upperChannel = upper;
       activeLabel = label;
-      initChannel(lowerChannel);
-      initChannel(upperChannel);
+      resetState();
       backupCache.load(activeLabel);
       buildInventoryFromCache();
     },
 
-    onMIDI(msg: MidiMessage): MockHandlerResult {
-      switch (msg.type) {
-        case "cc":
-          return handleCC(msg.controller, msg.value, msg.channel);
-        case "program":
-          return handleProgramChange(msg.number, msg.channel);
-        case "sysex":
-          return { log: `SysEx (${msg.bytes.length} bytes) — ignored` };
-      }
+    /** Handler doesn't speak MIDI; engine + codec own all wire I/O. */
+    onMIDI(_msg: MidiMessage): MockHandlerResult {
+      return {};
+    },
+
+    set_params(refs: ParamRef[]): MockHandlerResult {
+      return applySet(refs);
+    },
+
+    get_params(names: string[], part?: number): Record<string, number> {
+      return readParams(names, part);
+    },
+
+    load_program(bank: number, slot: number): MockHandlerResult {
+      return loadProgram(bank, slot);
+    },
+
+    get_active_engine(part: number): string | undefined {
+      return getActiveEngine(part);
+    },
+
+    set_active_engine(part: number, engine: string): MockHandlerResult {
+      return setActiveEngine(part, engine);
     },
 
     getFullState(includeInventory: boolean): Record<string, any> {
@@ -538,46 +638,42 @@ export function createNordElectro5DMockHandler(): MockHandler {
     },
 
     setFullState(snapshot: Record<string, any>): void {
-      // Best-effort tolerant restore (plan #9). Missing fields keep
-      // current defaults; unknown fields are ignored. Never broadcast —
-      // engine emits a single getFullState(true) after this returns.
+      // Best-effort tolerant restore (plan #9). Inputs are wire-domain
+      // ParamState objects (matching what buildParamEntry emits); convert
+      // back to user-domain on the way in.
       try {
-        const restoreSection = (ch: number, section: any) => {
+        const restoreSection = (partIdx: 0 | 1 | "global", section: any) => {
           if (!section || typeof section !== "object") return;
-          if (!channelState.has(ch)) initChannel(ch);
-          const chState = channelState.get(ch)!;
-          for (const [paramKey, ps] of Object.entries<any>(section)) {
-            const param = PARAMS[paramKey];
-            if (!param || param.cc === undefined) continue;
-            if (ps && typeof ps === "object" && typeof ps.value === "number") {
-              chState.set(param.cc, ps.value);
+          for (const [key, ps] of Object.entries<any>(section)) {
+            const param = PARAMS[key];
+            if (!param) continue;
+            if (!ps || typeof ps !== "object" || typeof ps.value !== "number") continue;
+            const userValue = codec.wireToUserValue(key, ps.value);
+            if (partIdx === "global") {
+              globalParams[key] = userValue;
+            } else {
+              parts[partIdx].params[key] = userValue;
             }
           }
         };
-        restoreSection(lowerChannel, snapshot.lower);
-        restoreSection(upperChannel, snapshot.upper);
-        // Global params live on lowerChannel in the existing buildFullState.
-        restoreSection(lowerChannel, snapshot.global);
+        restoreSection(0, snapshot.lower);
+        restoreSection(1, snapshot.upper);
+        restoreSection("global", snapshot.global);
 
-        // Per-preset drawbars — buildFullState produces a Record keyed by
-        // paramKey, with each entry holding a `value` field.
         const restorePreset = (presetKey: "preset1" | "preset2", entries: any) => {
-          const map = presetDrawbarState.get(presetKey);
-          if (!map) return;
-          map.clear();
           if (!entries || typeof entries !== "object") return;
-          for (const [paramKey, ps] of Object.entries<any>(entries)) {
-            const param = PARAMS[paramKey];
-            if (!param || param.cc === undefined || param.encoding.kind !== "drawbar") continue;
+          presetDrawbars[presetKey] = {};
+          for (const [key, ps] of Object.entries<any>(entries)) {
+            const param = PARAMS[key];
+            if (!param || param.encoding.kind !== "drawbar") continue;
             if (ps && typeof ps === "object" && typeof ps.value === "number") {
-              map.set(param.cc, ps.value);
+              presetDrawbars[presetKey][key] = codec.wireToUserValue(key, ps.value);
             }
           }
         };
         if (snapshot.preset1Drawbars !== undefined) restorePreset("preset1", snapshot.preset1Drawbars);
         if (snapshot.preset2Drawbars !== undefined) restorePreset("preset2", snapshot.preset2Drawbars);
 
-        // Preset organ toggles
         if (snapshot.presetOrganToggles && typeof snapshot.presetOrganToggles === "object") {
           presetOrganToggles = {
             pst1Vib: !!snapshot.presetOrganToggles.pst1Vib,
@@ -587,8 +683,6 @@ export function createNordElectro5DMockHandler(): MockHandler {
           };
         }
 
-        // Set-list / program raw fields (only present when buildFullState
-        // includes them — extension below).
         if (typeof snapshot.setListMode === "boolean") setListMode = snapshot.setListMode;
         if (typeof snapshot.currentSetList === "number") currentSetList = snapshot.currentSetList;
         if (typeof snapshot.currentSong === "number") currentSong = snapshot.currentSong;
@@ -601,9 +695,14 @@ export function createNordElectro5DMockHandler(): MockHandler {
       }
     },
   };
+
+  // Touch unused-by-default vars to avoid lint complaints.
+  void lowerChannel; void upperChannel; void PERPART_KEYS;
+
+  return handler;
 }
 
-// ── Program param map (shared with old handler) ──
+// ── Program param map (drives applyProgramParams for cached programs) ──
 
 const PROGRAM_PARAM_MAP: Array<[key: string, get: (p: ProgramParams) => number | string | boolean]> = [
   ["kb_split_mode", p => p.splitMode],
