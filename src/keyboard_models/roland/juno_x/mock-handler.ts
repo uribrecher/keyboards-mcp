@@ -62,6 +62,20 @@ export function createJunoXMockHandler(): MockHandler {
   const codec = createJunoXCodec();
   const engineParamSets = buildEnginedParamSets();
 
+  /**
+   * Find the param key in the given engine's param set that has the
+   * specified CC. Returns undefined if no param with that CC exists in
+   * that engine. Used by `set_params` to translate cross-engine CC
+   * names (e.g. as_cutoff → jx_cutoff when the active engine changes).
+   */
+  function engineKeyForCc(engine: JunoXEngine, cc: number): string | undefined {
+    const params = engineParamSets[engine];
+    for (const [key, param] of Object.entries(params)) {
+      if (param.cc === cc && param.perPart) return key;
+    }
+    return undefined;
+  }
+
   function initParts(_lowerChannel: number, _upperChannel: number): void {
     parts = Array.from({ length: PART_COUNT }, () => {
       const seed: Record<string, number> = {};
@@ -100,7 +114,18 @@ export function createJunoXMockHandler(): MockHandler {
           logLines.push(`set: ${found.param.name}: part ${ref.part} out of range`);
           continue;
         }
-        part.params[found.key] = userValue;
+        // Engine-aware key resolution for CC params: the same CC has
+        // different param keys across engines (e.g. CC 3 = as_cutoff /
+        // jx_cutoff / zc_cutoff). The codec's CC reverse-lookup is
+        // last-wins on the merged map so it might give us a key that
+        // doesn't match this part's active engine. Find the matching
+        // CC in the active engine's params and store under THAT key, so
+        // the broadcast (which iterates the active engine's params) can
+        // find it.
+        const storeKey = found.param.cc !== undefined
+          ? (engineKeyForCc(part.engine, found.param.cc) ?? found.key)
+          : found.key;
+        part.params[storeKey] = userValue;
       } else {
         globalParams[found.key] = userValue;
       }
@@ -121,7 +146,12 @@ export function createJunoXMockHandler(): MockHandler {
       if (found.param.perPart) {
         const partIdx = (part ?? 1) - 1;
         const partState = parts[partIdx];
-        out[found.key] = partState?.params[found.key] ?? found.param.defaultValue;
+        // Same engine-aware lookup as `set_params` — translate the asked
+        // name to the active engine's matching CC param key.
+        const lookupKey = found.param.cc !== undefined && partState
+          ? (engineKeyForCc(partState.engine, found.param.cc) ?? found.key)
+          : found.key;
+        out[found.key] = partState?.params[lookupKey] ?? found.param.defaultValue;
       } else {
         out[found.key] = globalParams[found.key] ?? found.param.defaultValue;
       }
