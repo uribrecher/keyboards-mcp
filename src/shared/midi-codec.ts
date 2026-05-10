@@ -11,12 +11,20 @@
 import type { ParameterMap } from "./keyboard-model.js";
 import { wireToUserValue as paramResolutionWireToUser } from "./parameter-resolution.js";
 
-/** A param to encode, optionally targeted to a specific part (1-based). */
+/** A param to encode/apply, optionally targeted to a specific part (1-based). */
 export interface ParamRef {
   name: string;
   value: number | string;
   /** 1-based part index. Required when the param has `perPart: true`. */
   part?: number;
+  /**
+   * Engine identifier (model-specific). Set by the codec when it can
+   * resolve a param to a specific engine (e.g. JUNO-X has multiple
+   * engines per part — the codec emits one candidate per engine for an
+   * ambiguous CC). Handlers without engines ignore this field. Handlers
+   * with engines use it to disambiguate against the active engine.
+   */
+  engine?: string;
 }
 
 /** A semantic action that translates to a sequence of MIDI messages. */
@@ -37,9 +45,14 @@ export interface RequestDescriptor {
   deviceId: number;
 }
 
-/** What `decode` returns, per inbound MIDI message. */
+/**
+ * What `decode` returns, per inbound MIDI message. May emit MULTIPLE
+ * `param` events for an ambiguous CC (one per matching engine on
+ * multi-engine models like JUNO-X). The handler picks based on
+ * active-engine state.
+ */
 export type DecodedEvent =
-  | { kind: "param"; name: string; value: number; part?: number }
+  | { kind: "param"; name: string; value: number; part?: number; engine?: string }
   | { kind: "loadProgram"; bank: number; slot: number; channel?: number }
   | { kind: "loadSong"; bank: number; slot: number; part?: string }
   | { kind: "request"; descriptor: RequestDescriptor }

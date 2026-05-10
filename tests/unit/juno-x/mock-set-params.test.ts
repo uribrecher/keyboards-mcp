@@ -54,10 +54,10 @@ describe("JUNO-X mock set_params + get_params (stage 5: user-domain)", () => {
   });
 
   it("per-part set_params writes to the right part; cross-part isolation", () => {
-    handler.set_params([{ name: "as_lfo_rate", value: 50, part: 1 }]);
-    handler.set_params([{ name: "as_lfo_rate", value: 100, part: 2 }]);
-    assert.equal(handler.get_params(["as_lfo_rate"], 1).as_lfo_rate, 50);
-    assert.equal(handler.get_params(["as_lfo_rate"], 2).as_lfo_rate, 100);
+    handler.set_params([{ name: "lfo_rate", value: 50, part: 1 }]);
+    handler.set_params([{ name: "lfo_rate", value: 100, part: 2 }]);
+    assert.equal(handler.get_params(["lfo_rate"], 1).lfo_rate, 50);
+    assert.equal(handler.get_params(["lfo_rate"], 2).lfo_rate, 100);
   });
 
   it("set_params with unknown param logs but doesn't throw", () => {

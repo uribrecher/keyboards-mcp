@@ -22,6 +22,7 @@ import { createParameterMap } from "./midi-map.js";
 import {
   JUNO_X_MODEL_ID,
   JUNO_X_DEVICE_ID,
+  JunoXEngine,
   SCENE_BASE,
   SCENE_PART_OFFSETS,
 } from "./engines/engine-types.js";
@@ -152,37 +153,63 @@ export function createJunoXCodec(): MidiCodec {
   // ── Decode ──
 
   /**
-   * Walk the parameter map and emit a `param` event for any param whose
-   * full address (with each candidate part offset) matches `address`.
-   * For `perPart` params the part is reported in the event. Decoded values
-   * are USER-DOMAIN (stage 5) — wire-byte translation lives here.
+   * Resolve a DT1 address+data into param events. Walks scene-global
+   * params first (engine-less); then walks each engine's per-part
+   * params with the part offsets. `engine` is set on per-part events
+   * so the handler can route to the right engine namespace.
    */
   function decodeDt1ToParams(address: number[], data: number[]): DecodedEvent[] {
     const results: DecodedEvent[] = [];
-    for (const [key, param] of Object.entries(map.params)) {
+    const sysexSizeFor = (param: { sysexSize?: number }) => param.sysexSize ?? 1;
+
+    const tryMatch = (
+      key: string,
+      param: { sysexAddress?: number[]; sysexSize?: number; min: number; max: number; type: string; encoding: any; labels?: any },
+      candidateAddr: number[],
+      part: number | undefined,
+      engine: JunoXEngine | undefined,
+    ): boolean => {
+      if (!param.sysexAddress) return false;
+      if (candidateAddr.length !== address.length) return false;
+      if (!candidateAddr.every((b, i) => b === address[i])) return false;
+      const sysexSize = sysexSizeFor(param);
+      const wireValue = sysexSize > 1 ? unpackNibbles(data.slice(0, sysexSize * 2)) : data[0];
+      const userValue = paramResolutionWireToUser(param as any, wireValue);
+      const event: DecodedEvent = { kind: "param", name: key, value: userValue };
+      if (part !== undefined) event.part = part;
+      if (engine !== undefined) event.engine = engine;
+      results.push(event);
+      return true;
+    };
+
+    // Scene-level params (engine-agnostic). Per-part variants iterate
+    // SCENE_PART_OFFSETS; non-perPart variants use SCENE_BASE directly.
+    for (const [key, param] of Object.entries(map.globalParams)) {
       if (!param.sysexAddress) continue;
-      type Candidate = { full: number[]; part: number | undefined };
-      const candidates: Candidate[] = param.perPart
-        ? SCENE_PART_OFFSETS.map((off, i) => ({
-            full: addAddresses(addAddresses(SCENE_BASE, off), param.sysexAddress!),
-            part: i + 1,
-          }))
-        : [{ full: addAddresses(SCENE_BASE, param.sysexAddress), part: undefined }];
-      for (const c of candidates) {
-        if (c.full.length !== address.length) continue;
-        if (!c.full.every((b, i) => b === address[i])) continue;
-        const sysexSize = param.sysexSize ?? 1;
-        const wireValue = sysexSize > 1
-          ? unpackNibbles(data.slice(0, sysexSize * 2))
-          : data[0];
-        const userValue = paramResolutionWireToUser(param, wireValue);
-        const event: DecodedEvent = c.part !== undefined
-          ? { kind: "param", name: key, value: userValue, part: c.part }
-          : { kind: "param", name: key, value: userValue };
-        results.push(event);
-        break;
+      if (param.perPart) {
+        for (let p = 0; p < SCENE_PART_OFFSETS.length; p++) {
+          const full = addAddresses(addAddresses(SCENE_BASE, SCENE_PART_OFFSETS[p]), param.sysexAddress);
+          if (tryMatch(key, param, full, p + 1, undefined)) break;
+        }
+      } else {
+        tryMatch(key, param, addAddresses(SCENE_BASE, param.sysexAddress), undefined, undefined);
       }
     }
+
+    // Per-engine, per-part params.
+    for (const engine of Object.values(JunoXEngine)) {
+      const params = map.getParamsForEngine(engine as JunoXEngine);
+      for (const [key, param] of Object.entries(params)) {
+        if (!param.sysexAddress || !param.perPart) continue;
+        // Skip scene-global re-iteration (they're in every engine's getParamsForEngine).
+        if (map.globalParams[key]) continue;
+        for (let p = 0; p < SCENE_PART_OFFSETS.length; p++) {
+          const full = addAddresses(addAddresses(SCENE_BASE, SCENE_PART_OFFSETS[p]), param.sysexAddress);
+          if (tryMatch(key, param, full, p + 1, engine as JunoXEngine)) break;
+        }
+      }
+    }
+
     return results;
   }
 
@@ -205,16 +232,20 @@ export function createJunoXCodec(): MidiCodec {
       return decodeDt1ToParams(dt1.address, dt1.data);
     }
     if (message.type === "cc") {
-      const ccLookup = map.getParamByCC(message.controller);
-      if (!ccLookup) return [];
-      const userValue = paramResolutionWireToUser(ccLookup.param, message.value);
-      const part = ccLookup.param.perPart && message.channel !== undefined
-        ? message.channel + 1
-        : undefined;
-      const event: DecodedEvent = part !== undefined
-        ? { kind: "param", name: ccLookup.key, value: userValue, part }
-        : { kind: "param", name: ccLookup.key, value: userValue };
-      return [event];
+      // For an ambiguous CC (multiple engines have the same CC), emit
+      // one candidate event per engine. Handler picks based on active
+      // engine state on the targeted part.
+      const matches = map.getParamsByCC(message.controller);
+      if (matches.length === 0) return [];
+      return matches.map(({ engine, key, param }) => {
+        const userValue = paramResolutionWireToUser(param, message.value);
+        const part = param.perPart && message.channel !== undefined
+          ? message.channel + 1
+          : undefined;
+        const event: DecodedEvent = { kind: "param", name: key, value: userValue, engine };
+        if (part !== undefined) event.part = part;
+        return event;
+      });
     }
     if (message.type === "program") {
       // Bank state is engine-managed; codec only emits the PC half.
@@ -230,13 +261,15 @@ export function createJunoXCodec(): MidiCodec {
     const addrAsNumber = (a: number[]): number =>
       (a[0] << 21) | (a[1] << 14) | (a[2] << 7) | a[3];
     const reqStart = addrAsNumber(address);
-    const reqEnd = reqStart + size; // exclusive
+    const reqEnd = reqStart + size;
 
-    for (const [key, param] of Object.entries(map.params)) {
-      if (!param.sysexAddress) continue;
+    const considerParam = (
+      key: string,
+      param: { sysexAddress?: number[]; sysexSize?: number; perPart?: boolean },
+    ): void => {
+      if (!param.sysexAddress) return;
       const sysexSize = param.sysexSize ?? 1;
       const byteCount = sysexSize > 1 ? sysexSize * 2 : 1;
-
       type Candidate = { full: number[]; part: number | undefined };
       const candidates: Candidate[] = param.perPart
         ? SCENE_PART_OFFSETS.map((off, i) => ({
@@ -244,17 +277,27 @@ export function createJunoXCodec(): MidiCodec {
             part: i + 1,
           }))
         : [{ full: addAddresses(SCENE_BASE, param.sysexAddress), part: undefined }];
-
       for (const c of candidates) {
         const paramStart = addrAsNumber(c.full);
-        const paramEnd = paramStart + byteCount; // exclusive
-        // Param fits entirely within the request range.
+        const paramEnd = paramStart + byteCount;
         if (paramStart >= reqStart && paramEnd <= reqEnd) {
           const entry: ParamAtAddress = c.part !== undefined
             ? { name: key, part: c.part, byteOffset: paramStart - reqStart, byteCount }
             : { name: key, byteOffset: paramStart - reqStart, byteCount };
           results.push(entry);
         }
+      }
+    };
+
+    // Scene-global params.
+    for (const [key, param] of Object.entries(map.globalParams)) considerParam(key, param);
+    // Per-engine per-part params (skip duplicates already in globalParams).
+    for (const engine of Object.values(JunoXEngine)) {
+      const params = map.getParamsForEngine(engine as JunoXEngine);
+      for (const [key, param] of Object.entries(params)) {
+        if (map.globalParams[key]) continue;
+        if (!param.perPart) continue;
+        considerParam(key, param);
       }
     }
     return results;

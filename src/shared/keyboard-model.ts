@@ -183,6 +183,20 @@ export interface MockHandler {
    * CC sequences and finalizes via this method when the PC arrives.
    */
   load_program?(bank: number, slot: number): MockHandlerResult;
+  /**
+   * For models with per-part engines (JUNO-X has 4 engine types per part,
+   * Nord has organ/piano/sample-synth), return the currently-active
+   * engine on `part` (1-based). Models without engines return undefined
+   * or simply don't implement this. Used by the handler internally for
+   * routing CC inputs to the active engine's namespace.
+   */
+  get_active_engine?(part: number): string | undefined;
+  /**
+   * Switch the active engine on `part`. Inactive engines' state is
+   * preserved internally and recalled when re-selected. Returns the
+   * usual `MockHandlerResult` (state to broadcast + log line).
+   */
+  set_active_engine?(part: number, engine: string): MockHandlerResult;
   /* read_bytes removed in stage 5. The engine no longer needs a
    * bytes-level read on the handler — RQ1 fulfillment uses
    * codec.paramsAtAddress + handler.get_params + codec.encodeBytes,

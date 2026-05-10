@@ -72,10 +72,10 @@ describe("JUNO-X mock handler (stage 5 — pure param domain)", () => {
     });
 
     it("set_params writes a per-part CC param to the named part", () => {
-      handler.set_params!([{ name: "as_lfo_rate", value: 64, part: 1 }]);
-      handler.set_params!([{ name: "as_lfo_rate", value: 100, part: 3 }]);
-      assert.equal(handler.get_params!(["as_lfo_rate"], 1).as_lfo_rate, 64);
-      assert.equal(handler.get_params!(["as_lfo_rate"], 3).as_lfo_rate, 100);
+      handler.set_params!([{ name: "lfo_rate", value: 64, part: 1 }]);
+      handler.set_params!([{ name: "lfo_rate", value: 100, part: 3 }]);
+      assert.equal(handler.get_params!(["lfo_rate"], 1).lfo_rate, 64);
+      assert.equal(handler.get_params!(["lfo_rate"], 3).lfo_rate, 100);
     });
 
     it("set_params returns state for broadcast and a log line", () => {

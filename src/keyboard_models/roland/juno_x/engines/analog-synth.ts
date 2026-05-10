@@ -6,7 +6,7 @@ export const ANALOG_SYNTH_ENGINE = JunoXEngine.AnalogSynth;
 export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
   return {
     // ── LFO ─────────────────────────────────────────────────────────────────
-    as_lfo_waveform: {
+    lfo_waveform: {
       name: "LFO Waveform",
       section: "lfo",
       cc: 35,
@@ -19,7 +19,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_lfo_rate: {
+    lfo_rate: {
       name: "LFO Rate",
       displayName: "RATE",
       section: "lfo",
@@ -32,7 +32,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_lfo_delay_time: {
+    lfo_delay_time: {
       name: "LFO Delay Time",
       displayName: "DLY",
       section: "lfo",
@@ -45,7 +45,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_lfo_sync: {
+    lfo_sync: {
       name: "LFO Sync",
       displayName: "SYNC",
       section: "lfo",
@@ -61,7 +61,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
 
     // ── OSC ─────────────────────────────────────────────────────────────────
-    as_osc_pitch: {
+    osc_pitch: {
       name: "OSC Pitch",
       section: "osc",
       cc: 20,
@@ -73,7 +73,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_osc_detune: {
+    osc_detune: {
       name: "OSC Detune",
       section: "osc",
       cc: 21,
@@ -85,7 +85,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_pw_level: {
+    pw_level: {
       name: "PW Level / SSAW Level",
       section: "osc",
       cc: 16,
@@ -97,7 +97,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_saw_level: {
+    saw_level: {
       name: "SAW Level",
       section: "osc",
       cc: 17,
@@ -109,7 +109,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_sub_level: {
+    sub_level: {
       name: "SUB Level",
       section: "osc",
       cc: 18,
@@ -121,7 +121,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_noise_level: {
+    noise_level: {
       name: "Noise Level",
       section: "osc",
       cc: 19,
@@ -133,7 +133,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_super_saw: {
+    super_saw: {
       name: "Super SAW",
       section: "osc",
       cc: 46,
@@ -146,7 +146,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_osc_lfo_mod: {
+    osc_lfo_mod: {
       name: "OSC LFO Mod",
       section: "osc",
       cc: 26,
@@ -160,7 +160,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
 
     // ── HPF ─────────────────────────────────────────────────────────────────
-    as_hpf_step: {
+    hpf_step: {
       name: "HPF Step",
       section: "hpf",
       cc: 79,
@@ -175,7 +175,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
 
     // ── Filter ───────────────────────────────────────────────────────────────
-    as_vintage_flt_type: {
+    vintage_flt_type: {
       name: "Vintage Filter Type",
       section: "filter",
       cc: 108,
@@ -188,7 +188,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_cutoff: {
+    cutoff: {
       name: "Cutoff",
       displayName: "CUT",
       section: "filter",
@@ -201,7 +201,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_resonance: {
+    resonance: {
       name: "Resonance",
       displayName: "RES",
       section: "filter",
@@ -214,7 +214,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_flt_env_depth: {
+    flt_env_depth: {
       name: "Filter Env Depth",
       section: "filter",
       cc: 81,
@@ -226,7 +226,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_flt_key_follow: {
+    flt_key_follow: {
       name: "Filter Key Follow",
       section: "filter",
       cc: 122,
@@ -238,7 +238,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_flt_lfo_mod: {
+    flt_lfo_mod: {
       name: "Filter LFO Mod",
       section: "filter",
       cc: 28,
@@ -250,7 +250,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_flt_vsens: {
+    flt_vsens: {
       name: "Filter Velocity Sens",
       section: "filter",
       cc: 53,
@@ -264,7 +264,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
 
     // ── AMP ──────────────────────────────────────────────────────────────────
-    as_amp_level: {
+    amp_level: {
       name: "AMP Level",
       section: "amp",
       cc: 110,
@@ -276,7 +276,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_amp_lfo_mod: {
+    amp_lfo_mod: {
       name: "AMP LFO Mod",
       section: "amp",
       cc: 30,
@@ -288,7 +288,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_amp_vsens: {
+    amp_vsens: {
       name: "AMP Velocity Sens",
       section: "amp",
       cc: 54,
@@ -302,7 +302,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
 
     // ── ENV ──────────────────────────────────────────────────────────────────
-    as_env_attack: {
+    env_attack: {
       name: "ENV Attack",
       section: "env",
       cc: 89,
@@ -314,7 +314,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_env_decay: {
+    env_decay: {
       name: "ENV Decay",
       section: "env",
       cc: 90,
@@ -326,7 +326,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_env_sustain: {
+    env_sustain: {
       name: "ENV Sustain",
       section: "env",
       cc: 102,
@@ -338,7 +338,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_env_release: {
+    env_release: {
       name: "ENV Release",
       section: "env",
       cc: 103,
@@ -350,7 +350,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_penv_attack: {
+    penv_attack: {
       name: "Pitch Env Attack",
       section: "env",
       cc: 83,
@@ -362,7 +362,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_penv_decay: {
+    penv_decay: {
       name: "Pitch Env Decay",
       section: "env",
       cc: 80,
@@ -374,7 +374,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_penv_sustain: {
+    penv_sustain: {
       name: "Pitch Env Sustain",
       section: "env",
       cc: 85,
@@ -386,7 +386,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_penv_release: {
+    penv_release: {
       name: "Pitch Env Release",
       section: "env",
       cc: 86,
@@ -400,7 +400,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
     },
 
     // ── Performance ──────────────────────────────────────────────────────────
-    as_bend_pitch: {
+    bend_pitch: {
       name: "Bend Pitch",
       section: "performance",
       cc: 41,
@@ -412,7 +412,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_bend_filter: {
+    bend_filter: {
       name: "Bend Filter",
       section: "performance",
       cc: 14,
@@ -424,7 +424,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_porta_mode: {
+    porta_mode: {
       name: "Portamento Mode",
       section: "performance",
       cc: 118,
@@ -437,7 +437,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_porta_time: {
+    porta_time: {
       name: "Portamento Time",
       section: "performance",
       cc: 5,
@@ -449,7 +449,7 @@ export function createAnalogSynthParams(): Record<string, KeyboardParameter> {
       encoding: { kind: "raw" },
       perPart: true,
     },
-    as_key_mode: {
+    key_mode: {
       name: "Key Mode",
       section: "performance",
       cc: 119,
