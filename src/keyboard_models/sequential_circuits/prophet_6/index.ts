@@ -9,6 +9,7 @@ import type { KeyboardModel } from "../../../shared/keyboard-model.js";
 import { createParameterMap } from "./midi-map.js";
 import { Prophet6Device } from "./device.js";
 import { createProphet6MockHandler } from "./mock-handler.js";
+import { createProphet6Codec } from "./midi-codec.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const parameterMap = createParameterMap();
@@ -114,6 +115,10 @@ NOTES:
 
   createMockHandler() {
     return createProphet6MockHandler();
+  },
+
+  createCodec() {
+    return createProphet6Codec();
   },
 };
 
