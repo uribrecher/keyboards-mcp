@@ -16,6 +16,7 @@ import type { KeyboardParameter } from "./types.js";
 import type { MidiConnection } from "./midi-connection.js";
 import type { ToolResult } from "./tool-result.js";
 import { textResult } from "./tool-result.js";
+import type { MidiCodec } from "./midi-codec.js";
 
 export interface BaseDeviceDeps {
   parameterMap: ParameterMap;
@@ -34,6 +35,8 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
   protected programLoader?: ProgramLoaderCapability;
   protected songLoader?: SongLoaderCapability;
   protected systemPromptTemplate?: string;
+  /** Per-model codec (param ↔ MIDI). Lazily realized on first access. */
+  private _codec: MidiCodec | null | undefined = undefined;
 
   constructor(model: KeyboardModel, deps: BaseDeviceDeps) {
     this.model = model;
@@ -41,6 +44,14 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
     this.programLoader = deps.programLoader;
     this.songLoader = deps.songLoader;
     this.systemPromptTemplate = deps.systemPromptTemplate;
+  }
+
+  /** The model's codec, or null if it doesn't expose one. */
+  protected get codec(): MidiCodec | null {
+    if (this._codec === undefined) {
+      this._codec = this.model.createCodec ? this.model.createCodec() : null;
+    }
+    return this._codec;
   }
 
   // ── Connection lifecycle ──
@@ -126,16 +137,10 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
   ): ToolResult {
     this.requireConnection();
 
+    const codec = this.codec;
     const results: string[] = [];
     const errors: string[] = [];
-    type ApplyEntry = {
-      found: { key: string; param: KeyboardParameter };
-      midiValue: number;
-    };
-    const applyQueue: ApplyEntry[] = [];
 
-    // Resolve parameters without applying. Resolution failures go straight
-    // to errors.
     for (const { name, value } of params) {
       const found = this.parameterMap.findParam(name);
       if (!found) {
@@ -144,22 +149,24 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
       }
 
       try {
-        const midiValue = this.parameterMap.resolveValue(found.param, value);
-        applyQueue.push({ found, midiValue });
+        if (codec) {
+          // Codec path: encode → send. Display formatted via codec helper.
+          const [msg] = codec.encodeParams([{ name: found.key, value }]);
+          this.sendEncodedMessage(msg);
+          results.push(`  ${found.param.name}: ${codec.formatValue(found.key, value)}`);
+        } else {
+          // Legacy path (no codec yet): CC-only inline encoding.
+          const midiValue = this.parameterMap.resolveValue(found.param, value);
+          if (found.param.cc !== undefined) {
+            this.connection!.sendCC(found.param.cc, midiValue);
+          }
+          results.push(`  ${found.param.name}: ${this.parameterMap.formatValue(found.param, midiValue)}`);
+        }
       } catch (err) {
         errors.push(
           `${found.param.name}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-    }
-
-    // Apply.
-    for (const entry of applyQueue) {
-      if (entry.found.param.cc !== undefined) {
-        this.connection!.sendCC(entry.found.param.cc, entry.midiValue);
-      }
-      const displayValue = this.parameterMap.formatValue(entry.found.param, entry.midiValue);
-      results.push(`  ${entry.found.param.name}: ${displayValue}`);
     }
 
     let text = "";
@@ -171,6 +178,17 @@ export abstract class BaseKeyboardDevice implements KeyboardDevice {
     }
 
     return { content: [{ type: "text", text }] };
+  }
+
+  /** Dispatch a codec-produced `EncodedMessage` over the live connection. */
+  protected sendEncodedMessage(msg: import("./midi-codec.js").EncodedMessage): void {
+    if (msg.type === "cc") {
+      this.connection!.sendCC(msg.controller, msg.value, msg.channel);
+    } else if (msg.type === "sysex") {
+      this.connection!.sendSysEx(msg.bytes);
+    } else if (msg.type === "program") {
+      this.connection!.sendProgramChange(msg.number, msg.channel);
+    }
   }
 
   getState(_section?: string): ToolResult | Promise<ToolResult> {

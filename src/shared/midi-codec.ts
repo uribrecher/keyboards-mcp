@@ -8,7 +8,7 @@
  * Plan: docs/plans/pending/30-midi-codec-architecture.md (stage 1).
  */
 
-import type { KeyboardParameter } from "./types.js";
+import type { ParameterMap } from "./keyboard-model.js";
 
 /** A param to encode, optionally targeted to a specific part (1-based). */
 export interface ParamRef {
@@ -50,8 +50,27 @@ export type EncodedMessage =
  * neither speaks raw MIDI bytes for model-specific values directly.
  */
 export interface MidiCodec {
-  /** Parameter map this codec is bound to (name → KeyboardParameter). */
-  readonly params: Readonly<Record<string, KeyboardParameter>>;
+  /**
+   * The full parameter map this codec is bound to. Includes `findParam`,
+   * `formatValue`, `getSections`, etc. — the codec subsumes the parameter
+   * map for callers that already have the codec.
+   */
+  readonly map: ParameterMap;
+
+  /**
+   * Format a user-domain value as a display string by way of the wire
+   * encoding (i.e. label lookup happens after `resolveValue`). Use this
+   * when you want to show what `encodeParams` would put on the wire.
+   * Returns `String(userValue)` if the param name is unknown.
+   */
+  formatValue(name: string, userValue: number | string): string;
+
+  /**
+   * Format a wire byte (or already-resolved value) as a display string,
+   * without resolving from the user domain. Use this on decode results,
+   * where you already have the wire-encoded value.
+   */
+  formatWireValue(name: string, wireValue: number): string;
 
   /** Encode one or more param writes as the MIDI messages to send. */
   encodeParams(refs: ParamRef[]): EncodedMessage[];
@@ -80,3 +99,78 @@ export interface MidiCodec {
    */
   buildResponse(req: RequestDescriptor, paramValues: number[]): EncodedMessage;
 }
+
+// ─── Generic CC-only codec helper ───────────────────────────────────────────
+//
+// Most non-Roland models use only CC for parameter access (Nord, Prophet-6).
+// They share an identical encode / decode shape, so this helper saves each
+// model from copying the same dozen lines.
+
+/** Construct a CC-only codec from any `ParameterMap`. */
+export function createCcCodec(map: ParameterMap): MidiCodec {
+  function formatValue(name: string, userValue: number | string): string {
+    const param = map.params[name];
+    if (!param) return String(userValue);
+    return map.formatValue(param, map.resolveValue(param, userValue));
+  }
+
+  function formatWireValue(name: string, wireValue: number): string {
+    const param = map.params[name];
+    if (!param) return String(wireValue);
+    return map.formatValue(param, wireValue);
+  }
+
+  function encodeParams(refs: ParamRef[]): EncodedMessage[] {
+    return refs.map((ref) => {
+      const found = map.findParam(ref.name);
+      if (!found) throw new Error(`Unknown parameter: "${ref.name}"`);
+      if (found.param.cc === undefined) {
+        throw new Error(`${found.param.name}: no CC mapping (CC-only codec)`);
+      }
+      const wireValue = map.resolveValue(found.param, ref.value);
+      const channel = (ref.part ?? 1) - 1;
+      return { type: "cc", controller: found.param.cc, value: wireValue, channel };
+    });
+  }
+
+  function encodeAction(action: Action): EncodedMessage[] {
+    if (action.kind === "loadProgram" || action.kind === "loadSong") {
+      const channel = action.kind === "loadSong" && action.part
+        ? parseInt(action.part, 10) - 1
+        : (action.kind === "loadProgram" ? action.channel ?? 0 : 0);
+      return [
+        { type: "cc",      controller: 0,  value: (action.bank >> 7) & 0x7F, channel },
+        { type: "cc",      controller: 32, value: action.bank & 0x7F,         channel },
+        { type: "program", number: action.slot, channel },
+      ];
+    }
+    return [];
+  }
+
+  function decode(message: EncodedMessage): DecodedEvent[] {
+    if (message.type === "cc") {
+      const found = map.getParamByCC(message.controller);
+      if (!found) return [];
+      const part = found.param.perPart ? message.channel + 1 : undefined;
+      const event: DecodedEvent = part !== undefined
+        ? { kind: "param", name: found.key, value: message.value, part }
+        : { kind: "param", name: found.key, value: message.value };
+      return [event];
+    }
+    if (message.type === "program") {
+      return [{ kind: "loadProgram", bank: 0, slot: message.number, channel: message.channel }];
+    }
+    return [];
+  }
+
+  function parseRequest(): RequestDescriptor | undefined {
+    return undefined;
+  }
+
+  function buildResponse(): EncodedMessage {
+    throw new Error("buildResponse not supported on CC-only codec");
+  }
+
+  return { map, formatValue, formatWireValue, encodeParams, encodeAction, decode, parseRequest, buildResponse };
+}
+

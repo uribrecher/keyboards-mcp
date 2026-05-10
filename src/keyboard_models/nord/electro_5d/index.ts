@@ -18,6 +18,7 @@ import {
   type BackupMetadata,
 } from "./backup-parser.js";
 import { createNordElectro5DMockHandler } from "./mock-handler.js";
+import { createNordElectro5DCodec } from "./midi-codec.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const parameterMap = createParameterMap();
@@ -176,6 +177,10 @@ SOUND DESIGN TIPS:
       songLoader: model.songLoader!,
       systemPromptTemplate: model.agentSystemPrompt!,
     });
+  },
+
+  createCodec() {
+    return createNordElectro5DCodec();
   },
 };
 

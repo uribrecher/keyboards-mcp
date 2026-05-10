@@ -22,12 +22,12 @@ import { createJunoXCodec } from "./midi-codec.js";
 
 export class JunoXDevice extends BaseKeyboardDevice {
   private junoMap: JunoXParameterMap;
-  private codec: MidiCodec;
+  private junoCodec: MidiCodec;
 
   constructor(model: KeyboardModel, deps: BaseDeviceDeps) {
     super(model, deps);
     this.junoMap = deps.parameterMap as JunoXParameterMap;
-    this.codec = createJunoXCodec();
+    this.junoCodec = createJunoXCodec();
   }
 
   /** Parts 1-5 are per-part; all others are global. Default to part "1". */
@@ -56,21 +56,9 @@ export class JunoXDevice extends BaseKeyboardDevice {
         const statePart = this.resolvePartForParam(found.key, part);
         const partNum = statePart !== undefined ? parseInt(statePart, 10) : 1;
         const ref: ParamRef = { name: found.key, value, part: partNum };
-        const [msg] = this.codec.encodeParams([ref]);
-
-        if (msg.type === "sysex") {
-          this.connection!.sendSysEx(msg.bytes);
-        } else if (msg.type === "cc") {
-          this.connection!.sendCC(msg.controller, msg.value, msg.channel);
-        } else if (msg.type === "program") {
-          this.connection!.sendProgramChange(msg.number, msg.channel);
-        }
-
-        // Display: resolve once for formatting (codec produces wire bytes;
-        // formatValue maps wire byte → human-readable label).
-        const midiValue = this.junoMap.resolveValue(found.param, value);
-        const displayValue = this.junoMap.formatValue(found.param, midiValue);
-        results.push(`  ${found.param.name}: ${displayValue}`);
+        const [msg] = this.junoCodec.encodeParams([ref]);
+        this.sendEncodedMessage(msg);
+        results.push(`  ${found.param.name}: ${this.junoCodec.formatValue(found.key, value)}`);
       } catch (err) {
         errors.push(
           `${found.param.name}: ${err instanceof Error ? err.message : String(err)}`,
@@ -138,14 +126,14 @@ export class JunoXDevice extends BaseKeyboardDevice {
           conn, JUNO_X_MODEL_ID, JUNO_X_DEVICE_ID, fullAddr,
           sysexSize, PER_PARAM_TIMEOUT_MS,
         );
-        const replyMsg = this.codec.buildResponse(
+        const replyMsg = this.junoCodec.buildResponse(
           { protocol: "roland-rq1", address: fullAddr, size: sysexSize, deviceId: JUNO_X_DEVICE_ID },
           data,
         );
-        const events = this.codec.decode(replyMsg);
+        const events = this.junoCodec.decode(replyMsg);
         const paramEvent = events.find(e => e.kind === "param" && e.name === key);
         const value = paramEvent && paramEvent.kind === "param" ? paramEvent.value : (data[0] ?? 0);
-        const display = this.parameterMap.formatValue(param, value);
+        const display = this.junoCodec.formatWireValue(key, value);
         return { key, line: `  ${param.name}: ${display}` };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

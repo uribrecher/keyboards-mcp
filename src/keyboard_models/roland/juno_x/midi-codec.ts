@@ -174,8 +174,22 @@ export function createJunoXCodec(): MidiCodec {
     };
   }
 
+  function formatValue(name: string, userValue: number | string): string {
+    const param = map.params[name];
+    if (!param) return String(userValue);
+    return map.formatValue(param, map.resolveValue(param, userValue));
+  }
+
+  function formatWireValue(name: string, wireValue: number): string {
+    const param = map.params[name];
+    if (!param) return String(wireValue);
+    return map.formatValue(param, wireValue);
+  }
+
   return {
-    params: map.params,
+    map,
+    formatValue,
+    formatWireValue,
     encodeParams,
     encodeAction,
     decode,
