@@ -41,6 +41,18 @@
         <div class="slot__empty-msg">— EMPTY RACK SLOT —</div>
         <div class="slot__empty-rail"></div>
       </div>
+      <!--
+        Per-tab MIDI traffic monitor. Pinned to the bottom of the slot;
+        renders the most-recent MIDI event from the active tab's MockEngine.
+        Generic format only — no model-specific interpretation here.
+        See todo #5 (docs/plans/pending/todo-list.md).
+      -->
+      <div class="slot__midi" id="slot-midi" aria-live="polite" data-state="idle">
+        <span class="slot__midi-glyph" id="slot-midi-glyph" aria-hidden="true">·</span>
+        <span class="slot__midi-dir" id="slot-midi-dir"></span>
+        <span class="slot__midi-time" id="slot-midi-time"></span>
+        <span class="slot__midi-body" id="slot-midi-body">— no MIDI yet —</span>
+      </div>
     </section>
 
     <div class="bay__splitter" id="bay-splitter" aria-hidden="true"

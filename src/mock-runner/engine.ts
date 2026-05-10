@@ -14,6 +14,18 @@ import * as registry from "../shared/mock-registry.js";
 
 const HEARTBEAT_MS = 30_000;
 
+/**
+ * Structured MIDI traffic notification, emitted as `midi-event` on the
+ * engine's EventEmitter alongside the existing `MIDI-IN` / `MIDI-OUT`
+ * console logs. Consumed by the mock-runner shell to render the per-tab
+ * status strip (todo #5). No model-specific interpretation — raw bytes
+ * only; sysex is summarized at the source so the IPC payload stays tiny.
+ */
+export type MidiEventPayload =
+  | { direction: "in" | "out"; kind: "cc"; controller: number; value: number; channel: number }
+  | { direction: "in" | "out"; kind: "program"; number: number; channel: number }
+  | { direction: "in" | "out"; kind: "sysex"; byteCount: number; head: number[]; tailByte?: number };
+
 export interface EngineOptions {
   lowerChannel: number;
   upperChannel: number;
@@ -73,6 +85,15 @@ export class MockEngine extends EventEmitter {
     const head = bytes.slice(0, 4).map(b => b.toString(16).padStart(2, "0")).join(" ");
     const tail = bytes.length > 5 ? ` .. ${bytes[bytes.length - 1].toString(16).padStart(2, "0")}` : "";
     return `sysex ${bytes.length} bytes [${head}${tail}]`;
+  }
+
+  /** Structured sysex summary for the `midi-event` payload. */
+  private static structuredSysex(bytes: number[]): { byteCount: number; head: number[]; tailByte?: number } {
+    return {
+      byteCount: bytes.length,
+      head: bytes.slice(0, 4),
+      ...(bytes.length > 5 ? { tailByte: bytes[bytes.length - 1] } : {}),
+    };
   }
 
   async start(): Promise<void> {
@@ -174,17 +195,21 @@ export class MockEngine extends EventEmitter {
     if (this.midiInput) {
       this.midiInput.on("cc", (msg: { controller: number; value: number; channel: number }) => {
         console.log(`${this.tag()} MIDI-IN cc CC=${msg.controller} val=${msg.value} ch=${msg.channel}`);
+        this.emit("midi-event", { direction: "in", kind: "cc", controller: msg.controller, value: msg.value, channel: msg.channel } satisfies MidiEventPayload);
         this.dispatch({ type: "cc", controller: msg.controller, value: msg.value, channel: msg.channel });
       });
 
       this.midiInput.on("program", (msg: { number: number; channel: number }) => {
         console.log(`${this.tag()} MIDI-IN program n=${msg.number} ch=${msg.channel}`);
+        this.emit("midi-event", { direction: "in", kind: "program", number: msg.number, channel: msg.channel } satisfies MidiEventPayload);
         this.dispatch({ type: "program", number: msg.number, channel: msg.channel });
       });
 
       this.midiInput.on("sysex" as any, (msg: { bytes: number[] }) => {
-        console.log(`${this.tag()} MIDI-IN ${MockEngine.summarizeSysex([...msg.bytes])}`);
-        this.dispatch({ type: "sysex", bytes: [...msg.bytes] });
+        const bytes = [...msg.bytes];
+        console.log(`${this.tag()} MIDI-IN ${MockEngine.summarizeSysex(bytes)}`);
+        this.emit("midi-event", { direction: "in", kind: "sysex", ...MockEngine.structuredSysex(bytes) } satisfies MidiEventPayload);
+        this.dispatch({ type: "sysex", bytes });
       });
     }
 
@@ -445,13 +470,16 @@ export class MockEngine extends EventEmitter {
       if (msg.type === "cc") {
         const channel = msg.channel ?? defaultChannel;
         console.log(`${this.tag()} MIDI-OUT cc CC=${msg.controller} val=${msg.value} ch=${channel}`);
+        this.emit("midi-event", { direction: "out", kind: "cc", controller: msg.controller, value: msg.value, channel } satisfies MidiEventPayload);
         this.midiOutput.send("cc", { controller: msg.controller, value: msg.value, channel });
       } else if (msg.type === "program") {
         const channel = msg.channel ?? defaultChannel;
         console.log(`${this.tag()} MIDI-OUT program n=${msg.number} ch=${channel}`);
+        this.emit("midi-event", { direction: "out", kind: "program", number: msg.number, channel } satisfies MidiEventPayload);
         this.midiOutput.send("program", { number: msg.number, channel });
       } else if (msg.type === "sysex") {
         console.log(`${this.tag()} MIDI-OUT ${MockEngine.summarizeSysex(msg.bytes)}`);
+        this.emit("midi-event", { direction: "out", kind: "sysex", ...MockEngine.structuredSysex(msg.bytes) } satisfies MidiEventPayload);
         this.midiOutput.send("sysex", msg.bytes);
       }
     } catch (err) { console.error(`${this.tag()} MIDI-OUT send failed:`, err); }

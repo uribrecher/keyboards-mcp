@@ -234,22 +234,10 @@ function updateUI(data) {
     indicator.className = baseClass + " " + (partClassMap[idx] || "both");
   }
 
-  // Last change
+  // Last change flash on the param row — the textual readout moved to
+  // the mock-runner shell (todo #5).
   if (data.lastChange) {
-    const lc = data.lastChange;
-    const partLabel = lc.part && lc.part !== "global" ? ` [${lc.part}]` : "";
-    document.getElementById("last-change").textContent =
-      `${lc.name} = ${lc.label}${partLabel}`;
-
-    flashParam(lc.key, lc.part);
-  }
-
-  // Program change
-  if (data.lastProgramChange) {
-    const pc = data.lastProgramChange;
-    const name = pc.name ? ` — ${pc.name}` : "";
-    document.getElementById("last-change").textContent =
-      `Program Change: ${pc.bank}:${pc.slot}${name}`;
+    flashParam(data.lastChange.key, data.lastChange.part);
   }
 }
 

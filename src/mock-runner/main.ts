@@ -13,7 +13,7 @@ import { statSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "no
 import { fileURLToPath } from "node:url";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
-import { MockEngine } from "./engine.js";
+import { MockEngine, type MidiEventPayload } from "./engine.js";
 import * as mockRegistry from "../shared/mock-registry.js";
 import { listAllDevices, setOnBrokerLivenessChange, getBrokerLiveness } from "../shared/mcb-client.js";
 import {
@@ -83,6 +83,18 @@ function pushDirtyChanged(): void {
   const currentFileName = currentFilePath ? basename(currentFilePath) : null;
   mainWindow?.webContents.send("file:dirty-changed", {
     isDirty, currentFilePath, currentFileName,
+  });
+}
+
+/**
+ * Wire both engine listeners for a tab: dirty-debounce on state-changed,
+ * IPC forward on midi-event. Centralizes the pair so the two engine-on
+ * sites (initial selectModelForTab + restore-snapshot) stay in sync.
+ */
+function attachEngineListeners(tabId: string, engine: MockEngine): void {
+  engine.on("state-changed", onEngineStateChanged);
+  engine.on("midi-event", (payload: MidiEventPayload) => {
+    mainWindow?.webContents.send("midi:event", { tabId, ts: Date.now(), ...payload });
   });
 }
 
@@ -291,9 +303,8 @@ async function loadSetupFromPath(path: string): Promise<void> {
         });
         continue;
       }
-      engine.on("state-changed", onEngineStateChanged);
-
       const tabId = nextTabId();
+      attachEngineListeners(tabId, engine);
       tabs.set(tabId, { tabId, model, engine, wsPort, label: t.label });
 
       const restored = engine.restoreSnapshot(t.state);
@@ -626,7 +637,7 @@ ipcMain.handle(
       displayName: model.info.displayName,
     });
     await engine.start();
-    engine.on("state-changed", onEngineStateChanged);
+    attachEngineListeners(entry.tabId, engine);
 
     entry.model = model;
     entry.engine = engine;
