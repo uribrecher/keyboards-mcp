@@ -190,6 +190,15 @@ export class MockEngine extends EventEmitter {
                   console.error(`${this.tag()} setParam emit failed:`, err);
                 }
               }
+            } else if (msg.type === "setActiveEngine") {
+              const part = msg.part ?? 1;
+              console.log(`${this.tag()} WS-IN setActiveEngine engine=${msg.engine} part=${part}`);
+              if (this.handler.set_active_engine) {
+                const result = this.handler.set_active_engine(part, msg.engine);
+                this.applyHandlerResult(result);
+              } else {
+                console.log(`${this.tag()} setActiveEngine ignored — handler has no set_active_engine`);
+              }
             }
           } catch { /* ignore */ }
         });
