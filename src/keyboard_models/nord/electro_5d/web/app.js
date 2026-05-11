@@ -79,7 +79,7 @@ let reconnectTimer = null;
 function connect() {
   // Per-tab WS port: the shell embeds the model UI as
   //   <iframe src="…/web/index.html?wsPort=<port>"> so each mock has
-  // its own MockEngine on a distinct port.
+  // its own MockTransport on a distinct port.
   const wsPort = new URLSearchParams(location.search).get("wsPort") || "3000";
   const wsUrl = location.protocol === "file:"
     ? `ws://localhost:${wsPort}`

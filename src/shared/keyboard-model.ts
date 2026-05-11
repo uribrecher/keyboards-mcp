@@ -125,47 +125,47 @@ export interface MockHandlerResult {
 /* Stage 5 (#30) note:
  *
  * The handler is pure param-domain. It speaks only `set_params` /
- * `get_params` / `load_program` / engine getters. The engine owns all
+ * `get_params` / `load_program` / engine getters. The transport owns all
  * MIDI I/O:
- *   - UI setParam: engine calls handler.set_params for state, then asks
+ *   - UI setParam: transport calls handler.set_params for state, then asks
  *     codec.encodeParams to produce the wire bytes and emits.
- *   - RQ1: engine sees the request directly (codec.parseRequest), reads
+ *   - RQ1: transport sees the request directly (codec.parseRequest), reads
  *     state via codec.paramsAtAddress + handler.get_params, builds the
  *     reply via codec, emits.
- *   - External CC: engine routes through codec.decode → handler.set_params.
- *   - External Program Change: engine accumulates bank-select MSB/LSB
+ *   - External CC: transport routes through codec.decode → handler.set_params.
+ *   - External Program Change: transport accumulates bank-select MSB/LSB
  *     and finalizes via handler.load_program.
  *
  * MockHandlerResult.sysexOut / ccOut / programOut are gone. So is
- * handler.onMIDI — the engine never feeds raw MIDI to the handler.
+ * handler.onMIDI — the transport never feeds raw MIDI to the handler.
  */
 
 /**
- * Mock handler interface for the thin engine architecture.
- * The handler owns ALL state and logic — the engine is just MIDI I/O + WebSocket.
+ * Mock handler interface for the thin transport architecture.
+ * The handler owns ALL state and logic — the transport is just MIDI I/O + WebSocket.
  */
 export interface MockHandler {
   /**
-   * The codec the handler uses for param ↔ MIDI translation. Stage-4
-   * engines read this to handle RQ1 directly and to encode UI setParam
+   * The codec the handler uses for param ↔ MIDI translation. The
+   * transport reads this to handle RQ1 directly and to encode UI setParam
    * writes for outbound emission. Optional for backward compat with
    * handlers that don't have a codec.
    */
   readonly codec?: MidiCodec;
   /**
-   * Called once when the mock engine starts.
+   * Called once when the mock transport starts.
    * `label` (optional) selects which per-instance backup cache to load —
    * see `BackupCacheCapability`. Defaults to `"_default"`.
    */
   init(lowerChannel: number, upperChannel: number, label?: string): void;
   /**
-   * Param-domain write (#30 stages 3–4). The canonical way for the engine
+   * Param-domain write (#30 stages 3–4). The canonical way for the transport
    * (and UI WS messages of shape `{type:"setParam", name, value, part?}`)
    * to update a parameter on the mock. The handler updates internal state
    * and returns a `MockHandlerResult` with `state` and `log` only.
    *
-   * Outbound MIDI emission is the engine's responsibility (stage 4).
-   * For UI-source writes the engine asks the codec to encode the same
+   * Outbound MIDI emission is the transport's responsibility (stage 4).
+   * For UI-source writes the transport asks the codec to encode the same
    * write and writes the bytes to the device's MIDI Out (panel-knob
    * analogue). The handler MUST NOT carry MIDI bytes in the result —
    * those channels are gone.
@@ -176,13 +176,13 @@ export interface MockHandler {
    * canonical parameter name. Pass `part` for per-part params.
    *
    * Stage 5: values are user-domain (the same numbers `set_params`
-   * accepts). The codec handles wire-byte translation when the engine
+   * accepts). The codec handles wire-byte translation when the transport
    * needs raw bytes for protocol-level requests like RQ1.
    */
   get_params?(names: string[], part?: number): Record<string, number>;
   /**
    * Apply a Program Change with the given (already-resolved) bank and
-   * slot. Stage 5: the engine accumulates bank-select MSB/LSB across
+   * slot. Stage 5: the transport accumulates bank-select MSB/LSB across
    * CC sequences and finalizes via this method when the PC arrives.
    */
   load_program?(bank: number, slot: number): MockHandlerResult;
@@ -200,15 +200,6 @@ export interface MockHandler {
    * usual `MockHandlerResult` (state to broadcast + log line).
    */
   set_active_engine?(part: number, engine: string): MockHandlerResult;
-  /* read_bytes removed in stage 5. The engine no longer needs a
-   * bytes-level read on the handler — RQ1 fulfillment uses
-   * codec.paramsAtAddress + handler.get_params + codec.encodeBytes,
-   * keeping the handler purely in the param domain. */
-  /**
-   * @deprecated Use `set_params` instead. Kept for backward compatibility
-   * with engine WS handlers that still emit `{type:"param"}`.
-   */
-  onUIParam?(name: string, value: number | string, channel?: number): MockHandlerResult;
   /** Return the complete current state (for new WebSocket clients) */
   getFullState(includeInventory: boolean): Record<string, any>;
   /** Reload cached data (e.g., backup cache) */
