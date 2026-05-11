@@ -1,6 +1,6 @@
 # `transport.ts` — `MockTransport`
 
-> **About the name.** Previously called `MockTransport`. Renamed because this file owns no model logic — it's mostly a router with a small amount of protocol state. All model semantics live in the per-model `MockHandler` and `MidiCodec`.
+> **About the name.** Previously called `MockEngine`. Renamed because this file owns no model logic — it's mostly a router with a small amount of protocol state. All model semantics live in the per-model `MockHandler` and `MidiCodec`.
 
 ## Responsibilities
 
@@ -26,8 +26,8 @@ What it does **not** own: parameter values, MIDI map, engine selection, backup d
             UI panels           │  │  - this.clients   (UI)      ││
   ────────► setParam ─────────► │  │  - this.mcpClients (MCP)    ││
             setActiveEngine     │  └─────────────────────────────┘│
-            param (legacy)      │            │           ▲        │
-            reload-cache        │            ▼           │        │
+            reload-cache        │            │           ▲        │
+                                │            ▼           │        │
                                 │  ┌─────────────────────┴───────┐│
               MIDI (cc/pc/sx)   │  │ routing + protocol glue     ││
   ────────►  inbound  ────────► │  │  - bank-select accumulator  ││
@@ -51,7 +51,7 @@ The transport accepts two kinds of WebSocket clients, distinguished by `?client=
 
 | Client | Set | Receives | Sends |
 |---|---|---|---|
-| UI (default) | `this.clients` | Full state snapshots (+ `mcpConnected`, `label`) | `setParam`, `setActiveEngine`, `param`, `reload-cache` |
+| UI (default) | `this.clients` | Full state snapshots (+ `mcpConnected`, `label`) | `setParam`, `setActiveEngine`, `reload-cache` |
 | MCP server | `this.mcpClients` | `{mcpConnected, label}` only — for label discovery and live status | nothing |
 
 `broadcast()` fans out to both sets but sends different payloads. `broadcastMcpStatus()` sends the label-only payload to both sets on MCP connect/disconnect (so UIs can flip their "MCP connected" indicator).

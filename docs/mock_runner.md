@@ -152,7 +152,7 @@ Tests use this via `tests/helpers/mock-process.ts` (headless spawn + WebSocket a
 
 | Path | Role |
 |---|---|
-| `src/mock-runner/main.ts` | Electron main — owns tabs, engines, file menu, IPC |
+| `src/mock-runner/main.ts` | Electron main — owns tabs, transports, file menu, IPC |
 | `src/mock-runner/cli.ts` | Headless entry point |
 | `src/mock-runner/transport.ts` | `MockTransport` — MIDI virtual ports + WebSocket server + broadcast + source-aware routing |
 | `src/mock-runner/preload.cjs` | Exposes `mockRunnerAPI` to the shell |
