@@ -1,8 +1,13 @@
 /**
- * Thin mock device engine.
+ * Thin mock device transport.
  *
- * Owns only: MIDI virtual port, WebSocket server, broadcasting.
- * All state and logic lives in the MockHandler provided by the model.
+ * Owns the virtual MIDI port, the WebSocket server, broadcasting, and a
+ * small amount of protocol-level state that neither the codec (stateless)
+ * nor the handler (model-aware) can own: bank-select accumulator, RQ1→DT1
+ * fulfillment, default-channel resolution, MCP-connection bookkeeping.
+ * All model semantics live in the MockHandler provided by the model.
+ *
+ * See transport.md for the full picture.
  */
 
 import { createServer, type Server } from "node:http";
@@ -48,7 +53,7 @@ export interface EngineOptions {
   noRegistry?: boolean;
 }
 
-export class MockEngine extends EventEmitter {
+export class MockTransport extends EventEmitter {
   private handler: MockHandler;
   private opts: EngineOptions;
 
@@ -157,28 +162,16 @@ export class MockEngine extends EventEmitter {
               console.log(`${this.tag()} WS-IN reload-cache`);
               this.handler.onCacheReload?.();
               this.broadcast(this.handler.getFullState(true));
-            } else if (msg.type === "param") {
-              console.log(`${this.tag()} WS-IN param ${msg.name}=${msg.value} ch=${msg.channel ?? 0}`);
-              // Legacy alias for setParam — kept for backward compat with UIs
-              // that haven't migrated. New code should send {type:"setParam"}.
-              const result = this.handler.onUIParam
-                ? this.handler.onUIParam(msg.name, msg.value, msg.channel ?? 0)
-                : { log: `UI: ${msg.name} = ${msg.value} (handler has no onUIParam)` };
-              this.applyHandlerResult(result);
             } else if (msg.type === "setParam") {
               // Default `part` to 1 once at the boundary so set_params,
               // codec.encodeParams, and the log line all see the same value.
               const part = msg.part ?? 1;
               console.log(`${this.tag()} WS-IN setParam ${msg.name}=${msg.value} part=${part}`);
-              // Stage 4: engine handles emission via codec, not the handler.
+              // Stage 4: transport handles emission via codec, not the handler.
               // 1. handler.set_params updates state (no emission channel).
-              // 2. engine asks codec to encode and writes to MIDI Out
+              // 2. transport asks codec to encode and writes to MIDI Out
               //    (panel-knob analogue — UI is a closed-loop source).
-              const result = this.handler.set_params
-                ? this.handler.set_params([{ name: msg.name, value: msg.value, part }])
-                : (this.handler.onUIParam
-                    ? this.handler.onUIParam(msg.name, msg.value, part - 1)
-                    : { log: `UI: ${msg.name} = ${msg.value} (handler has no set_params or onUIParam)` });
+              const result = this.handler.set_params!([{ name: msg.name, value: msg.value, part }]);
               if (result.state) this.broadcast(result.state);
               if (result.log) console.log(`${this.tag()} ${result.log}`);
               const codec = this.handler.codec;
@@ -224,7 +217,7 @@ export class MockEngine extends EventEmitter {
 
       this.midiInput.on("sysex" as any, (msg: { bytes: number[] }) => {
         const bytes = [...msg.bytes];
-        console.log(`${this.tag()} MIDI-IN ${MockEngine.summarizeSysex(bytes)}`);
+        console.log(`${this.tag()} MIDI-IN ${MockTransport.summarizeSysex(bytes)}`);
         this.emit("midi-event", { direction: "in", kind: "sysex", bytes: bytes.slice() } satisfies MidiEventPayload);
         this.dispatch({ type: "sysex", bytes });
       });
@@ -460,7 +453,7 @@ export class MockEngine extends EventEmitter {
 
     const reply = codec.buildResponse(req, data);
     if (reply.type === "sysex") {
-      console.log(`${this.tag()} RQ1 → DT1 ${MockEngine.summarizeSysex(reply.bytes)} (engine-handled)`);
+      console.log(`${this.tag()} RQ1 → DT1 ${MockTransport.summarizeSysex(reply.bytes)} (engine-handled)`);
       this.emitOne(reply);
     }
   }
@@ -497,7 +490,7 @@ export class MockEngine extends EventEmitter {
         this.midiOutput.send("program", { number: msg.number, channel });
         this.emit("midi-event", { direction: "out", kind: "program", number: msg.number, channel } satisfies MidiEventPayload);
       } else if (msg.type === "sysex") {
-        console.log(`${this.tag()} MIDI-OUT ${MockEngine.summarizeSysex(msg.bytes)}`);
+        console.log(`${this.tag()} MIDI-OUT ${MockTransport.summarizeSysex(msg.bytes)}`);
         this.midiOutput.send("sysex", msg.bytes);
         this.emit("midi-event", { direction: "out", kind: "sysex", bytes: msg.bytes.slice() } satisfies MidiEventPayload);
       }

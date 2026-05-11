@@ -135,11 +135,11 @@ Electron app: model picker shell -> loads model's web UI. **Three-collaborator a
 
 - **`MockHandler`** (per-model) — pure logic. Speaks ONLY the param domain: `set_params(refs)`, `get_params(names, part?)`, `load_program(bank, slot)`, `getFullState()`. Internal state keyed by canonical param name with user-domain numeric values. No MIDI bytes, no addresses, no protocol awareness.
 - **`MidiCodec`** (per-model) — param ↔ MIDI translator. `encodeParams`, `encodeBytes`, `encodeAction`, `decode`, `paramsAtAddress`, `parseRequest`, `buildResponse`, `normalizeUserValue`, `wireToUserValue`. Used by both the mock-runner (incoming MIDI → `set_params`) and the MCP-side device (outgoing `set_params` → MIDI bytes).
-- **`MockEngine`** — transport. Two virtual MIDI ports + WebSocket server + source-aware routing. Owns all MIDI I/O.
+- **`MockTransport`** — transport. Two virtual MIDI ports + WebSocket server + source-aware routing. Owns all MIDI I/O. See `src/mock-runner/transport.md` for the file-level walkthrough.
 
-UI ↔ handler protocol is `{type:"setParam", name, value, part?}`. External MIDI is decoded by the codec into `set_params` calls; Roland RQ1 is fulfilled entirely in the engine via `codec.paramsAtAddress` + `handler.get_params` + `codec.encodeBytes`. Bank-select MSB/LSB CC sequences are accumulated by the engine and finalized as `handler.load_program(bank, slot)` on the matching Program Change.
+UI ↔ handler protocol is `{type:"setParam", name, value, part?}`. External MIDI is decoded by the codec into `set_params` calls; Roland RQ1 is fulfilled entirely in the transport via `codec.paramsAtAddress` + `handler.get_params` + `codec.encodeBytes`. Bank-select MSB/LSB CC sequences are accumulated by the transport and finalized as `handler.load_program(bank, slot)` on the matching Program Change.
 
-See [docs/mock_runner.md](docs/mock_runner.md#engine-and-handler--runtime-contract) for the full message-flow diagrams.
+See [docs/mock_runner.md](docs/mock_runner.md#transport-codec-handler--runtime-contract) for the full message-flow diagrams.
 
 ## Key conventions
 

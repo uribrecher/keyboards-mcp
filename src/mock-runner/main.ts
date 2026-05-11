@@ -3,7 +3,7 @@
  *
  * The shell window is loaded once at startup and never reloaded. Each tab in
  * the shell hosts an iframe (model chooser → model UI). The main process
- * owns one MockEngine per tab on its own WebSocket port; ports are allocated
+ * owns one MockTransport per tab on its own WebSocket port; ports are allocated
  * sequentially from BASE_WS_PORT and freed on tab close.
  */
 
@@ -13,7 +13,7 @@ import { statSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "no
 import { fileURLToPath } from "node:url";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
-import { MockEngine, type MidiEventPayload } from "./engine.js";
+import { MockTransport, type MidiEventPayload } from "./transport.js";
 import * as mockRegistry from "../shared/mock-registry.js";
 import { listAllDevices, setOnBrokerLivenessChange, getBrokerLiveness } from "../shared/mcb-client.js";
 import {
@@ -47,7 +47,7 @@ const UPPER_CH = parseInt(process.env.UPPER_CHANNEL ?? "1");
 interface TabEntry {
   tabId: string;
   model: KeyboardModel | null;     // null until the user selects a model
-  engine: MockEngine | null;
+  transport: MockTransport | null;
   wsPort: number | null;
   label: string | null;             // user-assigned (defaults to "_default")
 }
@@ -87,19 +87,19 @@ function pushDirtyChanged(): void {
 }
 
 /**
- * Wire both engine listeners for a tab: dirty-debounce on state-changed,
- * IPC forward on midi-event. Centralizes the pair so the two engine-on
- * sites (initial selectModelForTab + restore-snapshot) stay in sync.
+ * Wire both transport listeners for a tab: dirty-debounce on state-changed,
+ * IPC forward on midi-event. Centralizes the pair so the two attach sites
+ * (initial selectModelForTab + restore-snapshot) stay in sync.
  */
-function attachEngineListeners(tabId: string, engine: MockEngine): void {
-  engine.on("state-changed", onEngineStateChanged);
-  engine.on("midi-event", (payload: MidiEventPayload) => {
+function attachTransportListeners(tabId: string, transport: MockTransport): void {
+  transport.on("state-changed", onTransportStateChanged);
+  transport.on("midi-event", (payload: MidiEventPayload) => {
     mainWindow?.webContents.send("midi:event", { tabId, ts: Date.now(), ...payload });
   });
 }
 
-/** Debounced state-changed handler for engine broadcasts. */
-function onEngineStateChanged(): void {
+/** Debounced state-changed handler for transport broadcasts. */
+function onTransportStateChanged(): void {
   if (restoring) return;
   if (dirtyDebounceTimer) return;
   dirtyDebounceTimer = setTimeout(() => {
@@ -112,14 +112,14 @@ function onEngineStateChanged(): void {
 // ── Save / Open flows ──────────────────────────────────────────────
 
 /**
- * True iff at least one tab has both a model and an engine — i.e. the
+ * True iff at least one tab has both a model and a transport — i.e. the
  * rack would produce a non-empty `tabs` array in the snapshot. Used to
  * gate Save / Save As so we never write an empty .mockrack (which is
  * useless at best and overwrites a valid saved file at worst).
  */
 function hasContentToSave(): boolean {
   for (const t of tabs.values()) {
-    if (t.model && t.engine) return true;
+    if (t.model && t.transport) return true;
   }
   return false;
 }
@@ -139,11 +139,11 @@ function notifyEmptySaveRefused(): void {
 }
 
 function buildSetupSnapshot(): MockrackV1 {
-  const entries = [...tabs.values()].filter((t) => t.model && t.engine);
+  const entries = [...tabs.values()].filter((t) => t.model && t.transport);
   const tabsOut: MockrackTab[] = entries.map((t) => ({
     modelId: t.model!.info.id,
     label:   t.label ?? "_default",
-    state:   t.engine!.getFullState(false),
+    state:   t.transport!.getFullState(false),
   }));
   let activeTabIndex = 0;
   if (lastActiveTabId) {
@@ -242,8 +242,8 @@ async function confirmDiscardIfDirty(): Promise<boolean> {
 
 async function tearDownAllTabs(): Promise<void> {
   for (const entry of [...tabs.values()]) {
-    if (entry.engine) {
-      try { await entry.engine.stop(); } catch { /* swallow */ }
+    if (entry.transport) {
+      try { await entry.transport.stop(); } catch { /* swallow */ }
     }
     mainWindow?.webContents.send("file:close-tab", { tabId: entry.tabId });
     tabs.delete(entry.tabId);
@@ -285,7 +285,7 @@ async function loadSetupFromPath(path: string): Promise<void> {
       if (!handler) continue;
       const wsPort = nextFreePort();
       const portName = `${model.info.displayName} Mock`;
-      const engine = new MockEngine(handler, {
+      const transport = new MockTransport(handler, {
         lowerChannel: LOWER_CH,
         upperChannel: UPPER_CH,
         wsPort, portName,
@@ -293,21 +293,21 @@ async function loadSetupFromPath(path: string): Promise<void> {
         displayName: model.info.displayName,
         label: t.label,
       });
-      try { await engine.start(); }
+      try { await transport.start(); }
       catch (err) {
-        console.error(`Engine start failed for ${t.label}:`, err);
+        console.error(`Transport start failed for ${t.label}:`, err);
         emitEvent(mainWindow, {
           severity: "error",
           source:   `${model.info.displayName} ("${t.label}")`,
-          text:     `engine failed to start — ${err instanceof Error ? err.message : String(err)}`,
+          text:     `transport failed to start — ${err instanceof Error ? err.message : String(err)}`,
         });
         continue;
       }
       const tabId = nextTabId();
-      attachEngineListeners(tabId, engine);
-      tabs.set(tabId, { tabId, model, engine, wsPort, label: t.label });
+      attachTransportListeners(tabId, transport);
+      tabs.set(tabId, { tabId, model, transport, wsPort, label: t.label });
 
-      const restored = engine.restoreSnapshot(t.state);
+      const restored = transport.restoreSnapshot(t.state);
       if (!restored && t.state !== null) {
         emitEvent(mainWindow, {
           severity: "warn",
@@ -567,9 +567,9 @@ function buildMenu(): void {
 // ── Tab lifecycle ──
 
 async function destroyTab(entry: TabEntry): Promise<void> {
-  if (entry.engine) {
-    try { await entry.engine.stop(); } catch { /* swallow */ }
-    entry.engine = null;
+  if (entry.transport) {
+    try { await entry.transport.stop(); } catch { /* swallow */ }
+    entry.transport = null;
   }
   entry.wsPort = null;
   entry.model = null;
@@ -583,7 +583,7 @@ ipcMain.handle("get-models", async (): Promise<KeyboardModelInfo[]> => {
 
 ipcMain.handle("create-tab", (): { tabId: string } => {
   const tabId = nextTabId();
-  tabs.set(tabId, { tabId, model: null, engine: null, wsPort: null, label: null });
+  tabs.set(tabId, { tabId, model: null, transport: null, wsPort: null, label: null });
   markDirty();
   refreshMenuEnabledState();
   return { tabId };
@@ -613,7 +613,7 @@ ipcMain.handle(
     if (!entry) throw new Error(`Unknown tab ${tabId}`);
 
     // If this tab already had a model, tear it down first
-    if (entry.engine) await destroyTab(entry);
+    if (entry.transport) await destroyTab(entry);
 
     const model = await loadModelById(modelId);
     const handler = model.createMockHandler?.();
@@ -627,7 +627,7 @@ ipcMain.handle(
       : nextLabelForModel(model);
     const portName = `${model.info.displayName} Mock`;
 
-    const engine = new MockEngine(handler, {
+    const transport = new MockTransport(handler, {
       lowerChannel: LOWER_CH,
       upperChannel: UPPER_CH,
       wsPort,
@@ -636,15 +636,15 @@ ipcMain.handle(
       modelId: model.info.id,
       displayName: model.info.displayName,
     });
-    await engine.start();
-    attachEngineListeners(entry.tabId, engine);
+    await transport.start();
+    attachTransportListeners(entry.tabId, transport);
 
     entry.model = model;
-    entry.engine = engine;
+    entry.transport = transport;
     entry.wsPort = wsPort;
     entry.label = resolvedLabel;
     markDirty();
-    // The tab just transitioned from "no model" to "has model+engine",
+    // The tab just transitioned from "no model" to "has transport",
     // which flips hasContentToSave() — refresh Save / Save As enabled.
     refreshMenuEnabledState();
 
@@ -680,11 +680,11 @@ ipcMain.handle(
 
     entry.label = slug;
 
-    // Tell the live engine to re-init under the new label so the right
+    // Tell the live transport to re-init under the new label so the right
     // backup cache loads. Cheapest path: handler.init() with the new label,
     // then broadcast a fresh state snapshot.
-    if (entry.engine && entry.model?.createMockHandler) {
-      try { entry.engine.relabel(slug, LOWER_CH, UPPER_CH); } catch (err) {
+    if (entry.transport && entry.model?.createMockHandler) {
+      try { entry.transport.relabel(slug, LOWER_CH, UPPER_CH); } catch (err) {
         console.error("relabel failed:", err);
       }
     }
@@ -724,7 +724,7 @@ ipcMain.handle("get-broker-liveness", () => getBrokerLiveness());
 // and uniquely identifies a mock instance. Comparing portName is
 // unsafe because Core MIDI auto-suffixes duplicate virtual port names
 // (a second "Roland JUNO-X Mock" becomes "Roland JUNO-X Mock1"), and
-// the engine doesn't see that rename — only the lease's portName
+// the transport doesn't see that rename — only the lease's portName
 // (sourced from the OS) reflects it.
 type TabLeaseState = "primary" | "shadow" | "none";
 const MCB_LIST_TIMEOUT_MS = 1500;
@@ -857,7 +857,7 @@ ipcMain.handle(
       // Tell the live mock(s) of this model + label to reload from disk
       for (const t of tabs.values()) {
         if (t.model?.info.id === model.info.id && (t.label ?? "_default") === label) {
-          t.engine?.reloadCache?.();
+          t.transport?.reloadCache?.();
         }
       }
 
@@ -879,7 +879,7 @@ ipcMain.handle(
 // macOS hands paths to the running app via this event — fired by the
 // dock, by Open Recent, and by file-association double-click. The event
 // can arrive before app.whenReady() / createWindow() (cold-launch via
-// double-click), at which point loadSetupFromPath would create engines
+// double-click), at which point loadSetupFromPath would create transports
 // but no window exists to receive file:mount-tab events. Queue the path
 // and replay it from the renderer's did-finish-load handler.
 let pendingOpenPath: string | null = null;
@@ -969,10 +969,10 @@ app.on("before-quit", (event) => {
 });
 
 app.on("window-all-closed", async () => {
-  console.log("\nShutting down all tab engines...");
+  console.log("\nShutting down all tab transports...");
   for (const t of tabs.values()) {
-    if (t.engine) {
-      try { await t.engine.stop(); } catch { /* swallow */ }
+    if (t.transport) {
+      try { await t.transport.stop(); } catch { /* swallow */ }
     }
   }
   tabs.clear();

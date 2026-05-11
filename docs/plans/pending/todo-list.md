@@ -43,7 +43,7 @@ Plan #21 added a virtual MIDI Out port on every model mock; plan #22 wired the M
 To close that gap, mirror the real-MIDI approach over WebSockets. The user's directive from the plan #22 brainstorm (paraphrased): *similar to the output direction's env var, we can have an env var that picks real MIDI vs WS for receive.*
 
 Scope:
-- **MockEngine: second WS server.** Per the "port for port" decision recorded in earlier plan #21 brainstorm — each MIDI direction maps to its own WS port. Existing WS keeps its mixed role (UI state + UI commands + MCP status); new WS is dedicated to outgoing-from-mock MIDI events. On every `MockHandlerResult.sysexOut`, broadcast `{type:"sysex", bytes}` only on the new server.
+- **MockTransport: second WS server.** Per the "port for port" decision recorded in earlier plan #21 brainstorm — each MIDI direction maps to its own WS port. Existing WS keeps its mixed role (UI state + UI commands + MCP status); new WS is dedicated to outgoing-from-mock MIDI events. On every `MockHandlerResult.sysexOut`, broadcast `{type:"sysex", bytes}` only on the new server.
 - **mock-registry**: add `wsOutPort` field alongside the existing `wsPort`.
 - **MCB manifest**: surface `primary.wsOutPort` from the mock-registry entry.
 - **`WsMidiConnection`**: take a second URL; listen there for `{type:"sysex"}`; fire `onSysEx`.
@@ -52,7 +52,7 @@ Scope:
 
 Out of scope (separate todo if needed): the receive path on real hardware over a *bridge* (e.g. someone wants to listen for DT1 via a bridge tee instead of direct connection). Today's bridges are one-way (master out → shadow in); making them bidirectional or adding a separate input bridge is its own design work.
 
-Useful prior art: `src/midi/ws-midi-connection.ts` (existing send-only WS impl), `src/mock-runner/engine.ts` (existing WS server + virtual MIDI Out fan-out from plan #21), `tests/helpers/test-harness.ts` (CI/Docker WS-mode infrastructure).
+Useful prior art: `src/midi/ws-midi-connection.ts` (existing send-only WS impl), `src/mock-runner/transport.ts` (existing WS server + virtual MIDI Out fan-out from plan #21), `tests/helpers/test-harness.ts` (CI/Docker WS-mode infrastructure).
 
 ### 5. Move per-model MIDI status line to the mock runner shell
 
@@ -71,4 +71,4 @@ No model-specific interpretation in the shell — just raw MIDI. Per-model meani
 Scope:
 - Drop `setLastChange` calls and the `#last-change` element from each model's `web/index.html` and `web/app.js`.
 - Add a status strip to `src/mock-runner/shell/` (next to the existing tab bar / chat console) that shows the most recent MIDI event(s) per active tab.
-- Wire the engine's existing `MIDI-IN` / `MIDI-OUT` log lines (`src/mock-runner/engine.ts` already prints them) through to the shell — either via the existing `state-changed` event with a new payload type, or a dedicated WS broadcast for raw MIDI events.
+- Wire the transport's existing `MIDI-IN` / `MIDI-OUT` log lines (`src/mock-runner/transport.ts` already prints them) through to the shell — either via the existing `state-changed` event with a new payload type, or a dedicated WS broadcast for raw MIDI events.

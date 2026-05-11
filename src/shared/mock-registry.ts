@@ -2,11 +2,11 @@
  * Mock runtime registry — an at-rest index of "what mocks are running."
  *
  * The mock-runner main process and the headless CLI write entries when
- * each MockEngine starts; the MCP server reads them so `list_midi_devices`
+ * each MockTransport starts; the MCP server reads them so `list_midi_devices`
  * can show labels and `connect_to_keyboard` can auto-adopt a label without
  * the caller passing one.
  *
- * Entries are keyed by `wsPort`, which is unique per running engine. Two
+ * Entries are keyed by `wsPort`, which is unique per running transport. Two
  * mocks of the same model on the same machine will share a virtual MIDI
  * port name (Core MIDI auto-suffixes the second as `… Mock1`, etc.); the
  * registry stores the actual OS-assigned `midiPort` for both, distinct
