@@ -20,7 +20,7 @@ What it does **not** own: parameter values, MIDI map, engine selection, backup d
 
 ```
                                 ┌─────────────────────────────────┐
-                                │           MockTransport            │
+                                │           MockTransport         │
               WS (UI client)    │  ┌─────────────────────────────┐│
   ◀──────── (full state) ◀───── │  │ WebSocketServer             ││
             UI panels           │  │  - this.clients   (UI)      ││
