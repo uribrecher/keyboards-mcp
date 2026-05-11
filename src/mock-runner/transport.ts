@@ -12,10 +12,12 @@
 
 import { createServer, type Server } from "node:http";
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { MockHandler, MidiMessage, MockHandlerResult } from "../shared/keyboard-model.js";
 import type { EncodedMessage, MidiCodec, ParamRef } from "../shared/midi-codec.js";
 import * as registry from "../shared/mock-registry.js";
+import { releaseMockInstance } from "../shared/mcb-client.js";
 
 const HEARTBEAT_MS = 30_000;
 
@@ -70,6 +72,13 @@ export class MockTransport extends EventEmitter {
   /** Actual OS-assigned MIDI port name (Core MIDI suffixes duplicates). */
   private actualPortName: string;
   /**
+   * Per-boot UUID for this transport. Stable for the lifetime of the
+   * MockTransport; identifies this exact mock instance in the runtime
+   * registry and on MCB leases so a fresh tab reusing the same wsPort /
+   * port name can't be confused with the closed one.
+   */
+  private readonly instanceId: string = randomUUID();
+  /**
    * Stage-5 bank-select accumulator. CC 0 (MSB) and CC 32 (LSB) are
    * stateful predecessors to a Program Change — the engine accumulates
    * them per channel and finalizes a `load_program(bank, slot)` call when
@@ -83,6 +92,11 @@ export class MockTransport extends EventEmitter {
     this.handler = handler;
     this.opts = opts;
     this.actualPortName = opts.portName;
+  }
+
+  /** Per-boot UUID for this mock instance. See `instanceId` field. */
+  getInstanceId(): string {
+    return this.instanceId;
   }
 
   /** Identity tag for log lines: `[portName:label]`. */
@@ -254,6 +268,7 @@ export class MockTransport extends EventEmitter {
       displayName: this.opts.displayName ?? this.opts.modelId,
       label:       this.opts.label ?? "_default",
       pid:         process.pid,
+      instanceId:  this.instanceId,
       startedAt:   now,
       lastTouched: now,
     });
@@ -311,6 +326,17 @@ export class MockTransport extends EventEmitter {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+    // Active release of any MCB lease bound to this mock instance. The
+    // passive reap-on-read net in `reapStaleMockLeases` catches this when
+    // it fails (MCB down, mock-runner crash) — so we swallow errors and
+    // continue tearing down the local resources.
+    if (!this.opts.noRegistry) {
+      try {
+        await releaseMockInstance(this.instanceId);
+      } catch (err) {
+        console.warn(`${this.tag()} releaseMockInstance failed (passive reaper will catch up):`, (err as Error).message);
+      }
     }
     if (!this.opts.noRegistry) registry.unregister(this.opts.wsPort);
     if (this.midiInput) {

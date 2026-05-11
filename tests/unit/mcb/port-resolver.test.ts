@@ -13,7 +13,7 @@ const reg = (entries: MockRegistryEntry[]): MockRegistryReader => ({
   listAllWithStale: () => [],
 });
 
-const mockEntry: MockRegistryEntry = { midiPort: "Nord Mock", wsPort: 3002, label: "nordi", pid: 999 };
+const mockEntry: MockRegistryEntry = { midiPort: "Nord Mock", wsPort: 3002, label: "nordi", pid: 999, instanceId: "iid-nordi" };
 
 describe("PortResolver", () => {
   it("resolves a mock label (output)", () => {
@@ -51,7 +51,7 @@ describe("PortResolver", () => {
     // Label "shared" → mock at "Mock A". OS exact "shared" → matches OS port "shared".
     // Two distinct portNames in the candidate set → ambiguous.
     const entries: MockRegistryEntry[] = [
-      { midiPort: "Mock A", wsPort: 4001, label: "shared", pid: 1 },
+      { midiPort: "Mock A", wsPort: 4001, label: "shared", pid: 1, instanceId: "iid-shared" },
     ];
     assert.throws(
       () => resolvePort("shared", "output", ports(["Mock A", "shared"]), reg(entries)),

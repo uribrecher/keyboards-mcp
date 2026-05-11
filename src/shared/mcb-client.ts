@@ -73,6 +73,24 @@ export class MCBSessionLostError extends MCBError {
   }
 }
 
+/**
+ * Thrown when MCB returns 404 device-not-found on a session-bearing call.
+ * Means the lease the MCP cached locally no longer exists in MCB — either
+ * because the bound mock instance closed and the broker reaped the lease,
+ * or because someone else released it. By the time this surfaces, the
+ * matching pool entry has been dropped via the `onDeviceLost` callback.
+ *
+ * Distinct from `MCBSessionLostError`: only the one device is gone, the
+ * session and other devices are intact. Tools surface this to the user as
+ * "this connection is dead — reconnect manually."
+ */
+export class MCBDeviceLostError extends MCBError {
+  constructor(public lostDeviceId: string) {
+    super(404, "device-lost",
+      `MCB returned device-not-found for device ${lostDeviceId}. The bound mock instance is gone; the local lease has been dropped. Use connect_to_keyboard to re-establish.`);
+  }
+}
+
 function socketPath(): string {
   return process.env.MCB_SOCKET ?? join(homedir(), ".mcb", "sock");
 }
@@ -113,6 +131,18 @@ let onSessionLost: SessionLostCallback | null = null;
 
 export function setOnSessionLost(cb: SessionLostCallback | null): void {
   onSessionLost = cb;
+}
+
+/**
+ * Fired when a session-bearing call returns 404 device-not-found. Receives
+ * the deviceId so the caller can drop the matching pool entry (only that
+ * one — not the whole session).
+ */
+type DeviceLostCallback = (deviceId: string) => void;
+let onDeviceLost: DeviceLostCallback | null = null;
+
+export function setOnDeviceLost(cb: DeviceLostCallback | null): void {
+  onDeviceLost = cb;
 }
 
 /** Read the cached session id without minting one. Used by get_health. */
@@ -209,7 +239,25 @@ export async function claimLease(req: ClaimRequest): Promise<Manifest> {
 
 export async function releaseLease(deviceId: string): Promise<void> {
   if (!cachedSessionId) return;
-  await callWithSessionGuard("DELETE", `/v1/devices/${deviceId}`, undefined, cachedSessionId);
+  try {
+    await callWithSessionGuard("DELETE", `/v1/devices/${deviceId}`, undefined, cachedSessionId);
+  } catch (err) {
+    // MCB has already reaped this lease (active DELETE /v1/mocks/:instanceId
+    // path, or the passive safety net on read). Drop the local pool entry
+    // through the same channel a future tool call would, then surface as
+    // device-lost so the caller sees a coherent error rather than a stray
+    // "device-not-found." Idempotent: if no callback is registered or the
+    // entry is already gone, this is a no-op.
+    if (err instanceof MCBError && err.statusCode === 404 && err.code === "device-not-found") {
+      if (onDeviceLost) safeInvokeDeviceLost(onDeviceLost, deviceId);
+      throw new MCBDeviceLostError(deviceId);
+    }
+    throw err;
+  }
+}
+
+function safeInvokeDeviceLost(cb: DeviceLostCallback, deviceId: string): void {
+  try { cb(deviceId); } catch { /* swallow subscriber errors */ }
 }
 
 /**
@@ -226,6 +274,17 @@ export async function listMyDevices(): Promise<Manifest[]> {
 /** List ALL leases across sessions (read-open). Does not require a session. */
 export async function listAllDevices(): Promise<Manifest[]> {
   return (await call("GET", "/v1/devices")) as Manifest[];
+}
+
+/**
+ * Tell MCB that a mock instance has gone away. Releases every lease bound
+ * to that mockInstanceId — used by `MockTransport.stop()` when a tab closes.
+ *
+ * Capability-style: no session header. Best-effort: any failure is the
+ * caller's to swallow, the broker may be down at shutdown time.
+ */
+export async function releaseMockInstance(instanceId: string): Promise<void> {
+  await call("DELETE", `/v1/mocks/${instanceId}`);
 }
 
 export interface McbHealth {
@@ -261,6 +320,7 @@ export interface MidiPortsResponse {
       displayName: string;
       label: string;
       pid: number;
+      instanceId: string;
       startedAt: string;
       lastTouched: string;
       stale: boolean;
@@ -270,6 +330,7 @@ export interface MidiPortsResponse {
       sessionId: string;
       deviceId: string;
       model: string;
+      mockInstanceId: string | null;
     };
   }>;
   inputs: Array<{ name: string }>;
@@ -283,6 +344,7 @@ export async function listMidiPorts(): Promise<MidiPortsResponse> {
 export function resetSession(): void {
   cachedSessionId = null;
   onSessionLost = null;
+  onDeviceLost = null;
   stopHeartbeat();
   setOnBrokerLivenessChange(null);
 }

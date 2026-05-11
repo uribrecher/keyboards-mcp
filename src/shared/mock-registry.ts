@@ -44,6 +44,14 @@ export interface MockRegistryEntry {
   label: string;
   /** OS pid of the process that owns this entry. */
   pid: number;
+  /**
+   * Per-boot UUID. Minted once when the mock engine starts; never recycled.
+   * wsPort / midiPort / label can all be re-occupied by a fresh tab opened
+   * right after a close — `instanceId` is what lets consumers (MCB leases,
+   * the agent) tell "same mock, still up" from "different mock at the same
+   * address." Required.
+   */
+  instanceId: string;
   /** ISO timestamp of when this engine started. */
   startedAt: string;
   /** ISO timestamp of the last heartbeat. */
@@ -91,6 +99,7 @@ export function readAll(): MockRegistryEntry[] {
         && typeof e.modelId === "string"
         && typeof e.label === "string"
         && typeof e.pid === "number"
+        && typeof e.instanceId === "string"
         && typeof e.startedAt === "string"
         && typeof e.lastTouched === "string");
   } catch {
@@ -188,6 +197,11 @@ export function findByMidiPort(midiPort: string): MockRegistryEntry | undefined 
 /** Look up by wsPort (always unique). */
 export function findByWsPort(wsPort: number): MockRegistryEntry | undefined {
   return readActive().find((e) => e.wsPort === wsPort);
+}
+
+/** Look up by instanceId (always unique, never recycled). */
+export function findByInstanceId(instanceId: string): MockRegistryEntry | undefined {
+  return readActive().find((e) => e.instanceId === instanceId);
 }
 
 /** Test-only: wipe the registry file. */

@@ -28,6 +28,21 @@ export interface Lease {
   lowerChannel?: number;
   upperChannel?: number;
   connectedAt: number;
+  /**
+   * When the lease's primary port is a mock at claim time, this is the
+   * mock's `instanceId`. `null` for real-keyboard leases. Used by the
+   * passive reap-on-read safety net to detect a successor mock at the
+   * same port name.
+   */
+  mockInstanceId: string | null;
+  /**
+   * Symmetric to `mockInstanceId` but for the lease's shadow port (if any
+   * and if it's a mock at claim time). `null` when there is no shadow or
+   * the shadow is real hardware. Reaper handles both sides identically —
+   * closing either the primary's mock or the shadow's mock invalidates
+   * the lease.
+   */
+  shadowMockInstanceId: string | null;
 }
 
 export type Manifest = Omit<Lease, "connectedAt">;
@@ -44,6 +59,8 @@ export interface MockRegistryEntry {
   wsPort: number;
   label: string;
   pid: number;
+  /** Per-boot UUID. See `src/shared/mock-registry.ts` for semantics. */
+  instanceId: string;
 }
 
 /**

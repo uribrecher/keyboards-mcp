@@ -10,6 +10,13 @@ const MockRegistrySchema = z.object({
   displayName: z.string(),
   label: z.string(),
   pid: z.number(),
+  /**
+   * Per-boot UUID for this mock instance. Never recycled — a fresh tab at
+   * the same wsPort / label / port name gets a new instanceId. The agent
+   * can compare against `lease.mockInstanceId` to tell "same mock, still
+   * up" from "different mock at the same port name."
+   */
+  instanceId: z.string(),
   startedAt: z.string(),
   lastTouched: z.string(),
   stale: z.boolean(),
@@ -29,6 +36,13 @@ const LeaseSchema = z.object({
   sessionId: z.string(),
   deviceId: z.string(),
   model: z.string(),
+  /**
+   * For mock-backed leases, the `instanceId` of the mock active at claim
+   * time. `null` for real-keyboard leases. If `mock.instanceId` on the same
+   * port differs from this, the lease is bound to a closed mock and the
+   * broker's safety net will reap it on the next read.
+   */
+  mockInstanceId: z.string().nullable(),
 });
 
 const OutputPortSchema = z.object({
@@ -56,9 +70,10 @@ export function registerListDevices(server: McpServer, pool: DevicePool): void {
     {
       description:
         "List all MIDI output and input ports as structured data. " +
-        "Each output port carries optional `mock` (registry metadata for ports that belong to a running mock-runner mock, including stale flag), " +
+        "Each output port carries optional `mock` (registry metadata for ports that belong to a running mock-runner mock, including `instanceId` and `stale` flag), " +
         "`poolMarkers` (entries from this MCP's local pool that bind to the port), " +
-        "and `lease` (annotation from MCB if any session currently holds a lease on that port as primary or shadow). " +
+        "and `lease` (annotation from MCB if any session currently holds a lease on that port as primary or shadow, including `mockInstanceId`). " +
+        "Use `mock.instanceId` vs `lease.mockInstanceId` to diagnose connection loss: if they differ, the lease is bound to a closed mock and the agent should reconnect manually. " +
         "Fails fast when MCB is unreachable — there is no graceful-degradation path.",
       outputSchema: ListMidiDevicesOutputSchema,
     },

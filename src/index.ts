@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { initMidiBackend } from "./midi/midi-manager.js";
 import { DevicePool } from "./shared/device-pool.js";
-import { setOnSessionLost } from "./shared/mcb-client.js";
+import { setOnSessionLost, setOnDeviceLost } from "./shared/mcb-client.js";
 import { registerListDevices } from "./tools/list-devices.js";
 import { registerConnect } from "./tools/connect.js";
 import { registerDisconnect } from "./tools/disconnect.js";
@@ -32,6 +32,11 @@ const pool = new DevicePool();
 // session, the cache must follow — disconnectAll() closes every device's MIDI
 // + WS handles before the next claim mints a fresh session.
 setOnSessionLost(() => pool.disconnectAll());
+
+// Per-device variant: when MCB reports a single lease is gone (because the
+// bound mock instance closed), drop just that pool entry. The user reconnects
+// manually — we don't auto-reclaim.
+setOnDeviceLost((deviceId) => pool.disconnectByDeviceId(deviceId));
 
 registerListDevices(server, pool);
 registerConnect(server, pool);
