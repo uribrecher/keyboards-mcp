@@ -111,11 +111,3 @@ Likely culprits:
 - Or `tog-btn` class missing on the drive button — `initFxButtons` selects `button.tog-btn[data-fx]`.
 
 Quick fix is likely a one-character HTML change.
-
-### 10. Part selector doesn't eagerly re-render on click
-
-**Status:** Fixed.
-
-Mock handler routing is correct — `setParam` messages carry the active part and the handler updates the right part's state. The bug was purely a UI rendering issue: clicking a part button updated `activePart` and the button styling, but `updatePartParams` was only called when the next state broadcast fired (i.e. after the user touched a slider). Sliders/labels would lag, still showing the previous part's values.
-
-Fix: cache the last received state on the WS handler, and when `activePart` changes, immediately re-invoke the part-rendering path (`updateEngineSelect` + `updatePartParams`) against that cached state.
