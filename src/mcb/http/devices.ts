@@ -83,6 +83,7 @@ export function makeDevicesHandlers(deps: Deps) {
 
       const deviceId = randomUUID();
       const mockEntryForPrimary = deps.mockRegistry.findByMidiPort(primary.portName);
+      const mockEntryForShadow = shadow ? deps.mockRegistry.findByMidiPort(shadow.portName) : undefined;
       const lease: Lease = {
         deviceId, ownerSessionId: sessionId, model: body.model,
         primary, input, shadow,
@@ -91,6 +92,7 @@ export function makeDevicesHandlers(deps: Deps) {
         upperChannel: body.upper_channel,
         connectedAt: Date.now(),
         mockInstanceId: mockEntryForPrimary?.instanceId ?? null,
+        shadowMockInstanceId: mockEntryForShadow?.instanceId ?? null,
       };
 
       deps.leases.add(lease);
@@ -103,6 +105,11 @@ export function makeDevicesHandlers(deps: Deps) {
         }
       }
       session.ownedDeviceIds.add(deviceId);
+      console.log(
+        `[mcb] lease claimed device=${short(deviceId)} session=${short(sessionId)} ` +
+        `primary="${primary.portName}"${lease.mockInstanceId ? ` mockInstance=${short(lease.mockInstanceId)}` : ""}` +
+        `${shadow ? ` shadow="${shadow.portName}"${lease.shadowMockInstanceId ? ` shadowMockInstance=${short(lease.shadowMockInstanceId)}` : ""}` : ""}`
+      );
       return { statusCode: 200, body: toManifest(lease) };
     },
 
@@ -119,6 +126,7 @@ export function makeDevicesHandlers(deps: Deps) {
       if (deps.bridges.shadowOf(lease.deviceId)) deps.bridges.remove(lease.deviceId);
       deps.leases.remove(lease.deviceId);
       deps.sessions.get(sessionId)?.ownedDeviceIds.delete(lease.deviceId);
+      console.log(`[mcb] lease released device=${short(lease.deviceId)} session=${short(sessionId!)} primary="${lease.primary.portName}"`);
       return { statusCode: 204 };
     },
   };
@@ -127,6 +135,10 @@ export function makeDevicesHandlers(deps: Deps) {
 function toManifest(lease: Lease) {
   const { connectedAt: _c, ...rest } = lease;
   return rest;
+}
+
+function short(id: string): string {
+  return id.replace(/-/g, "").slice(0, 8);
 }
 
 function resolveOrHttp<T>(fn: () => T): T {

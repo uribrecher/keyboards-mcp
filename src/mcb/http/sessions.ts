@@ -10,6 +10,8 @@ export function makeSessionsHandlers(deps: { sessions: SessionManager }) {
         throw new HttpError(400, "invalid-input", "Body must include numeric pid > 0");
       }
       const session = deps.sessions.create({ pid, processName });
+      const sid = session.sessionId.replace(/-/g, "").slice(0, 8);
+      console.log(`[mcb] session minted session=${sid} pid=${pid}${processName ? ` (${processName})` : ""}`);
       return { statusCode: 200, body: { sessionId: session.sessionId, ownerPid: pid } };
     },
   };

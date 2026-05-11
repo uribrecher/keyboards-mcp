@@ -132,6 +132,24 @@ describe("MCB HTTP", () => {
     assert.equal(list.body.find((m: any) => m.deviceId === deviceId), undefined);
   });
 
+  it("POST /v1/devices populates shadowMockInstanceId when shadow resolves to a mock", async () => {
+    const sid = await newSession();
+    const r = await call("POST", "/v1/devices", { port: "Port A", model: "m", with_shadow: "mocky" }, { "x-session-id": sid });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.mockInstanceId, null);
+    assert.equal(r.body.shadowMockInstanceId, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+  });
+
+  it("DELETE /v1/mocks/:instanceId also releases leases that have the instance as a shadow", async () => {
+    const sid = await newSession();
+    const claim = await call("POST", "/v1/devices", { port: "Port A", model: "m", with_shadow: "mocky" }, { "x-session-id": sid });
+    const deviceId = claim.body.deviceId;
+    const del = await call("DELETE", `/v1/mocks/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa`);
+    assert.equal(del.statusCode, 204);
+    const list = await call("GET", "/v1/devices");
+    assert.equal(list.body.find((m: any) => m.deviceId === deviceId), undefined);
+  });
+
   it("DELETE /v1/mocks/:instanceId is idempotent — unknown instanceId returns 204", async () => {
     const del = await call("DELETE", `/v1/mocks/99999999-9999-9999-9999-999999999999`);
     assert.equal(del.statusCode, 204);

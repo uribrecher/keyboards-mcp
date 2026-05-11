@@ -83,7 +83,10 @@ export function makeMidiPortsHandler(deps: Deps) {
           sessionId: lease.ownerSessionId,
           deviceId: lease.deviceId,
           model: lease.model,
-          mockInstanceId: lease.mockInstanceId,
+          // Report the SHADOW side's binding here, not the primary's, so the
+          // agent can compare `mock.instanceId` against this on the shadow's
+          // port row exactly the way it does on the primary row.
+          mockInstanceId: lease.shadowMockInstanceId,
         });
       }
     }

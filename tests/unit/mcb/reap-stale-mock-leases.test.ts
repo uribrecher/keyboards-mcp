@@ -22,6 +22,7 @@ function makeLease(over: Partial<Lease> = {}): Lease {
     channel: 1,
     connectedAt: 0,
     mockInstanceId: null,
+    shadowMockInstanceId: null,
     ...over,
   };
 }
@@ -72,6 +73,47 @@ describe("reapStaleMockLeases", () => {
     const reaped = reapStaleMockLeases({
       leases, bridges, sessions,
       mockRegistry: reg([{ midiPort: "Mock 1", wsPort: 9000, label: "x", pid: 1, instanceId: "A1" }]),
+    });
+    assert.equal(reaped.length, 0);
+    assert.ok(leases.get("d1"));
+  });
+
+  it("reaps when the shadow's mockInstanceId no longer matches even if the primary is real hardware", () => {
+    const leases = new LeaseRegistry();
+    const bridges = new BridgeRegistry();
+    const sessions = new SessionManager();
+    leases.add(makeLease({
+      deviceId: "d1",
+      primary: { portName: "Real KB", wsPort: null },
+      shadow: { portName: "Mock 1", wsPort: 9000 },
+      mockInstanceId: null,
+      shadowMockInstanceId: "S1",
+    }));
+    const reaped = reapStaleMockLeases({
+      leases, bridges, sessions,
+      mockRegistry: reg([{ midiPort: "Mock 1", wsPort: 9000, label: "x", pid: 1, instanceId: "S2" }]),
+    });
+    assert.equal(reaped.length, 1);
+    assert.equal(leases.get("d1"), undefined);
+  });
+
+  it("does not reap when both primary and shadow mockInstanceIds still match", () => {
+    const leases = new LeaseRegistry();
+    const bridges = new BridgeRegistry();
+    const sessions = new SessionManager();
+    leases.add(makeLease({
+      deviceId: "d1",
+      primary: { portName: "Mock 1", wsPort: 9000 },
+      shadow: { portName: "Mock 2", wsPort: 9001 },
+      mockInstanceId: "P1",
+      shadowMockInstanceId: "S1",
+    }));
+    const reaped = reapStaleMockLeases({
+      leases, bridges, sessions,
+      mockRegistry: reg([
+        { midiPort: "Mock 1", wsPort: 9000, label: "a", pid: 1, instanceId: "P1" },
+        { midiPort: "Mock 2", wsPort: 9001, label: "b", pid: 1, instanceId: "S1" },
+      ]),
     });
     assert.equal(reaped.length, 0);
     assert.ok(leases.get("d1"));

@@ -31,12 +31,27 @@ export function makeMocksHandlers(deps: Deps) {
   return {
     delete: async (ctx: RouteContext) => {
       const instanceId = ctx.params.instanceId;
-      const reaped = deps.leases.reapWhere((lease) => lease.mockInstanceId === instanceId);
+      const reaped = deps.leases.reapWhere((lease) =>
+        lease.mockInstanceId === instanceId || lease.shadowMockInstanceId === instanceId
+      );
       for (const lease of reaped) {
         if (deps.bridges.shadowOf(lease.deviceId)) deps.bridges.remove(lease.deviceId);
         deps.sessions.get(lease.ownerSessionId)?.ownedDeviceIds.delete(lease.deviceId);
+        const side = lease.mockInstanceId === instanceId ? "primary" : "shadow";
+        console.log(
+          `[mcb] mock closed instance=${short(instanceId)} — released lease ` +
+          `device=${short(lease.deviceId)} session=${short(lease.ownerSessionId)} ` +
+          `(${side} side: "${side === "primary" ? lease.primary.portName : lease.shadow!.portName}")`
+        );
+      }
+      if (reaped.length === 0) {
+        console.log(`[mcb] mock closed instance=${short(instanceId)} — no leases bound to it`);
       }
       return { statusCode: 204 };
     },
   };
+}
+
+function short(id: string): string {
+  return id.replace(/-/g, "").slice(0, 8);
 }

@@ -13,13 +13,18 @@ interface Deps {
 /**
  * Passive safety net for the mock-close → lease-release path.
  *
- * Every lease with a non-null `mockInstanceId` was bound to a specific mock
- * instance at claim time. If the registry's current entry for that port name
- * has a different `instanceId` (or the entry is gone entirely), the bound
- * mock is dead and this lease points at a phantom — the active
+ * Every lease with a non-null `mockInstanceId` (primary side) or
+ * `shadowMockInstanceId` (shadow side) was bound to a specific mock
+ * instance at claim time. If the registry's current entry for that port
+ * name has a different `instanceId` (or the entry is gone entirely), the
+ * bound mock is dead and this lease points at a phantom — the active
  * `DELETE /v1/mocks/:instanceId` path must have been lost. We reap it here.
  *
- * Real-keyboard leases (`mockInstanceId === null`) are untouched: their
+ * Both sides are checked symmetrically: closing either the primary's mock
+ * OR the shadow's mock invalidates the lease, because the local MIDI
+ * forward bridge has nothing live to talk to on one side.
+ *
+ * Real-keyboard leases (both instance fields `null`) are untouched: their
  * liveness is governed by `resolvePort`'s OS-visibility check plus the
  * existing PID sweep.
  *
@@ -32,13 +37,48 @@ interface Deps {
  */
 export function reapStaleMockLeases(deps: Deps): Lease[] {
   const reaped = deps.leases.reapWhere((lease) => {
-    if (lease.mockInstanceId === null) return false;
-    const current = deps.mockRegistry.findByMidiPort(lease.primary.portName);
-    return current?.instanceId !== lease.mockInstanceId;
+    if (lease.mockInstanceId !== null) {
+      const current = deps.mockRegistry.findByMidiPort(lease.primary.portName);
+      if (current?.instanceId !== lease.mockInstanceId) return true;
+    }
+    if (lease.shadowMockInstanceId !== null && lease.shadow) {
+      const current = deps.mockRegistry.findByMidiPort(lease.shadow.portName);
+      if (current?.instanceId !== lease.shadowMockInstanceId) return true;
+    }
+    return false;
   });
   for (const lease of reaped) {
     if (deps.bridges.shadowOf(lease.deviceId)) deps.bridges.remove(lease.deviceId);
     deps.sessions.get(lease.ownerSessionId)?.ownedDeviceIds.delete(lease.deviceId);
+    const reason = describeReapReason(lease, deps);
+    console.log(
+      `[mcb] reaped stale mock lease device=${short(lease.deviceId)} ` +
+      `session=${short(lease.ownerSessionId)} primary="${lease.primary.portName}"` +
+      `${lease.shadow ? ` shadow="${lease.shadow.portName}"` : ""} (${reason})`
+    );
   }
   return reaped;
+}
+
+function describeReapReason(lease: Lease, deps: Deps): string {
+  const reasons: string[] = [];
+  if (lease.mockInstanceId !== null) {
+    const current = deps.mockRegistry.findByMidiPort(lease.primary.portName);
+    if (!current) reasons.push(`primary mock instance gone (was ${short(lease.mockInstanceId)})`);
+    else if (current.instanceId !== lease.mockInstanceId) {
+      reasons.push(`primary mock replaced (was ${short(lease.mockInstanceId)}, now ${short(current.instanceId)})`);
+    }
+  }
+  if (lease.shadowMockInstanceId !== null && lease.shadow) {
+    const current = deps.mockRegistry.findByMidiPort(lease.shadow.portName);
+    if (!current) reasons.push(`shadow mock instance gone (was ${short(lease.shadowMockInstanceId)})`);
+    else if (current.instanceId !== lease.shadowMockInstanceId) {
+      reasons.push(`shadow mock replaced (was ${short(lease.shadowMockInstanceId)}, now ${short(current.instanceId)})`);
+    }
+  }
+  return reasons.join("; ") || "unknown";
+}
+
+function short(id: string): string {
+  return id.replace(/-/g, "").slice(0, 8);
 }

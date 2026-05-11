@@ -11,6 +11,7 @@ function fixture(o: Partial<Lease> = {}): Lease {
     primary: { portName: "Port A", wsPort: null },
     channel: 1, connectedAt: Date.now(),
     mockInstanceId: null,
+    shadowMockInstanceId: null,
     ...o,
   };
 }

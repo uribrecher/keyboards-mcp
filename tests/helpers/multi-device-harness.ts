@@ -133,7 +133,7 @@ export class MultiDeviceHarness {
   }
 
   /** Read MCB's lease list directly — bypasses MCP. */
-  async listMcbDevices(): Promise<Array<{ deviceId: string; mockInstanceId: string | null; primary: { portName: string } }>> {
+  async listMcbDevices(): Promise<Array<{ deviceId: string; mockInstanceId: string | null; shadowMockInstanceId: string | null; primary: { portName: string }; shadow?: { portName: string } }>> {
     return new Promise((resolve, reject) => {
       const req = request({ socketPath: this.mcbSocketPath, method: "GET", path: "/v1/devices" }, (res) => {
         const chunks: Buffer[] = [];

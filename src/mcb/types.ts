@@ -35,6 +35,14 @@ export interface Lease {
    * same port name.
    */
   mockInstanceId: string | null;
+  /**
+   * Symmetric to `mockInstanceId` but for the lease's shadow port (if any
+   * and if it's a mock at claim time). `null` when there is no shadow or
+   * the shadow is real hardware. Reaper handles both sides identically —
+   * closing either the primary's mock or the shadow's mock invalidates
+   * the lease.
+   */
+  shadowMockInstanceId: string | null;
 }
 
 export type Manifest = Omit<Lease, "connectedAt">;

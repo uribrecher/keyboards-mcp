@@ -248,6 +248,39 @@ expose the same identity fields that the lease and registry now carry.
   to force the call to throw), confirm the passive safety net still reaps on
   the next `GET /v1/devices`.
 
+### Phase 7 — Shadow-side instance binding + MCB terminal logs
+
+Originally treated as an out-of-scope follow-up, then folded back into the
+same PR after live-testing on a real hardware shadow showed the asymmetry:
+when a hardware-primary lease shadows to a mock, closing the shadow mock's
+tab leaves the lease intact because only the primary's mock binding was
+recorded.
+
+- `Lease` gains `shadowMockInstanceId: string | null`. Populated in
+  `POST /v1/devices` from `mockRegistry.findByMidiPort(shadow.portName)`.
+- `reapStaleMockLeases` checks **both** sides — a mismatch (or registry
+  miss) on either `mockInstanceId` (primary) or `shadowMockInstanceId`
+  (shadow) reaps the lease. Reason string in the log includes which side
+  fired.
+- `DELETE /v1/mocks/:instanceId` matches leases where the id appears on
+  either side and logs the matched side.
+- `midi-ports.ts`: the shadow-port lease annotation now reports
+  `lease.shadowMockInstanceId` (was incorrectly reusing the primary's id).
+- MCB terminal now logs each lifecycle event with short ids and port
+  names: session minted, lease claimed, lease released (by owner),
+  mock closed (active path, primary or shadow), reaped stale mock lease
+  (passive net, with reason), reaped session (existing PID sweep). The
+  short-id helper trims to the first 8 hex chars to keep lines scannable.
+
+Tests:
+- `reapStaleMockLeases` unit suite gets a shadow-mismatch case and a
+  both-sides-match-no-reap case.
+- `http.test.ts` asserts `shadowMockInstanceId` populates on claim and
+  that `DELETE /v1/mocks/:instanceId` reaps shadow-side bindings.
+- `tests/e2e/mcb/mock-close-releases-lease.test.ts` adds a second
+  `describe` block: primary=mockA, shadow=mockB, stop mockB, assert
+  lease reaped.
+
 ## Out of scope
 
 - Active push notification from MCB to the MCP when a device is reaped (the

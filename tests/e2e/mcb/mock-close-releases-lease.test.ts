@@ -59,3 +59,56 @@ describe("E2E: mock close releases its MCB lease (active path)", { concurrency: 
       "new lease's mockInstanceId must differ from the closed mock's — no aliasing");
   });
 });
+
+describe("E2E: shadow mock close also releases the lease", { concurrency: 1, skip: !!process.env.MOCK_WS_URL }, () => {
+  // Two mocks: one acts as the "primary" (we treat its port as the master),
+  // the other as the "shadow" target. Closing the shadow tab should reap
+  // the lease just like closing the primary's tab does.
+  let h2: MultiDeviceHarness;
+  const PRIMARY_WS = 5341;
+  const SHADOW_WS = 5342;
+
+  before(async () => {
+    h2 = await MultiDeviceHarness.start({
+      mocks: [
+        { model: "nord-electro-5d", wsPort: PRIMARY_WS, label: "primary-nord" },
+        { model: "nord-electro-5d", wsPort: SHADOW_WS, label: "shadow-nord" },
+      ],
+    });
+  });
+
+  after(async () => {
+    if (h2) await h2.stop();
+  });
+
+  it("closing the shadow mock reaps the lease (active path covers shadow side)", async () => {
+    // Find each mock's OS port name via list_midi_devices (Core MIDI suffixes
+    // duplicates, so the second instance becomes "Nord Electro 5D Mock1").
+    const ports = await h2.callTool("list_midi_devices");
+    const outputs = ports.structuredContent.outputs as Array<{ name: string; mock?: { wsPort: number; label: string } }>;
+    const primary = outputs.find((o) => o.mock?.wsPort === PRIMARY_WS);
+    const shadow = outputs.find((o) => o.mock?.wsPort === SHADOW_WS);
+    assert.ok(primary && shadow, `expected both mocks visible, got: ${JSON.stringify(outputs.filter((o) => o.mock))}`);
+
+    const connect = await h2.callTool("connect_to_keyboard", {
+      port: primary!.name,
+      model: "nord-electro-5d",
+      with_shadow: shadow!.name,
+    });
+    assert.ok(!connect.isError, `connect failed: ${connect.content[0].text}`);
+
+    const before = await h2.listMcbDevices();
+    assert.equal(before.length, 1, "MCB should have one lease after the claim");
+    assert.ok(before[0].mockInstanceId, "primary mockInstanceId should be set");
+    assert.ok(before[0].shadowMockInstanceId,
+      "shadowMockInstanceId should be set when the shadow is a mock");
+
+    // Close the SHADOW mock (index 1 in h2.mocks).
+    await h2.stopMock(1);
+    await new Promise((r) => setTimeout(r, 200));
+
+    const after = await h2.listMcbDevices();
+    assert.equal(after.length, 0,
+      `closing the shadow mock should reap the lease, got: ${JSON.stringify(after)}`);
+  });
+});

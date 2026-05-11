@@ -32,6 +32,7 @@ const lease = (overrides: Partial<Lease> = {}): Lease => ({
   channel: 1,
   connectedAt: 0,
   mockInstanceId: null,
+  shadowMockInstanceId: null,
   ...overrides,
 });
 
