@@ -39,7 +39,10 @@ function connect() {
 // ── State handler ──
 
 function handleState(data) {
-  lastState = data;
+  // Merge rather than replace — the engine also sends partial broadcasts
+  // (e.g. {mcpConnected,label} on MCP connect/disconnect) that would
+  // otherwise wipe the cached part state and break the eager re-render.
+  lastState = { ...lastState, ...data };
   // Scene display
   if (data.scene !== undefined) {
     const num = data.scene.program !== undefined ? data.scene.program + 1 : 1;
