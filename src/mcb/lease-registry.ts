@@ -33,13 +33,15 @@ export class LeaseRegistry {
    * removed leases so callers can clean up sibling state (bridges, owning
    * session's `ownedDeviceIds`). Iteration is over a snapshot so the
    * predicate may freely mutate other state.
+   *
+   * Delegates the actual deletion to `remove()` so any future indices or
+   * cleanup added there are picked up here too.
    */
   reapWhere(predicate: (lease: Lease) => boolean): Lease[] {
     const removed: Lease[] = [];
     for (const lease of [...this.byDeviceId.values()]) {
       if (predicate(lease)) {
-        this.primaryIndex.delete(lease.primary.portName);
-        this.byDeviceId.delete(lease.deviceId);
+        this.remove(lease.deviceId);
         removed.push(lease);
       }
     }

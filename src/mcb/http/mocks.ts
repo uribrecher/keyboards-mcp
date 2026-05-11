@@ -14,10 +14,19 @@ interface Deps {
  * release every lease bound to it."
  *
  * Called by the mock-runner's `MockTransport.stop()` when a tab closes (or
- * the app quits). No session auth: the `instanceId` UUID itself is the
- * capability — only the transport that minted it knows it, and it's never
- * recycled, so a successor mock at the same wsPort/label can't accidentally
- * release a predecessor's leases.
+ * the app quits). No session auth. Authentication for this route follows
+ * the same model as the rest of the MCB API: the broker trusts its
+ * listener boundary. In UDS mode the socket is chmod 0600 (local user
+ * only). In TCP mode the broker assumes operators bind on a private
+ * network (per `src/mcb/index.ts:22`, the API as a whole is unauthenticated
+ * — adding per-route auth here would be inconsistent and wouldn't address
+ * the equivalent gap on every other state-changing endpoint).
+ *
+ * `instanceId` is NOT a confidentiality capability: any caller of
+ * `GET /v1/midi/ports` can read every running mock's `instanceId`. What it
+ * provides is uniqueness — a successor mock at the same wsPort/label has a
+ * different instanceId, so this endpoint can't accidentally release a
+ * successor's leases when the predecessor's `stop()` fires late.
  *
  * Idempotent: unknown instanceId → 204 no-op. We don't 404, so the
  * best-effort caller (which swallows errors anyway) doesn't have to

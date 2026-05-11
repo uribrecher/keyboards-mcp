@@ -36,21 +36,27 @@ interface Deps {
  * registries/sessions are already cleaned up before return.
  */
 export function reapStaleMockLeases(deps: Deps): Lease[] {
+  // Snapshot the registry ONCE per call. The real wiring reads
+  // `data/runtime/mocks.json` from disk on every `findByMidiPort`, so
+  // calling it inside the predicate + reason-builder would mean up to 4
+  // file reads per lease per `GET`/`POST /v1/devices`. With this map the
+  // whole reap is a single read.
+  const byPort = new Map<string, string>();
+  for (const e of deps.mockRegistry.list()) byPort.set(e.midiPort, e.instanceId);
+
   const reaped = deps.leases.reapWhere((lease) => {
     if (lease.mockInstanceId !== null) {
-      const current = deps.mockRegistry.findByMidiPort(lease.primary.portName);
-      if (current?.instanceId !== lease.mockInstanceId) return true;
+      if (byPort.get(lease.primary.portName) !== lease.mockInstanceId) return true;
     }
     if (lease.shadowMockInstanceId !== null && lease.shadow) {
-      const current = deps.mockRegistry.findByMidiPort(lease.shadow.portName);
-      if (current?.instanceId !== lease.shadowMockInstanceId) return true;
+      if (byPort.get(lease.shadow.portName) !== lease.shadowMockInstanceId) return true;
     }
     return false;
   });
   for (const lease of reaped) {
     if (deps.bridges.shadowOf(lease.deviceId)) deps.bridges.remove(lease.deviceId);
     deps.sessions.get(lease.ownerSessionId)?.ownedDeviceIds.delete(lease.deviceId);
-    const reason = describeReapReason(lease, deps);
+    const reason = describeReapReason(lease, byPort);
     console.log(
       `[mcb] reaped stale mock lease device=${short(lease.deviceId)} ` +
       `session=${short(lease.ownerSessionId)} primary="${lease.primary.portName}"` +
@@ -60,20 +66,20 @@ export function reapStaleMockLeases(deps: Deps): Lease[] {
   return reaped;
 }
 
-function describeReapReason(lease: Lease, deps: Deps): string {
+function describeReapReason(lease: Lease, byPort: Map<string, string>): string {
   const reasons: string[] = [];
   if (lease.mockInstanceId !== null) {
-    const current = deps.mockRegistry.findByMidiPort(lease.primary.portName);
-    if (!current) reasons.push(`primary mock instance gone (was ${short(lease.mockInstanceId)})`);
-    else if (current.instanceId !== lease.mockInstanceId) {
-      reasons.push(`primary mock replaced (was ${short(lease.mockInstanceId)}, now ${short(current.instanceId)})`);
+    const current = byPort.get(lease.primary.portName);
+    if (current === undefined) reasons.push(`primary mock instance gone (was ${short(lease.mockInstanceId)})`);
+    else if (current !== lease.mockInstanceId) {
+      reasons.push(`primary mock replaced (was ${short(lease.mockInstanceId)}, now ${short(current)})`);
     }
   }
   if (lease.shadowMockInstanceId !== null && lease.shadow) {
-    const current = deps.mockRegistry.findByMidiPort(lease.shadow.portName);
-    if (!current) reasons.push(`shadow mock instance gone (was ${short(lease.shadowMockInstanceId)})`);
-    else if (current.instanceId !== lease.shadowMockInstanceId) {
-      reasons.push(`shadow mock replaced (was ${short(lease.shadowMockInstanceId)}, now ${short(current.instanceId)})`);
+    const current = byPort.get(lease.shadow.portName);
+    if (current === undefined) reasons.push(`shadow mock instance gone (was ${short(lease.shadowMockInstanceId)})`);
+    else if (current !== lease.shadowMockInstanceId) {
+      reasons.push(`shadow mock replaced (was ${short(lease.shadowMockInstanceId)}, now ${short(current)})`);
     }
   }
   return reasons.join("; ") || "unknown";
