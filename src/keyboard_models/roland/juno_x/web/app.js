@@ -292,6 +292,11 @@ function initEngineSwitch() {
     }
     const target = document.getElementById("panel-" + value);
     if (target) target.classList.remove("hidden");
+    // Persist the engine selection on the active part. The handler will
+    // broadcast updated state; eager-render keeps part panels in sync.
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "setActiveEngine", engine: value, part: activePart }));
+    }
   });
 }
 
