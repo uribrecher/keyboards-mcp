@@ -112,16 +112,10 @@ Likely culprits:
 
 Quick fix is likely a one-character HTML change.
 
-### 10. Part selector not actually selecting the active part
+### 10. Part selector doesn't eagerly re-render on click
 
-**Status:** Bug.
+**Status:** Fixed.
 
-Clicking the part buttons (Part 1..5) in the JUNO-X mock UI updates the visual `active` class on the button but doesn't actually drive the param state — the displayed slider values continue to reflect the previously-selected part.
+Mock handler routing is correct — `setParam` messages carry the active part and the handler updates the right part's state. The bug was purely a UI rendering issue: clicking a part button updated `activePart` and the button styling, but `updatePartParams` was only called when the next state broadcast fired (i.e. after the user touched a slider). Sliders/labels would lag, still showing the previous part's values.
 
-Likely culprit in `src/keyboard_models/roland/juno_x/web/app.js`:
-- `initPartButtons` updates `activePart` and the button styling, but the next `handleState` broadcast might still render `data["part" + activePart]` from a stale state object (state hasn't changed since the last broadcast).
-- Or `updatePartParams` is only called when the broadcast fires, not when `activePart` changes locally — so switching parts in the UI doesn't repaint.
-
-Fix sketch: when `activePart` changes, immediately re-render from the last received state (cache it on the WS handler and re-invoke `handleState` with that cached state).
-
-The bug pre-dates plan #30 stage 5 — it's a UI state-flow issue, not a state-shape issue.
+Fix: cache the last received state on the WS handler, and when `activePart` changes, immediately re-invoke the part-rendering path (`updateEngineSelect` + `updatePartParams`) against that cached state.

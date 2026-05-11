@@ -3,6 +3,7 @@
 // ── State ──
 
 let activePart = 1;
+let lastState = null;
 
 // ── WebSocket ──
 
@@ -38,6 +39,7 @@ function connect() {
 // ── State handler ──
 
 function handleState(data) {
+  lastState = data;
   // Scene display
   if (data.scene !== undefined) {
     const num = data.scene.program !== undefined ? data.scene.program + 1 : 1;
@@ -186,6 +188,15 @@ function initPartButtons() {
       // Update active button styling
       for (const b of document.querySelectorAll("button.part-btn[data-part]")) {
         b.classList.toggle("active", b === btn);
+      }
+      // Re-render from the last known state so sliders/labels reflect the
+      // newly-selected part immediately, without waiting for a fresh broadcast.
+      if (lastState) {
+        const partData = lastState["part" + activePart];
+        if (partData) {
+          updateEngineSelect(partData);
+          updatePartParams(partData);
+        }
       }
     });
   }
