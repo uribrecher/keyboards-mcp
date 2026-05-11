@@ -83,7 +83,7 @@ Useful prior art: `docs/plans/completed/23-juno-x-get-state-rq1.md` (scene-effec
 Observed during plan #24 local testing: clicking a chorus mode button on jino's UI causes chorus_switch to propagate correctly (verifiable via shadow mock junio's UI lighting up the chorus group), but chorus *type* (the algorithm selector — JUNO Chorus, etc., 0..9 at `01:50:00:01`) does NOT propagate properly.
 
 This is distinct from the wiring fix shipped in plan #24:
-- The `{type:"param"}` UI message → `MockHandler.onUIParam` → DT1 → state path is now correct generally.
+- The UI → DT1 → state path (originally `{type:"param"}` → `MockHandler.onUIParam`, now `{type:"setParam"}` → `set_params`) is correct generally.
 - The bridge from primary → shadow is verified working for delay_switch, reverb_switch, drive_switch.
 - chorus_switch propagates.
 - chorus *type* (the algorithm) still misbehaves — symptom unclear without further repro.

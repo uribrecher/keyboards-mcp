@@ -30,7 +30,7 @@ npm run mock:headless --model nord-electro-5d   # Plain Node, for CI/E2E tests
 
 ## Tabs and devices
 
-The shell window is loaded once and never reloaded. Each tab owns its own `MockEngine`, MIDI virtual port, and WebSocket port (allocated sequentially from `3000`).
+The shell window is loaded once and never reloaded. Each tab owns its own `MockTransport`, MIDI virtual port, and WebSocket port (allocated sequentially from `3000`).
 
 | Action | How |
 |---|---|
@@ -46,7 +46,7 @@ Each loaded tab has a sanitized **label** (lowercase `[a-z0-9._-]`). It defaults
 
 ## Model picker
 
-A new tab opens to the chooser, which lists every model auto-discovered under `src/keyboard_models/<manufacturer>/<model>/`. Cards show manufacturer, display name, and model id. Clicking a card spins up the engine for that tab and navigates the iframe to the model's web UI. The chooser runs inside the iframe and asks the parent shell for the catalog via `postMessage` — the preload-bridged `mockRunnerAPI` only exists on the parent.
+A new tab opens to the chooser, which lists every model auto-discovered under `src/keyboard_models/<manufacturer>/<model>/`. Cards show manufacturer, display name, and model id. Clicking a card spins up the transport for that tab and navigates the iframe to the model's web UI. The chooser runs inside the iframe and asks the parent shell for the catalog via `postMessage` — the preload-bridged `mockRunnerAPI` only exists on the parent.
 
 ## Model UI
 
@@ -134,7 +134,7 @@ Writes are atomic (`tmp` + `rename`). The format is versioned so older files can
 
 ## Headless mode
 
-For tests and CI, `mock:headless` runs the same `MockEngine` under plain Node (no Electron, no UI). It prints `MOCK_READY` on stdout once the WebSocket server is up.
+For tests and CI, `mock:headless` runs the same `MockTransport` under plain Node (no Electron, no UI). It prints `MOCK_READY` on stdout once the WebSocket server is up.
 
 ```bash
 npm run mock:headless -- --model nord-electro-5d --ws-port 3000
@@ -154,28 +154,28 @@ Tests use this via `tests/helpers/mock-process.ts` (headless spawn + WebSocket a
 |---|---|
 | `src/mock-runner/main.ts` | Electron main — owns tabs, engines, file menu, IPC |
 | `src/mock-runner/cli.ts` | Headless entry point |
-| `src/mock-runner/engine.ts` | `MockEngine` — MIDI virtual ports + WebSocket server + broadcast + source-aware routing |
+| `src/mock-runner/transport.ts` | `MockTransport` — MIDI virtual ports + WebSocket server + broadcast + source-aware routing |
 | `src/mock-runner/preload.cjs` | Exposes `mockRunnerAPI` to the shell |
 | `src/mock-runner/shell/index.html` | Tab bar, slot, console, backup-picker modal |
 | `src/mock-runner/shell/app.js` | Tab routing, chat console, backup flow, dirty/title sync |
 | `src/mock-runner/shell/chooser.html` | Model picker iframe |
 | `src/shared/mockrack-format.ts` | `.mockrack` schema, parse, atomic write |
-| `src/keyboard_models/<mfr>/<model>/mock-handler.ts` | Per-model state, MIDI handling, `onUIParam`, `getFullState` / `setFullState` |
+| `src/keyboard_models/<mfr>/<model>/mock-handler.ts` | Per-model state, `set_params` / `get_params`, `getFullState` / `setFullState` |
 | `src/keyboard_models/<mfr>/<model>/web/` | Per-model UI loaded into the tab iframe |
 
-## Engine, codec, handler — runtime contract
+## Transport, codec, handler — runtime contract
 
-The mock runner has three collaborators: a **MockEngine** (transport), a per-model **MidiCodec** (param ↔ MIDI translation), and a per-model **MockHandler** (state). Knowing where the boundary is — and why the routing has the shape it does — saves a lot of head-scratching when a feature crosses them.
+The mock runner has three collaborators: a **MockTransport** (transport), a per-model **MidiCodec** (param ↔ MIDI translation), and a per-model **MockHandler** (state). Knowing where the boundary is — and why the routing has the shape it does — saves a lot of head-scratching when a feature crosses them.
 
-> Stage-5 status (#30): the handler is now purely param-domain — no MIDI bytes, no addresses. All MIDI ownership lives in the engine + codec. The diagrams below were originally written for the pre-stage-5 two-collaborator split; they're still useful for the source-aware routing rules but the "MockHandler returns sysexOut/ccOut" parts are stale. Treat them as historical until this section is revised.
+> Stage-5 status (#30): the handler is now purely param-domain — no MIDI bytes, no addresses. All MIDI ownership lives in the transport + codec. The diagrams below were originally written for the pre-stage-5 two-collaborator split; they're still useful for the source-aware routing rules but the "MockHandler returns sysexOut/ccOut" parts are stale. Treat them as historical until this section is revised.
 
 ### Topology
 
-Each tab spawns one `MockEngine` with one `MockHandler`. The engine owns transport; the handler owns model semantics.
+Each tab spawns one `MockTransport` with one `MockHandler`. The transport owns the ports + WS + routing glue; the handler owns model semantics.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                         MockEngine (transport)                         │
+│                         MockTransport (transport)                         │
 │   - WebSocket server   - Virtual MIDI ports   - Source-aware routing   │
 │   - Broadcasts state   - Knows nothing about params or encoding        │
 └────────────────────────────────────────────────────────────────────────┘
@@ -190,7 +190,7 @@ Each tab spawns one `MockEngine` with one `MockHandler`. The engine owns transpo
                                       │ kbd, bridge│    │ kbd, bridge│
                                       └────────────┘    └────────────┘
 
-        engine ⇄ handler  (in-process method calls only)
+     transport ⇄ handler  (in-process method calls only)
                  ▼
    ┌────────────────────────────────────────────────────────────────┐
    │                   MockHandler (model logic)                    │
@@ -202,12 +202,12 @@ Each tab spawns one `MockEngine` with one `MockHandler`. The engine owns transpo
    └────────────────────────────────────────────────────────────────┘
 ```
 
-The engine creates two virtual MIDI ports per tab (the device's MIDI In, where apps write to it; the device's MIDI Out, where apps read from it) and one WebSocket server (UI clients + an MCP-status lane).
+The transport creates two virtual MIDI ports per tab (the device's MIDI In, where apps write to it; the device's MIDI Out, where apps read from it) and one WebSocket server (UI clients + an MCP-status lane).
 
 ### Responsibility split
 
-| Concern                                | Engine | Handler |
-|----------------------------------------|:------:|:-------:|
+| Concern                                | Transport | Handler |
+|----------------------------------------|:---------:|:-------:|
 | Virtual MIDI In / Out lifecycle        |   ✓    |         |
 | WebSocket server + clients             |   ✓    |         |
 | Decide *whether* to emit on MIDI Out   |   ✓    |         |
@@ -217,7 +217,7 @@ The engine creates two virtual MIDI ports per tab (the device's MIDI In, where a
 | State updates (sceneGlobal, parts)     |        |    ✓    |
 | Decide *what* MIDI to emit             |        |    ✓    |
 
-The engine is a dumb pipe + router. The handler is the model brain.
+The transport is a dumb pipe + router. The handler is the model brain.
 
 ### The dispatcher
 
@@ -226,7 +226,7 @@ Two collaborators between the engine's edges and the handler:
 - The **WS handler** parses a UI command (`{type:"cc",...}`, `{type:"program",...}`, `{type:"sysex",...}`) and synthesizes a `MidiMessage` from it.
 - The **midiInput listeners** receive raw bytes on the virtual MIDI In and produce the same `MidiMessage` shape.
 
-Both feed `engine.dispatch(msg, source)` — a single private method on `MockEngine`. Despite the `MidiMessage` shape, a UI cc isn't really MIDI — it's a UI command synthesized into the same shape so the handler doesn't have to care about the source. The dispatcher is also where the source-aware emission rule lives. Note: `{type:"param"}` UI commands take a different path (see Flow 2 below) — they don't fit the `MidiMessage` shape and the handler must encode them.
+Both feed `engine.dispatch(msg, source)` — a single private method on `MockTransport`. Despite the `MidiMessage` shape, a UI cc isn't really MIDI — it's a UI command synthesized into the same shape so the handler doesn't have to care about the source. The dispatcher is also where the source-aware emission rule lives. Note: `{type:"param"}` UI commands take a different path (see Flow 2 below) — they don't fit the `MidiMessage` shape and the handler must encode them.
 
 ### Source-aware routing rule
 

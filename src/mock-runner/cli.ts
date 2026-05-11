@@ -7,7 +7,7 @@
 
 import { parseArgs } from "node:util";
 import { loadModelById } from "../shared/model-registry.js";
-import { MockEngine } from "./engine.js";
+import { MockTransport } from "./transport.js";
 
 const { values } = parseArgs({
   options: {
@@ -33,7 +33,7 @@ if (!handler) {
   process.exit(1);
 }
 
-const engine = new MockEngine(handler, {
+const transport = new MockTransport(handler, {
   lowerChannel: parseInt(values["lower-channel"]!),
   upperChannel: parseInt(values["upper-channel"]!),
   wsPort: parseInt(values["ws-port"]!),
@@ -44,15 +44,15 @@ const engine = new MockEngine(handler, {
   noMidi: values["no-midi"],
 });
 
-await engine.start();
+await transport.start();
 console.log("MOCK_READY");
 
 process.on("SIGTERM", async () => {
-  await engine.stop();
+  await transport.stop();
   process.exit(0);
 });
 
 process.on("SIGINT", async () => {
-  await engine.stop();
+  await transport.stop();
   process.exit(0);
 });
