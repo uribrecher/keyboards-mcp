@@ -56,10 +56,10 @@ The dot at the start of each tab title is a status LED reflecting that mock's ro
 
 | LED | Meaning |
 |---|---|
-| Off / dim | No active lease against this mock's WebSocket port — nobody has connected. |
+| Amber (steady) | No active lease against this mock's WebSocket port — the default resting state. |
 | Green | An MCP session holds this mock as the **primary** device. |
-| Amber | Held as the **shadow** of another device (mirror destination — typical hw + mock pair). |
-| Blinking amber (all tabs) | MCB is unreachable; the broker-liveness state pushes "down" to every tab until it comes back. |
+| Blue | Held as the **shadow** of another device (mirror destination — typical hw + mock pair). |
+| Blinking amber (all tabs) | MCB is unreachable; the broker-liveness state pushes "down" to every tab until it comes back. With the broker down, the lease-state poll collapses every tab to "none" (amber) and the blink pulses opacity on top of that. |
 
 The shell polls MCB every 2 s for lease state, and registers a broker-liveness subscriber so the "down" / "up" transitions arrive as push notifications (no polling on the renderer side). MCB lives in `src/shared/mcb-client.ts`; the mock-runner is not a hard dependent — if MCB is down, mocks still run, the LEDs just collapse to "none".
 
@@ -78,7 +78,7 @@ The drawer pinned to the bottom of the rack column shows the active tab's recent
 ▸ OUT 14:32:08.520  PC=12 ch=2
 ```
 
-Events arrive from each tab's `MockTransport` via the `midi-event` EventEmitter signal, relayed through Electron IPC. The transport itself does no model-specific interpretation either; both stdout (`MIDI-IN` / `MIDI-OUT`) and this drawer get raw bytes.
+Events arrive from each tab's `MockTransport` via the `midi-event` EventEmitter signal, relayed through Electron IPC. The transport itself does no model-specific interpretation. The drawer receives the **full** byte array for every event (so select-and-copy works on long sysex); stdout's `MIDI-IN` / `MIDI-OUT` log lines summarize long sysex packets as `[<first 4 bytes> .. <last byte>]` for readability.
 
 ## Model picker
 

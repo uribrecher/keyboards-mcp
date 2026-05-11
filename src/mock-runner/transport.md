@@ -112,8 +112,10 @@ UI ──{type:"setParam", name, value, part?}──► transport WS handler
                                                ├──► transport.broadcast(state)  ──► UI clients
                                                │
                                                └──► codec.encodeParams([{name, value, part}])
-                                                      → [{cc, value, channel}, …]
-                                                      └─ transport emits to MIDI Out
+                                                      → EncodedMessage[]
+                                                        (e.g. {type:"cc", controller, value, channel?}
+                                                              {type:"sysex", bytes:[…]})
+                                                      └─ transport emits each via emitOne()
 ```
 
 If `codec.encodeParams` throws (unknown param, transport-less param), the transport catches and logs `setParam emit failed` and continues — state was still updated and broadcast.
