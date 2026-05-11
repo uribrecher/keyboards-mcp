@@ -4,6 +4,7 @@ import type { LeaseRegistry } from "../lease-registry.js";
 import type { BridgeRegistry } from "../bridge-registry.js";
 import type { PortListReader, MockRegistryReader, Lease } from "../types.js";
 import { resolvePort, PortResolutionError } from "../port-resolver.js";
+import { reapStaleMockLeases } from "../reap-stale-mock-leases.js";
 import type { RouteContext } from "./server.js";
 import { HttpError } from "./errors.js";
 
@@ -30,6 +31,11 @@ export function makeDevicesHandlers(deps: Deps) {
       if (typeof body.port !== "string" || typeof body.model !== "string") {
         throw new HttpError(400, "invalid-input", "Body must include string `port` and `model`");
       }
+
+      // Reap any lease whose bound mock instance is gone before checking
+      // port ownership — otherwise a stale lease from a closed mock would
+      // block a fresh claim on the same port name.
+      reapStaleMockLeases(deps);
 
       const primary = resolveOrHttp(() => resolvePort(body.port!, "output", deps.portList, deps.mockRegistry));
 
@@ -76,6 +82,7 @@ export function makeDevicesHandlers(deps: Deps) {
       }
 
       const deviceId = randomUUID();
+      const mockEntryForPrimary = deps.mockRegistry.findByMidiPort(primary.portName);
       const lease: Lease = {
         deviceId, ownerSessionId: sessionId, model: body.model,
         primary, input, shadow,
@@ -83,6 +90,7 @@ export function makeDevicesHandlers(deps: Deps) {
         lowerChannel: body.lower_channel,
         upperChannel: body.upper_channel,
         connectedAt: Date.now(),
+        mockInstanceId: mockEntryForPrimary?.instanceId ?? null,
       };
 
       deps.leases.add(lease);
@@ -98,7 +106,10 @@ export function makeDevicesHandlers(deps: Deps) {
       return { statusCode: 200, body: toManifest(lease) };
     },
 
-    list: async () => ({ statusCode: 200, body: deps.leases.listAll().map(toManifest) }),
+    list: async () => {
+      reapStaleMockLeases(deps);
+      return { statusCode: 200, body: deps.leases.listAll().map(toManifest) };
+    },
 
     delete: async (ctx: RouteContext) => {
       const lease = deps.leases.get(ctx.params.id);

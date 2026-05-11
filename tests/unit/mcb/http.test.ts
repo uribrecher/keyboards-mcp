@@ -23,9 +23,9 @@ beforeEach(async () => {
     sessions: new SessionManager(),
     portList: { listOutputs: () => ["Port A", "Port B", "Mock Port"], listInputs: () => ["Port A In"] },
     mockRegistry: {
-      findByLabel: (l) => l === "mocky" ? { midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999 } : undefined,
-      findByMidiPort: (p) => p === "Mock Port" ? { midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999 } : undefined,
-      list: () => [{ midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999 }],
+      findByLabel: (l) => l === "mocky" ? { midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999, instanceId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" } : undefined,
+      findByMidiPort: (p) => p === "Mock Port" ? { midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999, instanceId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" } : undefined,
+      list: () => [{ midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999, instanceId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }],
       listAllWithStale: () => [],
     },
   });
@@ -104,12 +104,37 @@ describe("MCB HTTP", () => {
     assert.equal(r.body.model, "m");
     // Lease no longer carries a label field — that data lives on the local pool device.
     assert.equal(r.body.label, undefined);
+    // Real-keyboard ports yield mockInstanceId=null.
+    assert.equal(r.body.mockInstanceId, null);
   });
 
   it("POST /v1/devices fills wsPort for a mock primary", async () => {
     const sid = await newSession();
     const r = await call("POST", "/v1/devices", { port: "mocky", model: "m" }, { "x-session-id": sid });
     assert.deepEqual(r.body.primary, { portName: "Mock Port", wsPort: 3001 });
+  });
+
+  it("POST /v1/devices binds lease.mockInstanceId to the mock's instanceId when claiming a mock port", async () => {
+    const sid = await newSession();
+    const r = await call("POST", "/v1/devices", { port: "mocky", model: "m" }, { "x-session-id": sid });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.mockInstanceId, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+  });
+
+  it("DELETE /v1/mocks/:instanceId releases every lease bound to that mockInstanceId", async () => {
+    const sid = await newSession();
+    const claim = await call("POST", "/v1/devices", { port: "mocky", model: "m" }, { "x-session-id": sid });
+    assert.equal(claim.statusCode, 200);
+    const deviceId = claim.body.deviceId;
+    const del = await call("DELETE", `/v1/mocks/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa`);
+    assert.equal(del.statusCode, 204);
+    const list = await call("GET", "/v1/devices");
+    assert.equal(list.body.find((m: any) => m.deviceId === deviceId), undefined);
+  });
+
+  it("DELETE /v1/mocks/:instanceId is idempotent — unknown instanceId returns 204", async () => {
+    const del = await call("DELETE", `/v1/mocks/99999999-9999-9999-9999-999999999999`);
+    assert.equal(del.statusCode, 204);
   });
 
   it("POST /v1/devices with with_shadow registers bridge", async () => {

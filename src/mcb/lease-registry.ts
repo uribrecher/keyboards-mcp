@@ -28,6 +28,24 @@ export class LeaseRegistry {
     this.byDeviceId.delete(deviceId);
   }
 
+  /**
+   * Remove every lease for which `predicate` returns true. Returns the
+   * removed leases so callers can clean up sibling state (bridges, owning
+   * session's `ownedDeviceIds`). Iteration is over a snapshot so the
+   * predicate may freely mutate other state.
+   */
+  reapWhere(predicate: (lease: Lease) => boolean): Lease[] {
+    const removed: Lease[] = [];
+    for (const lease of [...this.byDeviceId.values()]) {
+      if (predicate(lease)) {
+        this.primaryIndex.delete(lease.primary.portName);
+        this.byDeviceId.delete(lease.deviceId);
+        removed.push(lease);
+      }
+    }
+    return removed;
+  }
+
   get(deviceId: string): Lease | undefined {
     return this.byDeviceId.get(deviceId);
   }

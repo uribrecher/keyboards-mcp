@@ -31,6 +31,7 @@ function makeEntry(over: Partial<MockRegistryEntry> = {}): MockRegistryEntry {
     displayName: "Test Model",
     label:       "test-label",
     pid:         process.pid,
+    instanceId:  "00000000-0000-0000-0000-000000000001",
     startedAt:   now,
     lastTouched: now,
     ...over,

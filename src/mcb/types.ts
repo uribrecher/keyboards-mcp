@@ -28,6 +28,13 @@ export interface Lease {
   lowerChannel?: number;
   upperChannel?: number;
   connectedAt: number;
+  /**
+   * When the lease's primary port is a mock at claim time, this is the
+   * mock's `instanceId`. `null` for real-keyboard leases. Used by the
+   * passive reap-on-read safety net to detect a successor mock at the
+   * same port name.
+   */
+  mockInstanceId: string | null;
 }
 
 export type Manifest = Omit<Lease, "connectedAt">;
@@ -44,6 +51,8 @@ export interface MockRegistryEntry {
   wsPort: number;
   label: string;
   pid: number;
+  /** Per-boot UUID. See `src/shared/mock-registry.ts` for semantics. */
+  instanceId: string;
 }
 
 /**

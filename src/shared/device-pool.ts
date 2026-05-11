@@ -115,4 +115,16 @@ export class DevicePool {
     }
     return indices.length;
   }
+
+  /**
+   * Disconnect the pool entry that owns `deviceId` (the MCB lease id), if
+   * any. Used by mcb-client's `onDeviceLost` callback when MCB reports a
+   * specific lease is gone (mock instance closed, broker reaped). No-op if
+   * no entry has that mcbDeviceId.
+   */
+  disconnectByDeviceId(deviceId: string): void {
+    const entry = this.list().find((e) => e.ports?.mcbDeviceId === deviceId);
+    if (!entry) return;
+    try { this.disconnect(entry.index); } catch { /* already gone */ }
+  }
 }

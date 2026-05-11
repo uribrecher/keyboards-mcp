@@ -14,6 +14,8 @@ interface MockAnnotation {
   displayName: string;
   label: string;
   pid: number;
+  /** Per-boot UUID for this mock instance. Never recycled across tab closes. */
+  instanceId: string;
   startedAt: string;
   lastTouched: string;
   stale: boolean;
@@ -24,6 +26,14 @@ interface LeaseAnnotation {
   sessionId: string;
   deviceId: string;
   model: string;
+  /**
+   * For mock-backed leases, the `instanceId` of the mock that was active
+   * at claim time. `null` for real-keyboard leases. A mismatch against the
+   * current mock annotation on the same port means the lease is bound to a
+   * different (closed) mock — the broker's passive reaper will catch it on
+   * the next read.
+   */
+  mockInstanceId: string | null;
 }
 
 interface OutputPort {
@@ -52,6 +62,7 @@ export function makeMidiPortsHandler(deps: Deps) {
         midiPort: e.midiPort, wsPort: e.wsPort,
         modelId: e.modelId, displayName: e.displayName,
         label: e.label, pid: e.pid,
+        instanceId: e.instanceId,
         startedAt: e.startedAt, lastTouched: e.lastTouched,
         stale: e.stale,
       });
@@ -64,6 +75,7 @@ export function makeMidiPortsHandler(deps: Deps) {
         sessionId: lease.ownerSessionId,
         deviceId: lease.deviceId,
         model: lease.model,
+        mockInstanceId: lease.mockInstanceId,
       });
       if (lease.shadow) {
         leaseByPort.set(lease.shadow.portName, {
@@ -71,6 +83,7 @@ export function makeMidiPortsHandler(deps: Deps) {
           sessionId: lease.ownerSessionId,
           deviceId: lease.deviceId,
           model: lease.model,
+          mockInstanceId: lease.mockInstanceId,
         });
       }
     }

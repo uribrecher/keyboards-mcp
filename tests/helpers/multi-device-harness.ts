@@ -56,7 +56,13 @@ export class MultiDeviceHarness {
     const mocks: MockProcess[] = [];
     try {
       for (const mockOpts of opts.mocks) {
-        mocks.push(await MockProcess.start(mockOpts));
+        // Push MCB_SOCKET into the mock-runner env so its tab-close active
+        // release (DELETE /v1/mocks/:instanceId in MockTransport.stop) lands
+        // on the harness's MCB, not whatever the developer has in $MCB_SOCKET.
+        mocks.push(await MockProcess.start({
+          ...mockOpts,
+          env: { ...(mockOpts.env ?? {}), MCB_SOCKET: mcbSocketPath },
+        }));
       }
     } catch (err) {
       await Promise.all(mocks.map((m) => m.stop()));
@@ -99,6 +105,47 @@ export class MultiDeviceHarness {
 
   getMock(index: number): MockProcess {
     return this.mocks[index];
+  }
+
+  /**
+   * Stop a single mock-runner mid-test. The mock's own `MockTransport.stop()`
+   * runs SIGTERM-driven (see `src/mock-runner/cli.ts`), which fires the
+   * active `DELETE /v1/mocks/:instanceId` to the harness's MCB before exit.
+   */
+  async stopMock(index: number): Promise<void> {
+    const mock = this.mocks[index];
+    if (!mock) throw new Error(`No mock at index ${index}`);
+    await mock.stop();
+    this.mocks.splice(index, 1);
+  }
+
+  /**
+   * Start an additional mock-runner against the harness's MCB. Returns the
+   * new mock's index in the harness's `mocks` array.
+   */
+  async startMock(opts: MockProcessOptions): Promise<number> {
+    const mock = await MockProcess.start({
+      ...opts,
+      env: { ...(opts.env ?? {}), MCB_SOCKET: this.mcbSocketPath },
+    });
+    this.mocks.push(mock);
+    return this.mocks.length - 1;
+  }
+
+  /** Read MCB's lease list directly — bypasses MCP. */
+  async listMcbDevices(): Promise<Array<{ deviceId: string; mockInstanceId: string | null; primary: { portName: string } }>> {
+    return new Promise((resolve, reject) => {
+      const req = request({ socketPath: this.mcbSocketPath, method: "GET", path: "/v1/devices" }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
+          catch (err) { reject(err); }
+        });
+      });
+      req.on("error", reject);
+      req.end();
+    });
   }
 
   /**
