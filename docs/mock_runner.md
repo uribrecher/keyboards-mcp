@@ -11,25 +11,27 @@ npm run mock:headless --model nord-electro-5d   # Plain Node, for CI/E2E tests
 
 ## Anatomy
 
+The shell is a two-column layout: the **rack column** on the left (chassis with tab bar + slot + MIDI monitor drawer), the **rail** in the middle (full window height, combined splitter + collapse toggle), and the **console drawer** on the right.
+
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  MOCK RUNNER · MULTI-DEVICE TEST RACK            [●tab][●tab][●tab][+]   │
-├──────────────────────────────────────────────────────┬─┬─────────────────┤
-│                                                      │ │ [CHAT●] [LOG●]  │
-│         (model UI iframe — drawbars, knobs,          │R│ SID:abc12345 ▮▮▮│
-│          LEDs, parameter state for the active tab)   │A│                 │
-│                                                      │I│  > history…     │
-│                                                      │L│                 │
-├──────────────────────────────────────────────────────┤ │                 │
-│ MIDI MONITOR                              0 events ▴ │ │  › composer ↵   │
-└──────────────────────────────────────────────────────┴─┴─────────────────┘
+┌─────────────────────────────────────────────────────┬─┬──────────────────┐
+│ MOCK RUNNER · [●tab][●tab][●tab][+]                 │ │ [CHAT●] [LOG●]   │
+├─────────────────────────────────────────────────────┤ ├──────────────────┤
+│                                                     │ │ SID:abc12345 ▮▮▮ │
+│         (model UI iframe — drawbars, knobs,         │R│                  │
+│          LEDs, parameter state for active tab)      │A│  > history…      │
+│                                                     │I│                  │
+│                                                     │L│                  │
+├─────────────────────────────────────────────────────┤ │                  │
+│ MIDI MONITOR                              0 events ▴│ │  › composer ↵    │
+└─────────────────────────────────────────────────────┴─┴──────────────────┘
 ```
 
-- **Top chassis** — brand strip plus tab bar with a `+` button. Each tab carries a status LED (see [Tab LEDs](#tab-leds-and-mcb)).
+- **Chassis** — brand strip plus tab bar with a `+` button. Sits at the top of the **rack column only** (PR #82 made the rail full-height); the chassis no longer spans across the console. Each tab carries a status LED (see [Tab LEDs](#tab-leds-and-mcb)).
 - **Slot** — the active tab's iframe. Each tab loads either the model picker (`chooser.html`) or, once a model is chosen, that model's web UI from `src/keyboard_models/<mfr>/<model>/web/`. Inactive tabs stay mounted but hidden.
 - **Empty rack slot** — placeholder shown when no tabs are open.
-- **MIDI MONITOR drawer** — collapsible strip at the bottom of the rack column showing the active tab's recent MIDI traffic (see [MIDI monitor](#midi-monitor)).
-- **Rail** — combined splitter + collapse toggle between the rack and the console. Drag to resize, click to collapse.
+- **MIDI monitor drawer** — collapsible strip at the bottom of the rack column showing the active tab's recent MIDI traffic (see [MIDI monitor](#midi-monitor)).
+- **Rail** — full-height combined splitter + collapse toggle between the rack and the console. Drag to resize, click to collapse.
 - **Console drawer** — tabbed pane on the right with **CHAT** (talk to the agent) and **LOG** (mock-runner event log). See [Console](#console--chat-and-event-log).
 
 ## Tabs and devices
@@ -285,90 +287,7 @@ The transport is a dumb pipe + small protocol glue. The codec is the model's tra
 
 ### Inbound message flows
 
-#### Flow 1 — UI sets a parameter
-
-The UI never touches MIDI bytes; it sends a named param write over the WebSocket. The transport updates state via the handler, then asks the codec to encode the same write and emits it on MIDI Out (the panel-knob analogue — external listeners see the change).
-
-```
-UI ──{type:"setParam", name, value, part?}──► transport WS handler
-                                               │
-                                               ├──► handler.set_params([{name, value, part}])
-                                               │      └─ updates state, returns { state, log }
-                                               │
-                                               ├──► transport.broadcast(state)  ──► UI clients
-                                               │
-                                               └──► codec.encodeParams([{name, value, part}])
-                                                      → [{cc, value, channel}, …]
-                                                      └─ transport emits to MIDI Out
-```
-
-`{type:"setActiveEngine", engine, part?}` follows the same shape but routes to `handler.set_active_engine`, which preserves inactive engines' state (JUNO-X has per-part engines: ZEN-Core, Analog Synth, JUNO-X Model, RD Piano).
-
-`{type:"reload-cache"}` calls `handler.onCacheReload?.()` and broadcasts a fresh full state — used after `extract_backup` rewrites the on-disk cache.
-
-#### Flow 2 — External MIDI writes a parameter (CC, no echo)
-
-External MIDI arriving on the virtual In must NOT echo back to MIDI Out — otherwise a bridge that fans out would loop the message right back into our own In. The transport decodes via the codec and applies through the handler; no echo, ever.
-
-```
-External MIDI ──cc──► virtual MIDI In ──► transport.dispatch
-                                            │
-                                            ├──► codec.decode({type:"cc", controller, value, channel})
-                                            │      → [{kind:"param", name, value, part?}, …]
-                                            │
-                                            └──► handler.set_params(refs)
-                                                   ├─ updates state
-                                                   └─ transport.broadcast(state) ──► UI clients
-
-                                            (no emission to MIDI Out)
-```
-
-#### Flow 3 — External Program Change (with bank-select accumulator)
-
-CC 0 (bank MSB) and CC 32 (bank LSB) on their own mean nothing — they're stateful predecessors to a Program Change. The codec is stateless by design, so the **transport** accumulates MSB/LSB per channel and finalizes a `handler.load_program(bank, slot)` call when the matching PC arrives.
-
-```
-External MIDI ──CC 0 (MSB)──►  transport: pendingBankByCh[ch].msb = value   (no handler call)
-External MIDI ──CC 32 (LSB)──► transport: pendingBankByCh[ch].lsb = value   (no handler call)
-External MIDI ──PC──►          transport: bank = (msb << 7) | lsb
-                                          handler.load_program(bank, slot)
-                                          └─ updates state → broadcast
-```
-
-#### Flow 4 — External Roland RQ1 (transport-fulfilled, handler read-only)
-
-RQ1 is a pure read of state. The transport orchestrates the round-trip entirely via the codec; the handler just returns the requested params' values.
-
-```
-External MIDI ──sysex──► virtual MIDI In ──► transport.dispatch
-                                              │
-                                              ├──► codec.parseRequest(msg)
-                                              │      → { address, size, deviceId } | undefined
-                                              │
-                                              ├──► codec.paramsAtAddress(address, size)
-                                              │      → [{name, part?, byteOffset, byteCount}, …]
-                                              │
-                                              ├──► handler.get_params(names, part)   per part
-                                              │      → { name: userValue, … }
-                                              │
-                                              ├──► codec.encodeBytes(name, value, part)   per param
-                                              │      → wire bytes
-                                              │
-                                              ├──► codec.buildResponse(req, dataBytes)
-                                              │      → DT1 reply sysex
-                                              │
-                                              └──► transport emits DT1 to MIDI Out
-```
-
-The handler never sees raw MIDI here. Adding a new addressable-param read on a Roland model means extending the per-model codec's `paramsAtAddress` — no transport changes.
-
-### Source-aware emission
-
-The only source-aware rule is: **external MIDI is never echoed back to MIDI Out** (loop prevention on bridges). UI writes always emit (the panel-knob mirror). Handler-driven emissions (RQ1 replies, Program Change broadcasts to UI) emit on their own path. There's no `source` flag on a dispatcher anymore — the rule is implicit in which entry point fires (WS message vs. virtual MIDI In listener).
-
-### Tagged debug logs
-
-Every transport log line carries `[<actualPortName>:<label>]` and a direction tag — `WS-IN`, `MIDI-IN`, `MIDI-OUT`. Sysex is summarized as `sysex N bytes [F0 41 10 .. F7]` (head + tail). Two mocks sharing one stdout (e.g. a primary + shadow setup with a bridge) become readable: a UI slider move on the primary produces a `WS-IN setParam …` followed by a `MIDI-OUT` line on the primary and a corresponding `MIDI-IN` line on the shadow. Structured per-event payloads with the full sysex bytes flow to the [MIDI monitor](#midi-monitor) drawer separately.
+There are four flows worth knowing: UI `setParam`, external CC (no echo, prevents bridge loops), external bank-select + Program Change (transport accumulates MSB/LSB), and external Roland RQ1 (transport-fulfilled, handler read-only). Each is documented with diagrams in [`src/mock-runner/transport.md`](../src/mock-runner/transport.md#inbound-message-flows) alongside the transport's other internals.
 
 ### See also
 

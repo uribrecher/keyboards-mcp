@@ -93,6 +93,91 @@ Transport-side because it's a pure read: codec describes which params live in th
 
 CC 0 (MSB) and CC 32 (LSB) on their own mean nothing — they're stateful predecessors to a Program Change. The codec is stateless by design, so the transport accumulates them per channel and only finalizes a `handler.load_program(bank, slot)` call when the matching PC arrives.
 
+## Inbound message flows
+
+The four flows below cover everything the transport actually does on the inbound side — both the WebSocket message types from the UI and the virtual-MIDI-In packets from external sources. They expand on the tables/decision tree above with step-by-step diagrams of what calls what.
+
+### Flow 1 — UI sets a parameter
+
+The UI never touches MIDI bytes; it sends a named param write over the WebSocket. The transport updates state via the handler, then asks the codec to encode the same write and emits it on MIDI Out (the panel-knob analogue — external listeners see the change).
+
+```
+UI ──{type:"setParam", name, value, part?}──► transport WS handler
+                                               │
+                                               ├──► handler.set_params([{name, value, part}])
+                                               │      └─ updates state, returns { state, log }
+                                               │
+                                               ├──► transport.broadcast(state)  ──► UI clients
+                                               │
+                                               └──► codec.encodeParams([{name, value, part}])
+                                                      → [{cc, value, channel}, …]
+                                                      └─ transport emits to MIDI Out
+```
+
+`{type:"setActiveEngine", engine, part?}` follows the same shape but routes to `handler.set_active_engine`, which preserves inactive engines' state (JUNO-X has per-part engines: ZEN-Core, Analog Synth, JUNO-X Model, RD Piano).
+
+`{type:"reload-cache"}` calls `handler.onCacheReload?.()` and broadcasts a fresh full state — used after `extract_backup` rewrites the on-disk cache.
+
+### Flow 2 — External MIDI writes a parameter (CC, no echo)
+
+External MIDI arriving on the virtual In must NOT echo back to MIDI Out — otherwise a bridge that fans out would loop the message right back into our own In. The transport decodes via the codec and applies through the handler; no echo, ever.
+
+```
+External MIDI ──cc──► virtual MIDI In ──► transport.dispatch
+                                            │
+                                            ├──► codec.decode({type:"cc", controller, value, channel})
+                                            │      → [{kind:"param", name, value, part?}, …]
+                                            │
+                                            └──► handler.set_params(refs)
+                                                   ├─ updates state
+                                                   └─ transport.broadcast(state) ──► UI clients
+
+                                            (no emission to MIDI Out)
+```
+
+### Flow 3 — External Program Change (with bank-select accumulator)
+
+CC 0 (bank MSB) and CC 32 (bank LSB) on their own mean nothing — they're stateful predecessors to a Program Change. The codec is stateless by design, so the **transport** accumulates MSB/LSB per channel and finalizes a `handler.load_program(bank, slot)` call when the matching PC arrives.
+
+```
+External MIDI ──CC 0 (MSB)──►  transport: pendingBankByCh[ch].msb = value   (no handler call)
+External MIDI ──CC 32 (LSB)──► transport: pendingBankByCh[ch].lsb = value   (no handler call)
+External MIDI ──PC──►          transport: bank = (msb << 7) | lsb
+                                          handler.load_program(bank, slot)
+                                          └─ updates state → broadcast
+```
+
+### Flow 4 — External Roland RQ1 (transport-fulfilled, handler read-only)
+
+RQ1 is a pure read of state. The transport orchestrates the round-trip entirely via the codec; the handler just returns the requested params' values.
+
+```
+External MIDI ──sysex──► virtual MIDI In ──► transport.dispatch
+                                              │
+                                              ├──► codec.parseRequest(msg)
+                                              │      → { address, size, deviceId } | undefined
+                                              │
+                                              ├──► codec.paramsAtAddress(address, size)
+                                              │      → [{name, part?, byteOffset, byteCount}, …]
+                                              │
+                                              ├──► handler.get_params(names, part)   per part
+                                              │      → { name: userValue, … }
+                                              │
+                                              ├──► codec.encodeBytes(name, value, part)   per param
+                                              │      → wire bytes
+                                              │
+                                              ├──► codec.buildResponse(req, dataBytes)
+                                              │      → DT1 reply sysex
+                                              │
+                                              └──► transport emits DT1 to MIDI Out
+```
+
+The handler never sees raw MIDI here. Adding a new addressable-param read on a Roland model means extending the per-model codec's `paramsAtAddress` — no transport changes.
+
+### Source-aware emission
+
+The only source-aware rule is: **external MIDI is never echoed back to MIDI Out** (loop prevention on bridges). UI writes always emit (the panel-knob mirror). Handler-driven emissions (RQ1 replies) emit on their own path. There's no `source` flag on a dispatcher — the rule is implicit in which entry point fires (WS message vs. virtual MIDI In listener).
+
 ## Outbound — `emitOne`
 
 Called from two paths: outbound after `setParam` (encoded by codec) and outbound from RQ1 fulfillment (the DT1 reply). Resolves the default channel (codec contract: `channel === undefined` → use the connection's default, which on the mock side is `opts.lowerChannel`). Sends to `easymidi.Output` and emits a structured `midi-event` only *after* `send` returns successfully — otherwise the per-tab MIDI drawer would show traffic that never reached the wire.
@@ -136,6 +221,6 @@ If you're tempted to add model knowledge here, the right answer is almost always
 
 ## See also
 
-- [`docs/mock_runner.md`](../../docs/mock_runner.md) — user-facing mock runner doc, with message-flow diagrams under "Engine, codec, handler — runtime contract".
+- [`docs/mock_runner.md`](../../docs/mock_runner.md) — user-facing mock runner doc covering the shell UI, file menu, headless mode, and the high-level transport/codec/handler split.
 - [`src/shared/keyboard-model.ts`](../shared/keyboard-model.ts) — `MockHandler` interface (state contract).
 - [`src/shared/midi-codec.ts`](../shared/midi-codec.ts) — `MidiCodec` interface (param ↔ MIDI contract).
