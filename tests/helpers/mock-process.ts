@@ -12,6 +12,12 @@ export interface MockProcessOptions {
   lowerChannel?: number;
   upperChannel?: number;
   label?: string;
+  /**
+   * Extra env vars merged onto `process.env` for the spawned mock-runner.
+   * The harness uses this to push `MCB_SOCKET` so the mock-runner's
+   * `releaseMockInstance` call lands on the same broker the test owns.
+   */
+  env?: Record<string, string>;
 }
 
 export class MockProcess {
@@ -54,6 +60,7 @@ export class MockProcess {
     const proc = spawn("npx", args, {
       cwd: process.cwd(),
       stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env as Record<string, string>, ...(opts.env ?? {}) },
     });
 
     // Wait for MOCK_READY

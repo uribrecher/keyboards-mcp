@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { DevicePool } from "../shared/device-pool.js";
-import { releaseLease, MCBError } from "../shared/mcb-client.js";
+import { releaseLease, MCBError, MCBDeviceLostError } from "../shared/mcb-client.js";
 
 export function registerDisconnect(server: McpServer, pool: DevicePool): void {
   server.registerTool(
@@ -51,7 +51,12 @@ export function registerDisconnect(server: McpServer, pool: DevicePool): void {
           await releaseLease(mcbDeviceId);
           mcbNote = ` (lease ${mcbDeviceId} released)`;
         } catch (err) {
-          if (err instanceof MCBError) {
+          if (err instanceof MCBDeviceLostError) {
+            // Broker already reaped the lease (likely because the bound mock
+            // instance closed and MCB cleaned up the lease). Local pool was
+            // already torn down above — nothing more to do.
+            mcbNote = ` (lease ${mcbDeviceId} was already released by MCB — mock instance had closed)`;
+          } else if (err instanceof MCBError) {
             console.warn(`[mcp] MCB release failed (non-fatal): ${err.code}: ${err.message}`);
             mcbNote = ` (warning: lease release failed: ${err.code})`;
           } else {

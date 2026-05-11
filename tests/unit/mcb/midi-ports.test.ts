@@ -18,6 +18,7 @@ const fullEntry = (overrides: Partial<MockRegistryEntryFull> = {}): MockRegistry
   midiPort: "Nord Mock", wsPort: 3000,
   modelId: "nord-electro-5d", displayName: "Nord Electro 5D",
   label: "nordi", pid: 1234,
+  instanceId: "00000000-0000-0000-0000-00000000aaaa",
   startedAt: "2026-05-06T00:00:00.000Z", lastTouched: "2026-05-06T00:00:30.000Z",
   stale: false,
   ...overrides,
@@ -30,6 +31,8 @@ const lease = (overrides: Partial<Lease> = {}): Lease => ({
   primary: { portName: "Nord Mock", wsPort: 3000 },
   channel: 1,
   connectedAt: 0,
+  mockInstanceId: null,
+  shadowMockInstanceId: null,
   ...overrides,
 });
 
@@ -83,6 +86,23 @@ describe("GET /v1/midi/ports handler", () => {
     assert.equal(out[1].lease?.kind, "shadow");
     assert.equal(out[0].lease?.deviceId, "dev-1");
     assert.equal(out[1].lease?.deviceId, "dev-1");
+  });
+
+  it("surfaces mock.instanceId and lease.mockInstanceId so the agent can correlate a closed-mock scenario", async () => {
+    const leases = new LeaseRegistry();
+    leases.add(lease({
+      primary: { portName: "Nord Mock", wsPort: 3000 },
+      mockInstanceId: "00000000-0000-0000-0000-00000000aaaa",
+    }));
+    const h = makeMidiPortsHandler({
+      leases,
+      portList: port(["Nord Mock"]),
+      mockRegistry: reg([fullEntry({ midiPort: "Nord Mock", instanceId: "00000000-0000-0000-0000-00000000aaaa" })]),
+    });
+    const res = await h();
+    const out = (res.body as { outputs: Array<{ mock?: { instanceId: string }; lease?: { mockInstanceId: string | null } }> }).outputs;
+    assert.equal(out[0].mock?.instanceId, "00000000-0000-0000-0000-00000000aaaa");
+    assert.equal(out[0].lease?.mockInstanceId, "00000000-0000-0000-0000-00000000aaaa");
   });
 
   it("returns ports MCB sees even if no mock or lease matches", async () => {

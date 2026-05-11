@@ -10,6 +10,7 @@ import { makeHealthHandler } from "./health.js";
 import { makeSessionsHandlers } from "./sessions.js";
 import { makeDevicesHandlers } from "./devices.js";
 import { makeMidiPortsHandler } from "./midi-ports.js";
+import { makeMocksHandlers } from "./mocks.js";
 
 export type ListenTarget =
   | { kind: "uds"; socketPath: string }
@@ -123,11 +124,13 @@ function registerRoutes(routes: Route[], deps: ServerDeps): void {
   const midiPorts = makeMidiPortsHandler({
     leases: deps.leases, portList: deps.portList, mockRegistry: deps.mockRegistry,
   });
+  const mocks = makeMocksHandlers({ leases: deps.leases, bridges: deps.bridges, sessions: deps.sessions });
   routes.push(
-    { method: "POST",   pattern: /^\/v1\/sessions$/,                          handler: sess.create },
-    { method: "POST",   pattern: /^\/v1\/devices$/,                           handler: dev.create },
-    { method: "GET",    pattern: /^\/v1\/devices$/,                           handler: dev.list },
-    { method: "DELETE", pattern: /^\/v1\/devices\/(?<id>[a-f0-9-]+)$/,         handler: dev.delete },
-    { method: "GET",    pattern: /^\/v1\/midi\/ports$/,                       handler: midiPorts },
+    { method: "POST",   pattern: /^\/v1\/sessions$/,                                handler: sess.create },
+    { method: "POST",   pattern: /^\/v1\/devices$/,                                 handler: dev.create },
+    { method: "GET",    pattern: /^\/v1\/devices$/,                                 handler: dev.list },
+    { method: "DELETE", pattern: /^\/v1\/devices\/(?<id>[a-f0-9-]+)$/,               handler: dev.delete },
+    { method: "GET",    pattern: /^\/v1\/midi\/ports$/,                             handler: midiPorts },
+    { method: "DELETE", pattern: /^\/v1\/mocks\/(?<instanceId>[a-f0-9-]+)$/,         handler: mocks.delete },
   );
 }
