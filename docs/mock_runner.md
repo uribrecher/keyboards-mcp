@@ -287,7 +287,7 @@ The transport is a dumb pipe + small protocol glue. The codec is the model's tra
 
 ### Inbound message flows
 
-There are four flows worth knowing: UI `setParam`, external CC (no echo, prevents bridge loops), external bank-select + Program Change (transport accumulates MSB/LSB), and external Roland RQ1 (transport-fulfilled, handler read-only). Each is documented with diagrams in [`src/mock-runner/transport.md`](../src/mock-runner/transport.md#inbound-message-flows) alongside the transport's other internals.
+Two groups, seven flows total. From the wire: UI `setParam`, external MIDI param write (CC or non-request sysex), external bank-select + Program Change (transport accumulates MSB/LSB), and codec-recognized request sysex (today: Roland RQ1, but the mechanism is generic). From the host: WebSocket client connect (with the partial-broadcast MCP-status quirk), tab relabel + cache reload, and `.mockrack` save/restore. Each is documented with diagrams in [`src/mock-runner/transport.md`](../src/mock-runner/transport.md#inbound-message-flows) alongside the transport's other internals.
 
 ### See also
 

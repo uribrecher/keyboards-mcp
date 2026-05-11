@@ -54,7 +54,7 @@ The transport accepts two kinds of WebSocket clients, distinguished by `?client=
 | UI (default) | `this.clients` | Full state snapshots (+ `mcpConnected`, `label`) | `setParam`, `setActiveEngine`, `reload-cache` |
 | MCP server | `this.mcpClients` | `{mcpConnected, label}` only — for label discovery and live status | nothing |
 
-`broadcast()` fans out to both sets but sends different payloads. `broadcastMcpStatus()` sends the label-only payload to both sets on MCP connect/disconnect (so UIs can flip their "MCP connected" indicator).
+`broadcast()` fans out to both sets but sends different payloads, and stamps every payload with `mcpConnected` (current size of `mcpClients > 0`) and `label` (the per-instance backup label). `broadcastMcpStatus()` sends the label-only payload to both sets on MCP connect/disconnect (so UIs can flip their "MCP connected" indicator). The partial-broadcast nature of `broadcastMcpStatus()` is the reason UI clients must *merge* incoming payloads into their cached `lastState` rather than replace — Flow 5 has the detail.
 
 ## Inbound WS message types
 
@@ -95,9 +95,11 @@ CC 0 (MSB) and CC 32 (LSB) on their own mean nothing — they're stateful predec
 
 ## Inbound message flows
 
-The four flows below cover everything the transport actually does on the inbound side — both the WebSocket message types from the UI and the virtual-MIDI-In packets from external sources. They expand on the tables/decision tree above with step-by-step diagrams of what calls what.
+These flows cover everything that mutates state or emits to the wire. They split into two groups: traffic coming in from the wire (WebSocket or virtual MIDI In), and external method calls from the host (main process / CLI).
 
-### Flow 1 — UI sets a parameter
+### From the wire
+
+#### Flow 1 — UI sets a parameter
 
 The UI never touches MIDI bytes; it sends a named param write over the WebSocket. The transport updates state via the handler, then asks the codec to encode the same write and emits it on MIDI Out (the panel-knob analogue — external listeners see the change).
 
@@ -114,28 +116,34 @@ UI ──{type:"setParam", name, value, part?}──► transport WS handler
                                                       └─ transport emits to MIDI Out
 ```
 
+If `codec.encodeParams` throws (unknown param, transport-less param), the transport catches and logs `setParam emit failed` and continues — state was still updated and broadcast.
+
 `{type:"setActiveEngine", engine, part?}` follows the same shape but routes to `handler.set_active_engine`, which preserves inactive engines' state (JUNO-X has per-part engines: ZEN-Core, Analog Synth, JUNO-X Model, RD Piano).
 
-`{type:"reload-cache"}` calls `handler.onCacheReload?.()` and broadcasts a fresh full state — used after `extract_backup` rewrites the on-disk cache.
+`{type:"reload-cache"}` calls `handler.onCacheReload?.()` and broadcasts a fresh full state — used after `extract_backup` rewrites the on-disk cache. (The same effect is also reachable via the public `transport.reloadCache()` method — see Flow 6.)
 
-### Flow 2 — External MIDI writes a parameter (CC, no echo)
+#### Flow 2 — External MIDI param write (CC or non-request sysex)
 
-External MIDI arriving on the virtual In must NOT echo back to MIDI Out — otherwise a bridge that fans out would loop the message right back into our own In. The transport decodes via the codec and applies through the handler; no echo, ever.
+Any MIDI message that arrives on the virtual In and is *not* a bank-select CC, *not* a Program Change, and *not* a codec-recognized request (Flow 4) falls through here. The codec decodes; the handler applies. External MIDI is never echoed back to MIDI Out — a bridge that fans out would loop the message right back into our own In.
 
 ```
-External MIDI ──cc──► virtual MIDI In ──► transport.dispatch
-                                            │
-                                            ├──► codec.decode({type:"cc", controller, value, channel})
-                                            │      → [{kind:"param", name, value, part?}, …]
-                                            │
-                                            └──► handler.set_params(refs)
-                                                   ├─ updates state
-                                                   └─ transport.broadcast(state) ──► UI clients
+External MIDI ──cc / sysex──► virtual MIDI In ──► transport.dispatch
+                                                   │
+                                                   ├──► codec.decode(message)
+                                                   │      → [{kind:"param", name, value, part?, engine?}, …]
+                                                   │
+                                                   └──► handler.set_params(refs)
+                                                          ├─ updates state
+                                                          └─ transport.broadcast(state) ──► UI clients
 
-                                            (no emission to MIDI Out)
+                                                   (no emission to MIDI Out)
 ```
 
-### Flow 3 — External Program Change (with bank-select accumulator)
+CC-only codecs (Nord, Prophet-6) handle CC writes here and return `[]` for sysex. Roland-style codecs (JUNO-X) handle CC *and* inbound DT1 sysex writes via the same path.
+
+`codec.decode` may return **multiple** `param` events for one CC when the controller is ambiguous (JUNO-X emits one candidate per matching engine; the handler picks based on the part's `activeEngine` and silently ignores non-matches). `applySetEvents` rolls all returned `param` events into a single `handler.set_params(refs)` call; `unknown`-kind events are logged and dropped.
+
+#### Flow 3 — External Program Change (with bank-select accumulator)
 
 CC 0 (bank MSB) and CC 32 (bank LSB) on their own mean nothing — they're stateful predecessors to a Program Change. The codec is stateless by design, so the **transport** accumulates MSB/LSB per channel and finalizes a `handler.load_program(bank, slot)` call when the matching PC arrives.
 
@@ -147,15 +155,16 @@ External MIDI ──PC──►          transport: bank = (msb << 7) | lsb
                                           └─ updates state → broadcast
 ```
 
-### Flow 4 — External Roland RQ1 (transport-fulfilled, handler read-only)
+#### Flow 4 — Codec-recognized request sysex (transport-fulfilled, handler read-only)
 
-RQ1 is a pure read of state. The transport orchestrates the round-trip entirely via the codec; the handler just returns the requested params' values.
+When an inbound sysex matches `codec.parseRequest`, the transport orchestrates a read-only round-trip entirely through the codec; the handler just returns the requested params' values. Today this is wired for Roland RQ1 → DT1 on the JUNO-X model — but the mechanism is generic. Any codec that implements `parseRequest` + `paramsAtAddress` + `encodeBytes` + `buildResponse` gets the same fulfillment.
 
 ```
 External MIDI ──sysex──► virtual MIDI In ──► transport.dispatch
                                               │
                                               ├──► codec.parseRequest(msg)
                                               │      → { address, size, deviceId } | undefined
+                                              │      (undefined → falls through to Flow 2)
                                               │
                                               ├──► codec.paramsAtAddress(address, size)
                                               │      → [{name, part?, byteOffset, byteCount}, …]
@@ -166,17 +175,77 @@ External MIDI ──sysex──► virtual MIDI In ──► transport.dispatch
                                               ├──► codec.encodeBytes(name, value, part)   per param
                                               │      → wire bytes
                                               │
-                                              ├──► codec.buildResponse(req, dataBytes)
-                                              │      → DT1 reply sysex
-                                              │
-                                              └──► transport emits DT1 to MIDI Out
+                                              └──► codec.buildResponse(req, dataBytes)
+                                                     → reply sysex
+                                                     └─ transport emits to MIDI Out
 ```
 
-The handler never sees raw MIDI here. Adding a new addressable-param read on a Roland model means extending the per-model codec's `paramsAtAddress` — no transport changes.
+The handler never sees raw MIDI here. Adding a new addressable-param read on a Roland-style model means extending the per-model codec's `paramsAtAddress` — no transport changes.
+
+### From the host (external method calls)
+
+The main process (`main.ts`) and the headless CLI (`cli.ts`) call into the transport directly for tab lifecycle and `.mockrack` save/load. These bypass the WebSocket entirely.
+
+#### Flow 5 — Client connect
+
+UI clients and MCP-status clients connect to the same WebSocket port, distinguished by `?client=mcp` on the URL.
+
+```
+HTTP upgrade ─?client=mcp─► transport: mcpClients.add(ws)
+                            └─ broadcastMcpStatus()
+                               └─► partial {mcpConnected:true, label} to ALL clients
+                                   (UI clients too — they merge into lastState)
+
+HTTP upgrade ─(no query)──► transport: clients.add(ws)
+                            └─ ws.send( handler.getFullState(true)
+                                         + { mcpConnected, label } )
+                               └─► initial full snapshot to JUST this UI client
+```
+
+MCP disconnect fires `broadcastMcpStatus()` again with `mcpConnected:false`. Every regular `broadcast()` also stamps the current `mcpConnected` flag and `label` onto the state payload — UI panels mirror it for the "MCP connected" indicator.
+
+Because `broadcastMcpStatus()` sends a **partial** payload (no `part1..partN`), UI clients that cache the last broadcast must *merge* the new fields in rather than replace the whole cache, or part state evaporates on the next MCP connect/disconnect.
+
+#### Flow 6 — Tab relabel / cache reload
+
+The main process calls these directly during tab rename (`relabel`) and after on-disk backup extraction (`reloadCache`). Both end in a fresh full-state broadcast so connected UIs see the new label or new inventory.
+
+```
+main → transport.relabel(label, lo, hi)
+       ├─ this.opts.label = label
+       ├─ handler.init(lo, hi, label)            ← re-load per-instance backup cache for new label
+       ├─ registry.relabel(wsPort, label)        ← update mock-registry entry
+       └─ broadcast( handler.getFullState(true) )
+
+main → transport.reloadCache()
+       ├─ handler.onCacheReload?.()
+       └─ broadcast( handler.getFullState(true) )
+```
+
+`{type:"reload-cache"}` over the WebSocket (Flow 1's tail) reaches the same handler path; `transport.reloadCache()` is the equivalent for callers inside the same process.
+
+#### Flow 7 — `.mockrack` save / restore
+
+The save side is read-only. The restore side calls the handler's `setFullState` and broadcasts once for a clean UI transition.
+
+```
+main (Save) → transport.getFullState(false)
+              └─ handler.getFullState(false)
+                 → opaque state blob → mockrack file
+
+main (Open) → transport.restoreSnapshot(snapshot)
+              ├─ if !snapshot:                         → return false
+              ├─ if !handler.setFullState:             → return false   (graceful degrade)
+              ├─ handler.setFullState(snapshot)        (may throw → caught, return false)
+              └─ broadcast( handler.getFullState(true) )
+                 → return true
+```
+
+Models that don't implement `setFullState` restore as model + label only with knobs at defaults; the shell notes that to the operator.
 
 ### Source-aware emission
 
-The only source-aware rule is: **external MIDI is never echoed back to MIDI Out** (loop prevention on bridges). UI writes always emit (the panel-knob mirror). Handler-driven emissions (RQ1 replies) emit on their own path. There's no `source` flag on a dispatcher — the rule is implicit in which entry point fires (WS message vs. virtual MIDI In listener).
+The only source-aware rule is: **external MIDI is never echoed back to MIDI Out** (loop prevention on bridges). UI writes always emit (the panel-knob mirror). Transport-fulfilled emissions (request-protocol replies in Flow 4) emit on their own path. There's no `source` flag on a dispatcher — the rule is implicit in which entry point fires (WS `setParam` vs. virtual MIDI In listener).
 
 ## Outbound — `emitOne`
 
