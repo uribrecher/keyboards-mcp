@@ -1,0 +1,305 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "audio-analysis-mcp",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Healthz",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Healthz Healthz Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/import": {
+      "post": {
+        "summary": "Jobs Import",
+        "description": "Stage an audio file into the workspace. Sync, fast.",
+        "operationId": "jobs_import_jobs_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportAudioResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/stems": {
+      "post": {
+        "summary": "Jobs Stems",
+        "description": "Demucs stem separation with streamed progress.\n\nPreset is validated by the ``Literal[...]`` annotation on ``StemsRequest``\n\u2014 Pydantic rejects unknown values with 422 before this handler runs, so\nno manual whitelist check is needed.",
+        "operationId": "jobs_stems_jobs_stems_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/structure": {
+      "post": {
+        "summary": "Jobs Structure",
+        "description": "SongFormer song-structure analysis with streamed progress.",
+        "operationId": "jobs_structure_jobs_structure_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StructureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ImportAudioResult": {
+        "properties": {
+          "audio_path": {
+            "type": "string",
+            "title": "Audio Path"
+          },
+          "job_name": {
+            "type": "string",
+            "title": "Job Name"
+          },
+          "sample_rate": {
+            "type": "integer",
+            "title": "Sample Rate"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "title": "Duration Seconds"
+          },
+          "channels": {
+            "type": "integer",
+            "title": "Channels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio_path",
+          "job_name",
+          "sample_rate",
+          "duration_seconds",
+          "channels"
+        ],
+        "title": "ImportAudioResult"
+      },
+      "ImportRequest": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path"
+        ],
+        "title": "ImportRequest"
+      },
+      "StemsRequest": {
+        "properties": {
+          "audio_path": {
+            "type": "string",
+            "title": "Audio Path"
+          },
+          "preset": {
+            "type": "string",
+            "enum": [
+              "fast",
+              "medium",
+              "accurate"
+            ],
+            "title": "Preset",
+            "default": "medium"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio_path"
+        ],
+        "title": "StemsRequest"
+      },
+      "StructureRequest": {
+        "properties": {
+          "audio_path": {
+            "type": "string",
+            "title": "Audio Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio_path"
+        ],
+        "title": "StructureRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
