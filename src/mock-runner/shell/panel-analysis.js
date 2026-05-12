@@ -164,6 +164,12 @@ let serviceUp = null;           // null = unknown, true/false = last probe resul
 // and (best-effort) on initial selection by reading the structure JSON
 // — but for now we just rely on live results from the SSE stream.
 const cachedResults = new Map();
+// Per-job progress snapshots so switching jobs mid-run paints the bars
+// for whichever job is currently selected (instead of leaking the
+// previously-active job's bars or showing stale idle bars). Keyed by
+// job.name; each slot holds { stems: snap|null, structure: snap|null }
+// where a snap is the same shape setProgress() accepts.
+const jobProgress = new Map();
 let client = null;
 let mounted = false;
 let healthTimer = null;
@@ -382,6 +388,30 @@ function resetProgress(kind) {
   setProgress(kind, { fraction: 0, stage: null, detail: null, state: "idle" });
 }
 
+// Persist a progress snapshot under a specific job — recorded regardless
+// of whether that job is currently selected, so switching to it later
+// can re-paint the bars from the last known state.
+function recordProgress(jobName, kind, snap) {
+  let slot = jobProgress.get(jobName);
+  if (!slot) {
+    slot = { stems: null, structure: null };
+    jobProgress.set(jobName, slot);
+  }
+  slot[kind] = snap;
+}
+
+// Repaint both progress rows from the active job's stored snapshots.
+// Falls back to the idle state when nothing has been recorded for the
+// job yet (or when no job is selected).
+function paintProgressForActive() {
+  const slot = activeJobName ? jobProgress.get(activeJobName) : null;
+  for (const kind of ["stems", "structure"]) {
+    const snap = slot?.[kind];
+    if (snap) setProgress(kind, snap);
+    else resetProgress(kind);
+  }
+}
+
 function refreshCarrier() {
   const anyRunning = Object.values(progressRows).some(
     (r) => r?.getAttribute("data-state") === "running",
@@ -393,10 +423,11 @@ function refreshCarrier() {
 function selectJob(name) {
   if (activeJobName === name) return;
   activeJobName = name;
-  // Reset progress rows when switching jobs — stale percentages from a
-  // previous job would mislead the operator.
-  resetProgress("stems");
-  resetProgress("structure");
+  // Repaint the progress rows from the newly-selected job's recorded
+  // state — if it's running we want to see its current fraction; if
+  // it's idle we want the idle treatment; etc. The previous code blindly
+  // reset to idle, which masked in-flight jobs after a switch.
+  paintProgressForActive();
   renderJobsList();
   renderJobDetail();
 }
@@ -491,10 +522,13 @@ async function onAnalyze() {
   analyzeInFlight = true;
   renderJobDetail();
 
-  resetProgress("stems");
-  resetProgress("structure");
-  setProgress("stems",     { fraction: 0, stage: "starting", state: "running" });
-  setProgress("structure", { fraction: 0, stage: "starting", state: "running" });
+  const startSnap = { fraction: 0, stage: "starting", detail: null, state: "running" };
+  recordProgress(owningJobName, "stems", startSnap);
+  recordProgress(owningJobName, "structure", startSnap);
+  // Repaint only if the operator is still on this job. paintProgressForActive
+  // resolves to startSnap when owning === active, and to whatever the
+  // previously-selected job has when not.
+  paintProgressForActive();
 
   const audio_path = `${job.path}/source.wav`;
   // Capture the preset at start too, so a mid-run switch doesn't change
@@ -506,15 +540,19 @@ async function onAnalyze() {
     structure: new AbortController(),
   };
 
+  const failKind = (kind, err) => {
+    const snap = { stage: "error", detail: errStr(err), state: "error" };
+    recordProgress(owningJobName, kind, snap);
+    if (owningJobName === activeJobName) setProgress(kind, snap);
+  };
+
   const consumeStems = async () => {
     try {
       for await (const ev of client.separateStems({ audio_path, preset }, { signal: controllers.stems.signal })) {
         applyEvent("stems", ev, owningJobName);
       }
     } catch (err) {
-      if (owningJobName === activeJobName) {
-        setProgress("stems", { stage: "error", detail: errStr(err), state: "error" });
-      }
+      failKind("stems", err);
     }
   };
 
@@ -524,9 +562,7 @@ async function onAnalyze() {
         applyEvent("structure", ev, owningJobName);
       }
     } catch (err) {
-      if (owningJobName === activeJobName) {
-        setProgress("structure", { stage: "error", detail: errStr(err), state: "error" });
-      }
+      failKind("structure", err);
     }
   };
 
@@ -551,32 +587,28 @@ function applyEvent(kind, ev, owningJobName) {
       if (job) renderResults(job);
     }
   }
-  // Progress / errors only update the on-screen bars when the active job
-  // still matches — otherwise we'd be painting another job's bars.
-  if (owningJobName !== activeJobName) return;
 
+  // Build the progress snapshot for the event. Recording happens for the
+  // owning job no matter what's currently selected, so a later switch
+  // back can repaint from this exact state.
+  let snap = null;
   if (ev.type === "progress") {
-    setProgress(kind, {
+    snap = {
       fraction: ev.fraction,
       stage:    ev.stage,
       detail:   ev.detail ?? null,
       state:    "running",
-    });
+    };
   } else if (ev.type === "result") {
     const cached = ev.result?.cached ? "cached" : "fresh";
-    setProgress(kind, {
-      fraction: 1,
-      stage:    "done",
-      detail:   cached,
-      state:    "done",
-    });
+    snap = { fraction: 1, stage: "done", detail: cached, state: "done" };
   } else if (ev.type === "error") {
-    setProgress(kind, {
-      stage:  ev.errorType || "error",
-      detail: ev.message,
-      state:  "error",
-    });
+    snap = { stage: ev.errorType || "error", detail: ev.message, state: "error" };
   }
+  if (snap) recordProgress(owningJobName, kind, snap);
+
+  // Paint only when the operator is still looking at this job.
+  if (snap && owningJobName === activeJobName) setProgress(kind, snap);
 }
 
 function errStr(err) {
