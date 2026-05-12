@@ -208,8 +208,16 @@
                 -->
                 <section class="waveforms" id="waveforms">
                   <h3 class="waveforms__title">─ WAVEFORMS ─</h3>
+                  <!--
+                    `data-stem="other"` matches the Demucs stem name on
+                    disk (the underlying file is still other.wav); the
+                    label reads KEYBOARDS because that's what this stem
+                    actually is once Demucs has removed drums / bass /
+                    vocals / piano / guitar. data-active="true" makes
+                    it the default audible + seekable row.
+                  -->
                   <div class="waveform-row" data-stem="other" data-active="true">
-                    <div class="waveform-row__label">OTHER</div>
+                    <div class="waveform-row__label">KEYBOARDS</div>
                     <div class="waveform-row__view"></div>
                     <audio preload="metadata"></audio>
                   </div>

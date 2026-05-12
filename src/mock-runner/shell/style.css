@@ -2050,6 +2050,14 @@ body.bay--resizing iframe { pointer-events: none; }
   overflow: hidden;
 }
 
+/* The keyboards (other) stem is the operator's primary signal — Demucs
+ * leaves whatever isn't drums/bass/vocals/piano/guitar here, so this is
+ * where the keyboard parts the agent has to match actually live. Double
+ * the height to give it more visual real estate. */
+.waveform-row[data-stem="other"] .waveform-row__view {
+  height: 128px;
+}
+
 /* The <audio> element is needed for peaks.js to observe playback state
  * but is never shown — the peaks canvas IS the visible affordance. */
 .waveform-row audio {

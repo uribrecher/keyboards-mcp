@@ -29,20 +29,23 @@
 const STEM_ORDER = ["other", "drums", "bass", "vocals", "piano", "guitar"];
 
 // Segment overlay palette, keyed by lowercased SongFormer label. Picked
-// for high contrast against the dark chassis at low opacity (0.22).
+// for high contrast against the dark chassis even at moderate opacity.
 const LABEL_COLORS = {
-  intro:       "#f0a830",   // amber
-  verse:       "#3ec9d9",   // cyan
-  chorus:      "#d94aa6",   // magenta
-  bridge:      "#5bd97a",   // green
-  outro:       "#e07a3a",   // orange
-  inst:        "#a378e0",   // violet
-  "pre-chorus":"#3ad9b8",   // teal
-  silence:     "#666666",   // dim gray
+  intro:       "#ffb84a",   // bright amber
+  verse:       "#4adcff",   // bright cyan
+  chorus:      "#ff5fbd",   // bright magenta
+  bridge:      "#5fff8a",   // bright green
+  outro:       "#ff8a44",   // bright orange
+  inst:        "#b88aff",   // bright violet
+  "pre-chorus":"#4affd0",   // bright teal
+  silence:     "#888888",   // gray (a bit brighter)
 };
-const DEFAULT_COLOR = "#aaaaaa";
+const DEFAULT_COLOR = "#c4c4c4";
 
-const PALETTE_OPACITY = 0.22;
+// Bumped from 0.22 → 0.5 — segments were barely visible against the dark
+// chassis at low opacity. 0.5 + brighter palette reads cleanly without
+// drowning the waveform itself.
+const PALETTE_OPACITY = 0.5;
 
 let audioContext = null;
 function getAudioContext() {
@@ -133,13 +136,14 @@ async function initInstanceForRow(stem, stemPath, gen) {
       },
       // Translucent region overlay treatment — no drag handles, no
       // editable boundaries. Per-segment color overrides the default
-      // overlayColor.
+      // overlayColor. Border dropped to 0 so the visible thing is the
+      // fill, not a thin outline.
       segmentOptions: {
         overlay:            true,
         overlayColor:       DEFAULT_COLOR,
         overlayOpacity:     PALETTE_OPACITY,
-        overlayBorderColor: "rgba(0,0,0,0.4)",
-        overlayBorderWidth: 1,
+        overlayBorderColor: "rgba(255,255,255,0.15)",
+        overlayBorderWidth: 0,
         overlayLabelColor:  "#fff",
       },
     }, (err, instance) => {
@@ -156,10 +160,17 @@ async function initInstanceForRow(stem, stemPath, gen) {
         resolve(null);
         return;
       }
-      // Inactive views can't seek — clicks on the timeline are ignored.
       const view = instance.views.getView("zoomview");
-      if (view && !isActive) {
-        try { view.enableSeek(false); } catch { /* ignore */ }
+      if (view) {
+        // Fit the entire track into the row at startup — peaks defaults
+        // to a much zoomed-in scale that hides everything past ~30 sec.
+        // setZoom({seconds}) re-renders the waveform at the new scale.
+        try { view.setZoom({ seconds: audioBuffer.duration }); }
+        catch (e) { console.warn(`setZoom failed for "${stem}":`, e); }
+        // Inactive views can't seek — clicks on the timeline are ignored.
+        if (!isActive) {
+          try { view.enableSeek(false); } catch { /* ignore */ }
+        }
       }
       rows.set(stem, { peaks: instance, audio: audioEl, view: viewEl });
       // If segments arrived before this instance finished init, replay.
