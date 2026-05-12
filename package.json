@@ -5,6 +5,9 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "copy:peaks-vendor": "mkdir -p src/mock-runner/shell/vendor && cp node_modules/peaks.js/dist/peaks.ext.min.js src/mock-runner/shell/vendor/peaks.min.js && cp node_modules/konva/konva.min.js src/mock-runner/shell/vendor/konva.min.js && cp node_modules/waveform-data/dist/waveform-data.min.js src/mock-runner/shell/vendor/waveform-data.min.js",
+    "postinstall": "npm run copy:peaks-vendor",
+    "prebuild": "npm run copy:peaks-vendor",
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
@@ -31,7 +34,10 @@
     "@sounds-and-recreation/agent-client": "file:../sound-recreation-agent/client-sdk",
     "adm-zip": "^0.5.16",
     "easymidi": "^3.0.0",
+    "konva": "^9.3.22",
     "marked": "^18.0.3",
+    "peaks.js": "^4.0.0",
+    "waveform-data": "^4.5.2",
     "ws": "^8.20.0",
     "zod": "^3.23.0"
   },

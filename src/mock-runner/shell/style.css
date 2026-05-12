@@ -1973,71 +1973,87 @@ body.bay--resizing iframe { pointer-events: none; }
 }
 
 /* ── Results section ────────────────────────────────────────────── */
-.job-detail__results {
+/* ═════════════ Waveform pane ═════════════ */
+
+/* Replaces the old text-list RESULTS section: six peaks.js instances
+ * stacked vertically, one per Demucs stem. Brushed-metal chassis carries
+ * the same vibe as the chassis above. */
+.waveforms {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
+  padding: 8px 0;
 }
 
-.job-detail__results-title {
+.waveforms__title {
   font-family: var(--font-display);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.5em;
   text-transform: uppercase;
   color: var(--c-text-faint);
-  margin: 0 0 4px;
+  margin: 0 0 8px;
   text-align: center;
 }
 
-.results-block {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.waveform-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  column-gap: 10px;
+  align-items: stretch;
+  background: var(--c-chassis-low);
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  padding: 4px 6px;
+  transition: opacity .15s, border-color .15s, box-shadow .15s;
 }
 
-.results-block__title {
+.waveform-row[data-active="false"] {
+  opacity: 0.4;
+  cursor: pointer;
+}
+
+.waveform-row[data-active="false"]:hover {
+  opacity: 0.6;
+}
+
+.waveform-row[data-active="true"] {
+  border-color: var(--c-amber);
+  box-shadow: 0 0 8px -2px var(--c-amber-glow);
+}
+
+.waveform-row__label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   font-family: var(--font-display);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.32em;
   text-transform: uppercase;
   color: var(--c-text-dim);
+  user-select: none;
 }
 
-.results-block__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.waveform-row[data-active="true"] .waveform-row__label {
+  color: var(--c-amber);
 }
 
-.results-block__list li {
-  font-family: var(--font-chat);
-  font-size: 11px;
-  color: var(--c-text);
-  padding: 3px 8px;
-  border-left: 1px solid var(--c-rule);
-  display: grid;
-  grid-template-columns: minmax(60px, max-content) 1fr;
-  column-gap: 10px;
-  align-items: baseline;
+/* Peaks.js requires a sized container for the canvas; height is fixed
+ * so six rows stack predictably inside the detail pane. */
+.waveform-row__view {
+  height: 64px;
+  min-width: 0;
+  background: #0a0a0c;
+  border: 1px solid rgba(0,0,0,0.4);
+  border-radius: 2px;
+  overflow: hidden;
 }
 
-.results-block__list .results-key {
-  color: var(--c-text-dim);
-  letter-spacing: 0.04em;
-}
-
-.results-block__list:empty::before {
-  content: "— none yet —";
-  font-family: var(--font-display);
-  font-size: 10px;
-  letter-spacing: 0.3em;
-  color: var(--c-text-faint);
-  padding: 4px 8px;
+/* The <audio> element is needed for peaks.js to observe playback state
+ * but is never shown — the peaks canvas IS the visible affordance. */
+.waveform-row audio {
+  display: none;
 }
 
 /* ═════════════ Backup picker modal ═════════════ */
