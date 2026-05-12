@@ -9,7 +9,8 @@
 
 import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
 import { join, dirname, basename } from "node:path";
-import { statSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { statSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, watch as fsWatch, type FSWatcher } from "node:fs";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
@@ -873,6 +874,242 @@ ipcMain.handle(
     }
   },
 );
+
+// ── Song-analysis panel: workspace scan + file dialog + service URL ──
+//
+// The audio-analysis service writes jobs under
+//   ~/.audio-analysis-mcp/workspace/jobs/<job_name>/source.wav
+//   ~/.audio-analysis-mcp/workspace/jobs/<job_name>/stems/<preset>/*.wav
+//   ~/.audio-analysis-mcp/workspace/jobs/<job_name>/song_structure/*.json
+// Override workspace root via AUDIO_ANALYSIS_WORKSPACE; service URL via
+// AUDIO_ANALYSIS_SERVICE_URL (default http://127.0.0.1:8765).
+
+interface AnalysisJobSummary {
+  name: string;
+  path: string;
+  displayName: string | null;     // unsanitized song title from .mock-runner.json
+  hasSource: boolean;
+  hasStems: boolean;
+  hasStructure: boolean;
+  durationSeconds: number | null;
+  sampleRate: number | null;
+  channels: number | null;
+}
+
+// Per-job sidecar written by the renderer right after a successful import.
+// The audio-analysis service only knows the sanitized slug; the renderer
+// preserves the human-readable title here so the UI can show "Kind Of Blue"
+// instead of "kind-of-blue". Leading dot keeps it out of casual ls output.
+const JOB_META_FILE = ".mock-runner.json";
+
+interface JobMetadata {
+  displayName?: string;
+  originalFilename?: string;
+  importedAt?: string;
+}
+
+function readJobMetadata(jobPath: string): JobMetadata | null {
+  try {
+    const raw = readFileSync(join(jobPath, JOB_META_FILE), "utf-8");
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    return parsed as JobMetadata;
+  } catch {
+    return null;
+  }
+}
+
+function audioWorkspaceJobsDir(): string {
+  const root = process.env.AUDIO_ANALYSIS_WORKSPACE
+    ?? join(homedir(), ".audio-analysis-mcp", "workspace");
+  return join(root, "jobs");
+}
+
+// Read sample rate, channels, and duration from a canonical PCM WAV produced
+// by the audio-analysis-mcp normalizer (44.1kHz 16-bit mono). Returns null
+// fields on any parse failure — the panel just renders them as blank.
+function probeWavHeader(filePath: string): { sampleRate: number; channels: number; durationSeconds: number } | null {
+  try {
+    const fd = readFileSync(filePath);
+    if (fd.length < 44) return null;
+    if (fd.toString("ascii", 0, 4) !== "RIFF") return null;
+    if (fd.toString("ascii", 8, 12) !== "WAVE") return null;
+    // Walk chunks starting at offset 12. Each chunk: 4-byte id + 4-byte LE size + payload.
+    let off = 12;
+    let sampleRate = 0;
+    let channels = 0;
+    let byteRate = 0;
+    let dataSize = 0;
+    while (off + 8 <= fd.length) {
+      const id = fd.toString("ascii", off, off + 4);
+      const size = fd.readUInt32LE(off + 4);
+      if (id === "fmt ") {
+        channels   = fd.readUInt16LE(off + 8 + 2);
+        sampleRate = fd.readUInt32LE(off + 8 + 4);
+        byteRate   = fd.readUInt32LE(off + 8 + 8);
+      } else if (id === "data") {
+        dataSize = size;
+        break;
+      }
+      off += 8 + size + (size % 2); // pad to even
+    }
+    if (!byteRate || !dataSize || !sampleRate || !channels) return null;
+    return { sampleRate, channels, durationSeconds: dataSize / byteRate };
+  } catch {
+    return null;
+  }
+}
+
+function listAnalysisJobs(): AnalysisJobSummary[] {
+  const jobsDir = audioWorkspaceJobsDir();
+  let entries: string[];
+  try {
+    entries = readdirSync(jobsDir);
+  } catch {
+    return []; // jobs dir doesn't exist yet → empty workspace
+  }
+  const out: AnalysisJobSummary[] = [];
+  for (const name of entries) {
+    const path = join(jobsDir, name);
+    let isDir = false;
+    try { isDir = statSync(path).isDirectory(); } catch { continue; }
+    if (!isDir) continue;
+
+    const sourcePath = join(path, "source.wav");
+    const stemsDir = join(path, "stems");
+    const structureDir = join(path, "song_structure");
+
+    const hasSource = existsSync(sourcePath);
+    const hasStems = existsSync(stemsDir) && (() => {
+      try { return readdirSync(stemsDir).length > 0; } catch { return false; }
+    })();
+    const hasStructure = existsSync(structureDir) && (() => {
+      try { return readdirSync(structureDir).some((f) => f.endsWith(".json")); } catch { return false; }
+    })();
+
+    const probe = hasSource ? probeWavHeader(sourcePath) : null;
+    const meta = readJobMetadata(path);
+    out.push({
+      name,
+      path,
+      displayName: typeof meta?.displayName === "string" && meta.displayName.trim().length > 0
+        ? meta.displayName
+        : null,
+      hasSource,
+      hasStems,
+      hasStructure,
+      durationSeconds: probe?.durationSeconds ?? null,
+      sampleRate: probe?.sampleRate ?? null,
+      channels: probe?.channels ?? null,
+    });
+  }
+  // Alphabetical for stable rendering. The renderer can re-sort if needed.
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+}
+
+ipcMain.handle("list-analysis-jobs", (): AnalysisJobSummary[] => listAnalysisJobs());
+
+ipcMain.handle("get-audio-service-url", (): string =>
+  process.env.AUDIO_ANALYSIS_SERVICE_URL ?? "http://127.0.0.1:8765",
+);
+
+// Renderer writes this right after a successful import so the operator
+// sees the song title rather than the sanitized slug. jobPath must be
+// inside the workspace jobs dir; we re-check the prefix to keep callers
+// honest (a malicious renderer can't aim this at arbitrary filesystem
+// locations).
+ipcMain.handle("write-job-metadata", (
+  _event,
+  args: { jobPath: string; displayName?: string; originalFilename?: string },
+): { ok: boolean; message?: string } => {
+  const jobsRoot = audioWorkspaceJobsDir();
+  const target = args.jobPath;
+  if (typeof target !== "string" || !target.startsWith(jobsRoot)) {
+    return { ok: false, message: "Job path is outside the workspace." };
+  }
+  try {
+    if (!statSync(target).isDirectory()) {
+      return { ok: false, message: "Job path is not a directory." };
+    }
+  } catch {
+    return { ok: false, message: "Job path does not exist." };
+  }
+  // Merge with any existing metadata so we don't clobber fields that a
+  // future code path might have added.
+  const existing = readJobMetadata(target) ?? {};
+  const merged: JobMetadata = {
+    ...existing,
+    ...(args.displayName     !== undefined && { displayName:      args.displayName }),
+    ...(args.originalFilename !== undefined && { originalFilename: args.originalFilename }),
+    importedAt: existing.importedAt ?? new Date().toISOString(),
+  };
+  try {
+    writeFileSync(join(target, JOB_META_FILE), JSON.stringify(merged, null, 2), "utf-8");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+});
+
+ipcMain.handle("open-audio-import-dialog", async (): Promise<string | null> => {
+  const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+  if (!win) return null;
+  const result = await dialog.showOpenDialog(win, {
+    title: "Import Audio",
+    properties: ["openFile"],
+    filters: [
+      { name: "Audio", extensions: ["mp3", "wav", "flac", "aiff", "aif", "m4a", "ogg"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// fs.watch on the jobs dir, debounced — fires "audio-analysis:jobs-changed"
+// at most every 250ms. The watcher is recreated if the directory appears
+// after launch (first import creates it).
+{
+  let watcher: FSWatcher | null = null;
+  let debounceTimer: NodeJS.Timeout | null = null;
+
+  const emit = (): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("audio-analysis:jobs-changed");
+    }
+  };
+
+  const armDebounced = (): void => {
+    if (debounceTimer) return;
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      emit();
+    }, 250);
+  };
+
+  const tryAttach = (): void => {
+    if (watcher) return;
+    const dir = audioWorkspaceJobsDir();
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch { /* tolerate; watch will fail and retry later */ }
+    try {
+      watcher = fsWatch(dir, { persistent: false }, () => armDebounced());
+      watcher.on("error", () => {
+        try { watcher?.close(); } catch { /* ignore */ }
+        watcher = null;
+      });
+    } catch {
+      watcher = null;
+    }
+  };
+
+  // Retry attach every 5s in case the dir didn't exist at launch or the
+  // watch failed transiently. Cheap; only kicks while detached.
+  setInterval(() => { if (!watcher) tryAttach(); }, 5000).unref();
+  tryAttach();
+}
 
 // ── App lifecycle ──
 

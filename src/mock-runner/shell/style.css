@@ -349,13 +349,18 @@ body > .bay { height: 100vh; }
 
 .bay {
   display: grid;
-  /* Two columns: rack (chassis + slot + midi-drawer, flex) | console
-   * (operator-set width via --console-w). The console's leading edge
-   * doubles as the splitter — see .console__latch which serves both
-   * the drag-resize and the collapse-toggle roles. The slot has an
-   * implicit floor of 600px enforced by the latch drag clamp in app.js.
-   * When collapsed, the console column shrinks to just the rail width. */
-  --rail-w: 12px;
+  /* Two columns: rack (chassis + rack-panels, flex) | console
+   * (operator-set width via --console-w). The console's leading edge is
+   * the .rail — three stacked sub-regions:
+   *   • selector cluster (MIDI / WAVEFORM) — chooses which rack-panel is
+   *     visible (click-only, no drag)
+   *   • splitter (.rail__split) — drag resizes, click toggles collapse
+   *   • spacer (.rail__spacer) — brushed-metal fill
+   * Rail width = 34px (wide enough for a 20px icon + micro-label without
+   * crowding). The slot has an implicit floor of 600px enforced by the
+   * splitter drag clamp in app.js. When the console collapses, the column
+   * shrinks to just the rail width and the body hides. */
+  --rail-w: 34px;
   grid-template-columns:
     1fr var(--console-w, clamp(484px, 35vw, 616px));
   gap: 0;
@@ -712,43 +717,39 @@ body.bay--resizing iframe { pointer-events: none; }
   display: none;
 }
 
-/* ── Rail: combined splitter + collapse latch ──
+/* ── Rail: selector cluster + splitter + spacer ──
  *
- * Vertical rail at the slot-facing edge of the console (width tracks
- * --rail-w, currently 12px). Pointer drag resizes the console
- * (cursor: col-resize). A click without drag toggles `data-collapsed`.
- * The chevron in the middle tells you which way the lever throws.
+ * Vertical rail at the slot-facing edge of the console. 34px wide.
+ * Three stacked sub-regions:
+ *   1. .rail__selectors — two click-only buttons (MIDI / WAVEFORM) that
+ *      flip which .rack-panels child is visible. role="tab".
+ *   2. .rail__split    — the legacy latch: pointer drag resizes,
+ *      click-without-drag toggles `data-collapsed`. Carries the chevron.
+ *   3. .rail__spacer   — brushed-metal fill, no interaction.
  *
  * Brushed-metal gradient + faint vertical scribe line keep it
- * consistent with the chassis without the visual weight of the older
- * 32px panel + screws.
+ * consistent with the chassis without the visual weight of a heavier panel.
  */
-.console__latch {
+.rail {
   grid-column: 1;
   grid-row: 1;
   align-self: stretch;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   background:
     linear-gradient(90deg,
       rgba(255,255,255,0.02) 0%,
       rgba(255,255,255,0.06) 50%,
       rgba(255,255,255,0.02) 100%);
-  border: 0;
   border-left:  1px solid var(--c-edge);
   border-right: 1px solid var(--c-edge);
-  cursor: col-resize;
-  color: var(--c-amber-deep);
-  font-family: var(--font-display);
   position: relative;
-  padding: 0;
-  transition: background .15s, box-shadow .15s, color .15s;
+  min-height: 0;
 }
 
-.console__latch::before {
-  /* Faint vertical scribe line down the center — reads as the seam
-   * where the panel hinges. Sits behind the chevron. */
+/* Faint vertical scribe line down the center of the rail — reads as the
+ * seam where the panel hinges. Sits behind everything. */
+.rail::before {
   content: "";
   position: absolute;
   top: 6px; bottom: 6px;
@@ -761,40 +762,142 @@ body.bay--resizing iframe { pointer-events: none; }
     rgba(0,0,0,0.4) 92%,
     transparent 100%);
   pointer-events: none;
+  z-index: 0;
 }
 
-.console__latch:hover {
+/* — Selector cluster (MIDI / WAVEFORM) — */
+.rail__selectors {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+  border-bottom: 1px solid var(--c-edge);
+}
+
+.rail__btn {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 0 7px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(0,0,0,0.35);
+  cursor: pointer;
+  color: var(--c-text-faint);
+  font-family: var(--font-display);
+  user-select: none;
+  transition: color .15s, background .15s, box-shadow .15s;
+}
+.rail__btn:last-child { border-bottom: 0; }
+
+.rail__icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  color: inherit;
+  filter: drop-shadow(0 0 0 transparent);
+  transition: filter .2s;
+}
+
+.rail__label {
+  display: block;
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.rail__btn:hover {
+  color: var(--c-text-bright);
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.03) 0%,
+    rgba(255,255,255,0.06) 50%,
+    rgba(255,255,255,0.03) 100%);
+}
+
+/* Active selector: amber-jewel LED treatment — inset bevel + outer glow,
+ * matching the brand lamp and active console tab. The icon picks up the
+ * amber by virtue of `color: inherit`. */
+.rail__btn[aria-selected="true"] {
+  color: var(--c-amber);
   background:
+    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(240,168,48,0.18) 0%, transparent 70%),
     linear-gradient(90deg,
       rgba(255,255,255,0.04) 0%,
       rgba(255,255,255,0.10) 50%,
       rgba(255,255,255,0.04) 100%);
-  box-shadow: inset 0 0 0 1px rgba(240,168,48,0.30);
-  color: var(--c-amber);
+  box-shadow:
+    inset 0 0 0 1px rgba(240,168,48,0.40),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 0 10px -2px var(--c-amber-glow);
 }
-.console__latch:hover .console__latch-glyph {
+.rail__btn[aria-selected="true"] .rail__icon {
+  filter: drop-shadow(0 0 4px var(--c-amber-glow));
+}
+
+.rail__btn:focus-visible {
+  outline: 1px solid var(--c-amber);
+  outline-offset: -3px;
+}
+
+/* — Splitter: drag-to-resize / click-to-collapse —
+ *
+ * The splitter fills the rail's remaining height after the selector
+ * cluster. That gives the operator a tall drag target (the whole strip
+ * below the buttons) while keeping the chevron pinned at the top so it
+ * reads as the third item in the vertical button stack — same icon
+ * footprint as MIDI/WAVE, no boxy frame.
+ */
+.rail__split {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1 1 auto;
+  min-height: 38px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10px 0 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  color: var(--c-amber-deep);
+  font-family: var(--font-display);
+  position: relative;
+  z-index: 1;
+  transition: color .15s, background .15s;
+}
+.rail__split:hover {
+  color: var(--c-amber);
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.02) 0%,
+    rgba(255,255,255,0.05) 50%,
+    rgba(255,255,255,0.02) 100%);
+}
+.rail__split:hover .console__latch-glyph {
   text-shadow: 0 0 6px var(--c-amber-glow);
 }
 
 .console__latch-glyph {
-  position: relative;          /* stack above the ::before scribe line */
-  width: 14px;
-  height: 26px;
+  position: relative;
+  width: 20px;
+  height: 20px;
   display: grid;
   place-items: center;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1;
   letter-spacing: 0;
   user-select: none;
-  /* Resting state: subtle amber bezel — visible enough to read as a
-   * lever, not bright enough to fight the chassis. Hover saturates. */
-  background: rgba(240,168,48,0.04);
-  border: 1px solid var(--c-amber-deep);
-  border-radius: 2px;
-  transition: text-shadow .15s, border-color .15s, background .15s;
-}
-.console__latch:hover .console__latch-glyph {
-  border-color: var(--c-amber-deep);
+  background: transparent;
+  border: 0;
+  transition: text-shadow .15s, color .15s;
 }
 
 /* ── Tabbed box: tab strip ── */
@@ -1340,6 +1443,537 @@ body.bay--resizing iframe { pointer-events: none; }
 .console__tabs:has(.console__tab[data-state="lost"]) ~ .composer .composer__prompt {
   color: var(--c-fault);
   opacity: 0.55;
+}
+
+/* ═════════════ Rack panels (MIDI vs SONG ANALYSIS) ═════════════
+ *
+ * Two stacked panels sharing the rack column's real-estate below the
+ * chassis. The active one is laid out normally (display: flex). The
+ * inactive one stays mounted (visibility: hidden) so model iframes keep
+ * their WebSocket sessions while the operator peeks at song analysis.
+ */
+
+.rack-panels {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;        /* both panels overlap in the same grid cell */
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  isolation: isolate;
+}
+
+.rack-panels > .panel {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.rack-panels > .panel[data-view-active="false"] {
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.rack-panels > .panel[data-view-active="true"] {
+  visibility: visible;
+  z-index: 1;
+}
+
+/* ═════════════ Song Analysis panel ═════════════
+ *
+ * Aesthetic: same matte-graphite chassis; jobs list reads as a card
+ * stack on the left, job detail as a workbench on the right. Progress
+ * bars are flat amber on the chassis-hi track — no inner gradient, the
+ * 1Hz carrier-wave sweep behind them is the only motion until a job
+ * finishes.
+ */
+
+/* The analysis view owns the entire rack column — its .chassis is the
+ * symmetric counterpart to the MIDI view's chassis (brand strip with
+ * lamp, name, sub label, screws). Reuses .chassis / .brand / .screw
+ * tokens directly; the .chassis--analysis modifier hooks in only when
+ * we need to vary something (currently nothing — kept for future tuning). */
+.panel--analysis {
+  background:
+    radial-gradient(ellipse 90% 50% at 50% 0%, rgba(240,168,48,0.025) 0%, transparent 60%),
+    var(--c-shell);
+}
+
+/* Health chip: nests inside .brand alongside the screws. The screws keep
+ * their `margin-left: auto` pulling them to the right edge, so the chip
+ * sits between the sub-label and the screws with a generous gap before
+ * it (visually grouped with the screws as "right-side hardware"). */
+.analysis__health {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+}
+/* `.brand__screws` also uses `margin-left: auto`; once the chip claims
+ * it, the screws revert to flowing naturally to the right of the chip
+ * via the existing flex gap. */
+.brand:has(.analysis__health) .brand__screws { margin-left: 18px; }
+
+.analysis__health-lamp {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--c-text-faint);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    inset 0 -1px 0 rgba(0,0,0,0.4);
+  transition: background .25s, box-shadow .25s;
+}
+.analysis__health[data-state="up"] .analysis__health-lamp {
+  background: var(--c-green);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    inset 0 -1px 0 rgba(0,0,0,0.45),
+    0 0 8px var(--c-green-glow);
+}
+.analysis__health[data-state="up"] { color: var(--c-text); }
+.analysis__health[data-state="down"] .analysis__health-lamp {
+  background: var(--c-fault);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    inset 0 -1px 0 rgba(0,0,0,0.45),
+    0 0 8px var(--c-fault-glow);
+}
+.analysis__health[data-state="down"] { color: var(--c-fault); }
+
+.analysis__split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 28%) 1fr;
+  gap: 8px;
+  padding: 6px;
+}
+
+/* ── Jobs list (left column) ────────────────────────────────────── */
+.jobs-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--c-chassis);
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+
+.jobs-list__ol {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.jobs-list__ol::-webkit-scrollbar { width: 8px; }
+.jobs-list__ol::-webkit-scrollbar-track { background: transparent; }
+.jobs-list__ol::-webkit-scrollbar-thumb {
+  background: var(--c-chassis-hi);
+  border-radius: 4px;
+}
+
+.jobs-list__empty {
+  display: none;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  color: var(--c-text-faint);
+  font-size: 10px;
+  letter-spacing: 0.5em;
+}
+.jobs-list[data-empty="true"] .jobs-list__ol { display: none; }
+.jobs-list[data-empty="true"] .jobs-list__empty { display: flex; }
+
+.jobs-list__footer {
+  flex: 0 0 auto;
+  padding: 8px;
+  border-top: 1px solid var(--c-edge);
+  background:
+    linear-gradient(180deg, var(--c-chassis) 0%, var(--c-chassis-low) 100%);
+}
+
+.jobs-list__new {
+  width: 100%;
+  padding: 8px 10px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+
+/* — Job row — */
+.job-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: start;
+  padding: 8px 12px 8px 14px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background .12s, border-color .12s;
+}
+
+.job-row:hover {
+  background: rgba(255,255,255,0.025);
+}
+
+.job-row[data-active="true"] {
+  background:
+    linear-gradient(90deg, rgba(240,168,48,0.06) 0%, transparent 80%);
+}
+.job-row[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--c-amber);
+  box-shadow: 0 0 6px var(--c-amber-glow);
+}
+
+.job-row__lamp {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--c-chassis-low);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    inset 0 -1px 0 rgba(0,0,0,0.45);
+}
+.job-row[data-status="ready"] .job-row__lamp {
+  background: var(--c-amber);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 0 -1px 0 rgba(0,0,0,0.45),
+    0 0 6px var(--c-amber-glow);
+}
+.job-row[data-status="done"] .job-row__lamp {
+  background: var(--c-green);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 0 -1px 0 rgba(0,0,0,0.45),
+    0 0 6px var(--c-green-glow);
+}
+.job-row[data-status="importing"] .job-row__lamp {
+  background: var(--c-amber);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 0 -1px 0 rgba(0,0,0,0.45),
+    0 0 8px var(--c-amber-glow);
+  animation: lamp-pulse 1.1s ease-in-out infinite;
+}
+@keyframes lamp-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+.job-row__name {
+  grid-column: 2;
+  grid-row: 1;
+  /* Default: slug-only rows (no .mock-runner.json metadata yet) — read
+   * as identifiers in Roboto Mono. Titled rows override below. */
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Titled rows: the operator imported the file through the UI, so a
+ * displayName lives in the sidecar. Fraunces gives a song-title feel
+ * that's clearly distinct from the slug-mono fallback. */
+.job-row[data-titled="true"] .job-row__name {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  font-variation-settings: "SOFT" 50, "opsz" 144;
+}
+
+.job-row[data-active="true"] .job-row__name {
+  color: var(--c-text-bright);
+}
+
+.job-row__meta {
+  grid-column: 2;
+  grid-row: 2;
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--c-text-faint);
+  letter-spacing: 0.01em;
+}
+
+/* ── Job detail (right column) ──────────────────────────────────── */
+.job-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--c-chassis);
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  position: relative;
+}
+
+.job-detail__empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--c-text-faint);
+  font-size: 10px;
+  letter-spacing: 0.5em;
+}
+.job-detail[data-active="true"] .job-detail__empty { display: none; }
+
+.job-detail__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--c-edge);
+  margin-bottom: 14px;
+}
+
+.job-detail__name {
+  font-family: var(--font-body);
+  font-size: 22px;
+  font-weight: 500;
+  font-variation-settings: "SOFT" 50, "opsz" 144;
+  color: var(--c-text-bright);
+  letter-spacing: 0.005em;
+  margin: 0;
+}
+
+.job-detail__path {
+  font-family: var(--font-chat);
+  font-size: 10.5px;
+  color: var(--c-text-faint);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.job-detail__path:hover { color: var(--c-text-dim); }
+
+.job-detail__actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.job-detail__analyze {
+  padding: 10px 22px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+}
+
+.job-detail__progress {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 14px 14px 18px;
+  background: var(--c-chassis-low);
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.progress-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 48px;
+  column-gap: 12px;
+  row-gap: 4px;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.progress-row__label {
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.36em;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+}
+
+.progress-row[data-state="running"] .progress-row__label,
+.progress-row[data-state="done"]    .progress-row__label {
+  color: var(--c-text-bright);
+}
+.progress-row[data-state="error"] .progress-row__label {
+  color: var(--c-fault);
+}
+
+.progress-row__track {
+  height: 6px;
+  background: var(--c-chassis-hi);
+  border: 1px solid var(--c-edge);
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-row__fill {
+  position: absolute;
+  inset: 0;
+  width: 0%;
+  background: var(--c-amber);
+  box-shadow: 0 0 8px var(--c-amber-glow);
+  transition: width .25s linear, background .15s, box-shadow .15s;
+}
+
+.progress-row[data-state="done"] .progress-row__fill {
+  background: var(--c-green);
+  box-shadow: 0 0 8px var(--c-green-glow);
+}
+.progress-row[data-state="error"] .progress-row__fill {
+  background: var(--c-fault);
+  box-shadow: 0 0 8px var(--c-fault-glow);
+  width: 100% !important;
+}
+
+.progress-row__pct {
+  font-family: var(--font-chat);
+  font-size: 11px;
+  color: var(--c-text);
+  text-align: right;
+}
+
+.progress-row__detail {
+  grid-column: 2 / 4;
+  font-family: var(--font-chat);
+  font-size: 10.5px;
+  color: var(--c-text-faint);
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 1Hz amber carrier-wave sweep behind the bars — visual heartbeat that
+ * something is running. Hidden when both rows are idle/done/error. */
+.progress-row__carrier {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--c-amber) 50%,
+    transparent 100%);
+  opacity: 0;
+  pointer-events: none;
+}
+.progress-row__carrier[data-running="true"] {
+  opacity: 0.45;
+  animation: carrier-sweep 2s linear infinite;
+}
+@keyframes carrier-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ── Results section ────────────────────────────────────────────── */
+.job-detail__results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.job-detail__results-title {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  color: var(--c-text-faint);
+  margin: 0 0 4px;
+  text-align: center;
+}
+
+.results-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.results-block__title {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+}
+
+.results-block__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.results-block__list li {
+  font-family: var(--font-chat);
+  font-size: 11px;
+  color: var(--c-text);
+  padding: 3px 8px;
+  border-left: 1px solid var(--c-rule);
+  display: grid;
+  grid-template-columns: minmax(60px, max-content) 1fr;
+  column-gap: 10px;
+  align-items: baseline;
+}
+
+.results-block__list .results-key {
+  color: var(--c-text-dim);
+  letter-spacing: 0.04em;
+}
+
+.results-block__list:empty::before {
+  content: "— none yet —";
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: var(--c-text-faint);
+  padding: 4px 8px;
 }
 
 /* ═════════════ Backup picker modal ═════════════ */

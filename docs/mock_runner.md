@@ -11,27 +11,32 @@ npm run mock:headless --model nord-electro-5d   # Plain Node, for CI/E2E tests
 
 ## Anatomy
 
-The shell is a two-column layout: the **rack column** on the left (chassis with tab bar + slot + MIDI monitor drawer), the **rail** in the middle (full window height, combined splitter + collapse toggle), and the **console drawer** on the right.
+The shell is a three-column layout: the **rack column** on the left (chassis with tab bar + a stack of two view-switchable panels),
+the **rail** in the middle (full window height, vertical button cluster + splitter + spacer),
+and the **console drawer** on the right.
 
 ```
-┌─────────────────────────────────────────────────────┬─┬──────────────────┐
-│ MOCK RUNNER · [●tab][●tab][●tab][+]                 │ │ [CHAT●] [LOG●]   │
-├─────────────────────────────────────────────────────┤ ├──────────────────┤
-│                                                     │ │ SID:abc12345 ▮▮▮ │
-│         (model UI iframe — drawbars, knobs,         │R│                  │
-│          LEDs, parameter state for active tab)      │A│  > history…      │
-│                                                     │I│                  │
-│                                                     │L│                  │
-├─────────────────────────────────────────────────────┤ │                  │
-│ MIDI MONITOR                              0 events ▴│ │  › composer ↵    │
-└─────────────────────────────────────────────────────┴─┴──────────────────┘
+┌─────────────────────────────────────────────────────┬──┬──────────────────┐
+│ MOCK RUNNER · [●tab][●tab][●tab][+]                 │  │ [CHAT●] [LOG●]   │
+├─────────────────────────────────────────────────────┤  ├──────────────────┤
+│                                                     │░░│ SID:abc12345 ▮▮▮ │
+│         (model UI iframe — drawbars, knobs,         │MI│                  │
+│          LEDs, parameter state for active tab)      │DI│  > history…      │
+│   ─ OR ─                                            │──│                  │
+│   SONG ANALYSIS panel (jobs explorer + analyze)     │WV│                  │
+├─────────────────────────────────────────────────────┤◀▶│                  │
+│ MIDI MONITOR                              0 events ▴│░░│  › composer ↵    │
+└─────────────────────────────────────────────────────┴──┴──────────────────┘
 ```
 
 - **Chassis** — brand strip plus tab bar with a `+` button. Sits at the top of the **rack column only** (PR #82 made the rail full-height); the chassis no longer spans across the console. Each tab carries a status LED (see [Tab LEDs](#tab-leds-and-mcb)).
+- **Rack panels** — two stacked panels share the rack column's real-estate below the chassis. The rail's selector cluster picks which is visible; the inactive one stays mounted (visibility: hidden) so model iframes keep their WebSocket sessions while the operator peeks at the other view.
+  - **MIDI view** (default) — the active tab's iframe (slot) plus the MIDI monitor drawer pinned at the bottom. This is the workspace operators spent most of their time in before SONG ANALYSIS landed.
+  - **SONG ANALYSIS view** — jobs explorer on the left and job detail on the right. Lists jobs scanned from `~/.audio-analysis-mcp/workspace/jobs/` (override via `AUDIO_ANALYSIS_WORKSPACE`); + NEW JOB opens a file dialog and calls the audio-analysis service's `import_audio`; ANALYZE fires `stem_separate` and `structure_analyze` in parallel with two progress bars driven by SSE.
 - **Slot** — the active tab's iframe. Each tab loads either the model picker (`chooser.html`) or, once a model is chosen, that model's web UI from `src/keyboard_models/<mfr>/<model>/web/`. Inactive tabs stay mounted but hidden.
 - **Empty rack slot** — placeholder shown when no tabs are open.
-- **MIDI monitor drawer** — collapsible strip at the bottom of the rack column showing the active tab's recent MIDI traffic (see [MIDI monitor](#midi-monitor)).
-- **Rail** — full-height combined splitter + collapse toggle between the rack and the console. Drag to resize, click to collapse.
+- **MIDI monitor drawer** — collapsible strip at the bottom of the MIDI view showing the active tab's recent MIDI traffic (see [MIDI monitor](#midi-monitor)).
+- **Rail** — full-height vertical strip (34px) on the slot-facing edge of the console. Three stacked sub-regions, top to bottom: **selector cluster** (MIDI and WAVE buttons, click-only, jewel-LED active state); **splitter** (drag to resize the console, click to collapse, chevron-glyph lever); **spacer** (brushed-metal fill).
 - **Console drawer** — tabbed pane on the right with **CHAT** (talk to the agent) and **LOG** (mock-runner event log). See [Console](#console--chat-and-event-log).
 
 ## Tabs and devices

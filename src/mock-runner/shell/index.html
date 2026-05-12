@@ -16,80 +16,227 @@
          pinned to the bottom. The splitter to the right runs the full
          window height since the chassis no longer spans across it. -->
     <div class="bay__rack">
-      <header class="chassis">
-        <div class="chassis__rule chassis__rule--top"></div>
-
-        <div class="brand">
-          <span class="brand__lamp" aria-hidden="true"></span>
-          <span class="brand__name">MOCK&nbsp;RUNNER</span>
-          <span class="brand__sep">·</span>
-          <span class="brand__sub">MULTI-DEVICE TEST RACK</span>
-          <span class="brand__screws" aria-hidden="true">
-            <span class="screw"></span><span class="screw"></span>
-          </span>
-        </div>
-
-        <nav class="tabbar" id="tabbar" role="tablist" aria-label="Open mocks">
-          <!-- tabs injected here -->
-          <button class="tab tab--add" id="tab-new" aria-label="New tab">+</button>
-        </nav>
-
-        <div class="chassis__rule chassis__rule--bottom"></div>
-      </header>
-
-      <section class="slot" id="slot">
-        <!-- iframes get injected here, one per tab -->
-        <div class="slot__empty" id="slot-empty">
-          <div class="slot__empty-rail"></div>
-          <div class="slot__empty-msg">— EMPTY RACK SLOT —</div>
-          <div class="slot__empty-rail"></div>
-        </div>
-      </section>
-
       <!--
-        MIDI traffic monitor — collapsible drawer.
-        Collapsed (default): single line showing the latest event from the
-        active tab's per-tab ring buffer (cap 50). Expanded: header bar +
-        scrollable list of all buffered events for that tab, newest pinned
-        at the bottom.
-
-        Generic format only — no model-specific interpretation.
-        No aria-live: MIDI can burst (RQ1 round-trip = several events in
-        <100ms), and announcing each would overwhelm assistive tech. The
-        drawer is a developer-facing read-only display.
+        Two stacked rack panels owning the entire rack column. The rail
+        buttons (MIDI / WAVEFORM) flip which panel is visible. Inactive
+        panel keeps its DOM mounted (visibility: hidden) so model iframes
+        don't unload their WebSocket sessions when the operator switches
+        to SONG ANALYSIS. The MOCK RUNNER chassis lives inside .panel--midi
+        — it's a feature of the MIDI view, not the shell — so SONG
+        ANALYSIS gets its own full-height chassis without the brand strip
+        and keyboard tabs.
       -->
-      <section class="midi-drawer" id="midi-drawer" data-state="collapsed">
-        <header class="midi-drawer__head">
-          <span class="midi-drawer__title">MIDI MONITOR</span>
-          <span class="midi-drawer__count" id="midi-drawer-count">0 events</span>
-        </header>
-        <ul class="midi-drawer__list" id="midi-drawer-list" role="list">
-          <li class="midi-row midi-row--placeholder" data-state="idle">
-            <span class="midi-row__glyph" aria-hidden="true">·</span>
-            <span class="midi-row__dir"></span>
-            <span class="midi-row__time"></span>
-            <span class="midi-row__body">— no MIDI yet —</span>
-          </li>
-        </ul>
-        <button class="midi-drawer__chevron" id="midi-drawer-toggle"
-                aria-expanded="false" aria-controls="midi-drawer-list"
-                title="Show MIDI history">▴</button>
-      </section>
+      <div class="rack-panels">
+        <section class="panel panel--midi" id="panel-midi" data-view-active="true">
+          <header class="chassis">
+            <div class="chassis__rule chassis__rule--top"></div>
+
+            <div class="brand">
+              <span class="brand__lamp" aria-hidden="true"></span>
+              <span class="brand__name">MOCK&nbsp;RUNNER</span>
+              <span class="brand__sep">·</span>
+              <span class="brand__sub">MULTI-DEVICE TEST RACK</span>
+              <span class="brand__screws" aria-hidden="true">
+                <span class="screw"></span><span class="screw"></span>
+              </span>
+            </div>
+
+            <nav class="tabbar" id="tabbar" role="tablist" aria-label="Open mocks">
+              <!-- tabs injected here -->
+              <button class="tab tab--add" id="tab-new" aria-label="New tab">+</button>
+            </nav>
+
+            <div class="chassis__rule chassis__rule--bottom"></div>
+          </header>
+
+          <section class="slot" id="slot">
+            <!-- iframes get injected here, one per tab -->
+            <div class="slot__empty" id="slot-empty">
+              <div class="slot__empty-rail"></div>
+              <div class="slot__empty-msg">— EMPTY RACK SLOT —</div>
+              <div class="slot__empty-rail"></div>
+            </div>
+          </section>
+
+          <!--
+            MIDI traffic monitor — collapsible drawer.
+            Collapsed (default): single line showing the latest event from the
+            active tab's per-tab ring buffer (cap 50). Expanded: header bar +
+            scrollable list of all buffered events for that tab, newest pinned
+            at the bottom.
+
+            Generic format only — no model-specific interpretation.
+            No aria-live: MIDI can burst (RQ1 round-trip = several events in
+            <100ms), and announcing each would overwhelm assistive tech. The
+            drawer is a developer-facing read-only display.
+          -->
+          <section class="midi-drawer" id="midi-drawer" data-state="collapsed">
+            <header class="midi-drawer__head">
+              <span class="midi-drawer__title">MIDI MONITOR</span>
+              <span class="midi-drawer__count" id="midi-drawer-count">0 events</span>
+            </header>
+            <ul class="midi-drawer__list" id="midi-drawer-list" role="list">
+              <li class="midi-row midi-row--placeholder" data-state="idle">
+                <span class="midi-row__glyph" aria-hidden="true">·</span>
+                <span class="midi-row__dir"></span>
+                <span class="midi-row__time"></span>
+                <span class="midi-row__body">— no MIDI yet —</span>
+              </li>
+            </ul>
+            <button class="midi-drawer__chevron" id="midi-drawer-toggle"
+                    aria-expanded="false" aria-controls="midi-drawer-list"
+                    title="Show MIDI history">▴</button>
+          </section>
+        </section>
+
+        <!--
+          SONG ANALYSIS panel — jobs explorer (left) + job detail (right).
+          Mounted but inert until the operator clicks the WAVEFORM rail
+          button. panel-analysis.js fills both halves lazily on first
+          activation; the markup here is the empty scaffold.
+        -->
+        <section class="panel panel--analysis" id="panel-analysis"
+                 data-view-active="false" aria-hidden="true">
+          <header class="chassis chassis--analysis">
+            <div class="chassis__rule chassis__rule--top"></div>
+            <div class="brand">
+              <span class="brand__lamp" aria-hidden="true"></span>
+              <span class="brand__name">SONG&nbsp;ANALYSIS</span>
+              <span class="brand__sep">·</span>
+              <span class="brand__sub">JOBS · STEMS · STRUCTURE</span>
+              <span class="analysis__health" id="analysis-health" data-state="unknown"
+                    title="audio-analysis service health">
+                <span class="analysis__health-lamp"></span>
+                <span class="analysis__health-label" id="analysis-health-label">probing…</span>
+              </span>
+              <span class="brand__screws" aria-hidden="true">
+                <span class="screw"></span><span class="screw"></span>
+              </span>
+            </div>
+            <div class="chassis__rule chassis__rule--bottom"></div>
+          </header>
+          <div class="analysis__split">
+            <aside class="jobs-list" id="jobs-list" aria-label="Analysis jobs">
+              <ol class="jobs-list__ol" id="jobs-list-ol" role="list">
+                <!-- rows injected by panel-analysis.js -->
+              </ol>
+              <div class="jobs-list__empty" id="jobs-list-empty">
+                <div class="slot__empty-rail"></div>
+                <div class="slot__empty-msg">— EMPTY WORKSPACE —</div>
+                <div class="slot__empty-rail"></div>
+              </div>
+              <div class="jobs-list__footer">
+                <button class="primary jobs-list__new" id="job-new-btn" type="button">
+                  + NEW&nbsp;JOB…
+                </button>
+              </div>
+            </aside>
+            <section class="job-detail" id="job-detail" data-active="false">
+              <div class="job-detail__empty" id="job-detail-empty">
+                <div class="slot__empty-rail"></div>
+                <div class="slot__empty-msg">— SELECT A JOB —</div>
+                <div class="slot__empty-rail"></div>
+              </div>
+              <div class="job-detail__body" id="job-detail-body" hidden>
+                <header class="job-detail__head">
+                  <h2 class="job-detail__name" id="job-detail-name">—</h2>
+                  <code class="job-detail__path" id="job-detail-path" title="Click to copy"></code>
+                </header>
+                <div class="job-detail__actions">
+                  <button class="primary job-detail__analyze" id="job-analyze-btn" type="button">
+                    ANALYZE
+                  </button>
+                </div>
+                <div class="job-detail__progress" id="job-progress">
+                  <div class="progress-row" data-kind="stems" data-state="idle">
+                    <div class="progress-row__label">STEMS</div>
+                    <div class="progress-row__track"><div class="progress-row__fill"></div></div>
+                    <div class="progress-row__pct">—</div>
+                    <div class="progress-row__detail">idle</div>
+                  </div>
+                  <div class="progress-row" data-kind="structure" data-state="idle">
+                    <div class="progress-row__label">STRUCTURE</div>
+                    <div class="progress-row__track"><div class="progress-row__fill"></div></div>
+                    <div class="progress-row__pct">—</div>
+                    <div class="progress-row__detail">idle</div>
+                  </div>
+                  <div class="progress-row__carrier" id="progress-carrier" data-running="false"></div>
+                </div>
+                <div class="job-detail__results">
+                  <h3 class="job-detail__results-title">─ RESULTS ─</h3>
+                  <div class="results-block" id="results-stems">
+                    <div class="results-block__title">stems</div>
+                    <ul class="results-block__list" id="results-stems-list"></ul>
+                  </div>
+                  <div class="results-block" id="results-structure">
+                    <div class="results-block__title">segments</div>
+                    <ul class="results-block__list" id="results-structure-list"></ul>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </div>
     </div>
 
     <aside class="console" id="console" data-collapsed="false">
       <!--
-        Combined rail — both the splitter (pointer drag resizes the
-        console) and the collapse toggle (pure click flips
-        data-collapsed). Sits at the slot-facing edge of the console;
-        cursor: col-resize on hover, click without movement toggles the
-        drawer. Chevron in the middle reads as the lever.
+        Rail — vertical strip on the slot-facing edge of the console.
+        Three stacked sub-regions, top to bottom:
+          1. Selector cluster (MIDI / WAVEFORM): click-only buttons that
+             flip which .rack-panels child is visible. role="tab".
+          2. Splitter (.rail__split): the legacy console__latch behavior —
+             pointer drag resizes, click without drag toggles
+             data-collapsed.
+          3. Spacer (.rail__spacer): brushed-metal fill the rest of the
+             height, no interaction.
+        Width tracks --rail-w (34px). The two SVG icons are inline so the
+        whole rail stays self-contained (no icon library).
       -->
-      <button class="console__latch" id="console-latch"
-              aria-expanded="true" aria-controls="console-body"
-              title="Drag to resize · click to collapse">
-        <span class="console__latch-glyph" id="console-latch-glyph">▶</span>
-      </button>
+      <div class="rail" id="rail" role="tablist" aria-label="Rack view">
+        <div class="rail__selectors">
+          <button class="rail__btn" id="rail-btn-midi" type="button"
+                  role="tab" aria-selected="true"
+                  aria-controls="panel-midi"
+                  data-view="midi"
+                  title="MIDI · keyboard mocks + MIDI monitor">
+            <span class="rail__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <circle cx="12" cy="12" r="9" fill="none"
+                        stroke="currentColor" stroke-width="1.4"/>
+                <!-- 5-pin DIN: pins at -120°, -60°, 0°, 60°, 120° (canonical layout) -->
+                <circle cx="6.5"  cy="9"    r="1.1" fill="currentColor"/>
+                <circle cx="17.5" cy="9"    r="1.1" fill="currentColor"/>
+                <circle cx="4"    cy="13.5" r="1.1" fill="currentColor"/>
+                <circle cx="12"   cy="14.5" r="1.1" fill="currentColor"/>
+                <circle cx="20"   cy="13.5" r="1.1" fill="currentColor"/>
+              </svg>
+            </span>
+            <span class="rail__label">MIDI</span>
+          </button>
+          <button class="rail__btn" id="rail-btn-analysis" type="button"
+                  role="tab" aria-selected="false"
+                  aria-controls="panel-analysis"
+                  data-view="analysis"
+                  title="WAVEFORM · song analysis">
+            <span class="rail__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+                   stroke="currentColor" stroke-width="1.25"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <!-- 3 cycles of a smooth sine, height ~7px around center -->
+                <path d="M2 12 Q 4.667 5, 7.333 12 T 12.667 12 T 18 12 T 22 12"/>
+              </svg>
+            </span>
+            <span class="rail__label">WAVE</span>
+          </button>
+        </div>
+        <button class="rail__split" id="console-latch"
+                aria-expanded="true" aria-controls="console-body"
+                title="Drag to resize · click to collapse">
+          <span class="console__latch-glyph" id="console-latch-glyph">▶</span>
+        </button>
+      </div>
 
       <div class="console__body" id="console-body">
         <!-- Tabbed box: tabs are first-class. CHAT tab carries the agent
