@@ -126,9 +126,24 @@ const jobDetailEmptyEl = document.getElementById("job-detail-empty");
 const jobNameEl        = document.getElementById("job-detail-name");
 const jobPathEl        = document.getElementById("job-detail-path");
 const analyzeBtnEl     = document.getElementById("job-analyze-btn");
+const presetSelectorEl = document.getElementById("preset-selector");
+const presetBtnEls     = presetSelectorEl ? Array.from(presetSelectorEl.querySelectorAll(".preset-btn")) : [];
 const carrierEl        = document.getElementById("progress-carrier");
 const healthEl         = document.getElementById("analysis-health");
 const healthLabelEl    = document.getElementById("analysis-health-label");
+
+// Stems quality preset. Source of truth lives in `aria-checked` on the
+// DOM buttons (so visual state and accessibility state can't drift apart).
+function currentPreset() {
+  const checked = presetBtnEls.find((b) => b.getAttribute("aria-checked") === "true");
+  return checked?.dataset.preset ?? "medium";
+}
+
+function setPreset(name) {
+  for (const b of presetBtnEls) {
+    b.setAttribute("aria-checked", b.dataset.preset === name ? "true" : "false");
+  }
+}
 
 const progressRows = {
   stems:     document.querySelector('.progress-row[data-kind="stems"]'),
@@ -286,6 +301,10 @@ function renderJobDetail() {
     analyzeBtnEl.textContent = analyzeInFlight
       ? "ANALYZING…"
       : serviceDown ? "SERVICE DOWN" : "ANALYZE";
+  }
+
+  if (presetSelectorEl) {
+    presetSelectorEl.setAttribute("data-disabled", analyzeInFlight ? "true" : "false");
   }
 
   renderResults(job);
@@ -478,6 +497,10 @@ async function onAnalyze() {
   setProgress("structure", { fraction: 0, stage: "starting", state: "running" });
 
   const audio_path = `${job.path}/source.wav`;
+  // Capture the preset at start too, so a mid-run switch doesn't change
+  // the request the panel "thinks" it sent (the service has already
+  // accepted the original preset by then anyway).
+  const preset = currentPreset();
   const controllers = {
     stems: new AbortController(),
     structure: new AbortController(),
@@ -485,7 +508,7 @@ async function onAnalyze() {
 
   const consumeStems = async () => {
     try {
-      for await (const ev of client.separateStems({ audio_path }, { signal: controllers.stems.signal })) {
+      for await (const ev of client.separateStems({ audio_path, preset }, { signal: controllers.stems.signal })) {
         applyEvent("stems", ev, owningJobName);
       }
     } catch (err) {
@@ -598,6 +621,12 @@ export async function mount() {
     // is set — copy only the real filesystem path.
     if (activeJobPath) navigator.clipboard?.writeText(activeJobPath).catch(() => { /* ignore */ });
   });
+  for (const btn of presetBtnEls) {
+    btn.addEventListener("click", () => {
+      if (analyzeInFlight) return;
+      setPreset(btn.dataset.preset);
+    });
+  }
 
   window.mockRunnerAPI?.onAnalysisJobsChanged?.(() => {
     void refreshJobs();

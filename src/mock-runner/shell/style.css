@@ -1790,6 +1790,7 @@ body.bay--resizing iframe { pointer-events: none; }
   display: flex;
   gap: 10px;
   margin-bottom: 16px;
+  align-items: center;
 }
 
 .job-detail__analyze {
@@ -1799,6 +1800,68 @@ body.bay--resizing iframe { pointer-events: none; }
   font-weight: 700;
   letter-spacing: 0.4em;
   text-transform: uppercase;
+}
+
+/* Stems quality preset — three-button segmented control sitting next to
+ * ANALYZE. Mirrors the .rail__btn amber-jewel selected treatment so the
+ * UI stays in one visual family. */
+.preset-selector {
+  display: inline-flex;
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--c-chassis-low);
+}
+.preset-selector[data-disabled="true"] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.preset-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 9px 12px;
+  border: 0;
+  border-right: 1px solid rgba(0,0,0,0.35);
+  background: transparent;
+  cursor: pointer;
+  color: var(--c-text-faint);
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  line-height: 1;
+  user-select: none;
+  transition: color .15s, background .15s, box-shadow .15s;
+}
+.preset-btn:last-child { border-right: 0; }
+
+.preset-btn:hover {
+  color: var(--c-text-bright);
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.03) 0%,
+    rgba(255,255,255,0.06) 50%,
+    rgba(255,255,255,0.03) 100%);
+}
+
+.preset-btn[aria-checked="true"] {
+  color: var(--c-amber);
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(240,168,48,0.18) 0%, transparent 70%),
+    linear-gradient(90deg,
+      rgba(255,255,255,0.04) 0%,
+      rgba(255,255,255,0.10) 50%,
+      rgba(255,255,255,0.04) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(240,168,48,0.40),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 0 10px -2px var(--c-amber-glow);
+}
+
+.preset-btn:focus-visible {
+  outline: 1px solid var(--c-amber);
+  outline-offset: -3px;
 }
 
 .job-detail__progress {
