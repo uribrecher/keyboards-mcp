@@ -146,6 +146,31 @@
                   <button class="primary job-detail__analyze" id="job-analyze-btn" type="button">
                     ANALYZE
                   </button>
+                  <!--
+                    Stems quality selector. Only stems has presets — the
+                    structure path takes whatever SongFormer gives it.
+                    Roles: radiogroup + radio so screenreaders treat the
+                    three buttons as one logical control; `aria-checked`
+                    drives the amber-jewel selected state in CSS.
+                  -->
+                  <!--
+                    Roving-tabindex radio group: only the checked button
+                    is in the tab order at any time; arrow keys (and
+                    Home/End) move + select across the rest. panel-analysis
+                    keeps tabindex in sync via setPresetDom().
+                  -->
+                  <div class="preset-selector" id="preset-selector"
+                       role="radiogroup" aria-label="Stems preset">
+                    <button type="button" class="preset-btn" role="radio"
+                            data-preset="fast" aria-checked="false" tabindex="-1"
+                            title="htdemucs_6s · 1 shift">FAST</button>
+                    <button type="button" class="preset-btn" role="radio"
+                            data-preset="medium" aria-checked="true" tabindex="0"
+                            title="htdemucs_6s · 3 shifts">MED</button>
+                    <button type="button" class="preset-btn" role="radio"
+                            data-preset="accurate" aria-checked="false" tabindex="-1"
+                            title="htdemucs_6s · 7 shifts">ACC</button>
+                  </div>
                 </div>
                 <div class="job-detail__progress" id="job-progress">
                   <div class="progress-row" data-kind="stems" data-state="idle">
