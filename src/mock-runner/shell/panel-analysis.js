@@ -113,6 +113,7 @@ function createIpcAudioClient() {
     importAudio: (req) => window.mockRunnerAPI.audio.importAudio(req),
     separateStems: (req, opts = {}) => ipcAnalyzeStream("stems", req, opts.signal),
     analyzeStructure: (req, opts = {}) => ipcAnalyzeStream("structure", req, opts.signal),
+    transcribeNotes: (req, opts = {}) => ipcAnalyzeStream("transcribe", req, opts.signal),
   };
 }
 
@@ -173,12 +174,14 @@ function onPresetKeydown(e) {
 }
 
 const progressRows = {
-  stems:     document.querySelector('.progress-row[data-kind="stems"]'),
-  structure: document.querySelector('.progress-row[data-kind="structure"]'),
+  stems:      document.querySelector('.progress-row[data-kind="stems"]'),
+  structure:  document.querySelector('.progress-row[data-kind="structure"]'),
+  transcribe: document.querySelector('.progress-row[data-kind="transcribe"]'),
 };
 
-const resultsStemsListEl     = document.getElementById("results-stems-list");
-const resultsStructureListEl = document.getElementById("results-structure-list");
+const resultsStemsListEl      = document.getElementById("results-stems-list");
+const resultsStructureListEl  = document.getElementById("results-structure-list");
+const resultsTranscribeListEl = document.getElementById("results-transcribe-list");
 
 // ─── State ─────────────────────────────────────────────────────────
 let jobs = [];                  // AnalysisJobSummary[]
@@ -410,6 +413,23 @@ function renderResults(job) {
       resultsStructureListEl.append(li);
     }
   }
+
+  // Transcription — single line, MIDI basename only; full path on hover.
+  if (resultsTranscribeListEl) {
+    resultsTranscribeListEl.replaceChildren();
+    const midiPath = cached.transcribe?.midi_path;
+    if (midiPath) {
+      const li = document.createElement("li");
+      const key = document.createElement("span");
+      key.className = "results-key";
+      key.textContent = "midi";
+      const val = document.createElement("span");
+      val.textContent = midiPath.replace(/^.*[/\\]/, "");
+      val.title = midiPath;
+      li.append(key, val);
+      resultsTranscribeListEl.append(li);
+    }
+  }
 }
 
 function fmtTime(seconds) {
@@ -453,7 +473,7 @@ function resetProgress(kind) {
 function recordProgress(jobName, kind, snap) {
   let slot = jobProgress.get(jobName);
   if (!slot) {
-    slot = { stems: null, structure: null };
+    slot = { stems: null, structure: null, transcribe: null };
     jobProgress.set(jobName, slot);
   }
   slot[kind] = snap;
@@ -473,7 +493,7 @@ function lastFractionFor(jobName, kind) {
 // job yet (or when no job is selected).
 function paintProgressForActive() {
   const slot = activeJobName ? jobProgress.get(activeJobName) : null;
-  for (const kind of ["stems", "structure"]) {
+  for (const kind of ["stems", "structure", "transcribe"]) {
     const snap = slot?.[kind];
     if (snap) setProgress(kind, snap);
     else resetProgress(kind);
@@ -601,6 +621,12 @@ async function onAnalyze() {
   const startSnap = { fraction: 0, stage: "starting", detail: null, state: "running" };
   recordProgress(owningJobName, "stems", startSnap);
   recordProgress(owningJobName, "structure", startSnap);
+  // Transcribe can't start until stems lands its other.wav; record an
+  // explicit "waiting for stems" idle snap so a switch-back paints the
+  // right state instead of blank.
+  recordProgress(owningJobName, "transcribe", {
+    fraction: 0, stage: "waiting for stems", detail: null, state: "idle",
+  });
   // Repaint only if the operator is still on this job. paintProgressForActive
   // resolves to startSnap when owning === active, and to whatever the
   // previously-selected job has when not.
@@ -616,6 +642,7 @@ async function onAnalyze() {
   const controllers = {
     stems: new AbortController(),
     structure: new AbortController(),
+    transcribe: new AbortController(),
   };
 
   const failKind = (kind, err) => {
@@ -629,10 +656,19 @@ async function onAnalyze() {
     if (owningJobName === activeJobName) setProgress(kind, snap);
   };
 
+  // Transcribe needs the path Demucs wrote `other.wav` to. The stems
+  // result event carries the full list of stem files; we pull the
+  // "other" entry from it once the stems iterable completes.
+  let stemsOtherPath = null;
+
   const consumeStems = async () => {
     try {
       for await (const ev of client.separateStems({ audio_path, preset }, { signal: controllers.stems.signal })) {
         applyEvent("stems", ev, owningJobName);
+        if (ev.type === "result") {
+          const other = ev.result?.stems?.find((s) => s.stem === "other");
+          if (other) stemsOtherPath = other.path;
+        }
       }
     } catch (err) {
       failKind("stems", err);
@@ -649,7 +685,38 @@ async function onAnalyze() {
     }
   };
 
-  await Promise.allSettled([consumeStems(), consumeStructure()]);
+  // Run stems + structure in parallel, then chain transcribe off the
+  // stems result (transcribe consumes other.wav, so it can't start
+  // earlier). Structure is independent and stays in the parallel pair.
+  const stemsTask = consumeStems().then(() => {
+    if (!stemsOtherPath) {
+      // Either the preset doesn't produce an "other" stem or stems failed.
+      // Record an explicit idle so a switch back doesn't show "waiting"
+      // forever.
+      recordProgress(owningJobName, "transcribe", {
+        fraction: 0, stage: "no stem to transcribe", detail: null, state: "idle",
+      });
+      if (owningJobName === activeJobName) paintProgressForActive();
+      return;
+    }
+    const snap = { fraction: 0, stage: "starting", detail: null, state: "running" };
+    recordProgress(owningJobName, "transcribe", snap);
+    if (owningJobName === activeJobName) setProgress("transcribe", snap);
+    return (async () => {
+      try {
+        for await (const ev of client.transcribeNotes(
+          { audio_path: stemsOtherPath },
+          { signal: controllers.transcribe.signal },
+        )) {
+          applyEvent("transcribe", ev, owningJobName);
+        }
+      } catch (err) {
+        failKind("transcribe", err);
+      }
+    })();
+  });
+
+  await Promise.allSettled([stemsTask, consumeStructure()]);
 
   inFlightJobs.delete(owningJobName);
   // The result events landed real files on disk — refresh so the LED
@@ -760,6 +827,7 @@ export async function mount() {
 
   resetProgress("stems");
   resetProgress("structure");
+  resetProgress("transcribe");
 
   await refreshJobs();
   startHealthLoop();

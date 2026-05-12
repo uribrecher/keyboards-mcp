@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { AudioAnalysisClient, type ImportRequest, type ImportAudioResult, type StemsRequest, type StructureRequest } from "../audio-analysis-client/index.js";
+import { AudioAnalysisClient, type ImportRequest, type ImportAudioResult, type StemsRequest, type StructureRequest, type TranscribeRequest } from "../audio-analysis-client/index.js";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
 import { MockTransport, type MidiEventPayload } from "./transport.js";
@@ -1167,14 +1167,17 @@ ipcMain.handle("open-audio-import-dialog", async (): Promise<string | null> => {
 
   ipcMain.handle("audio:analyze:start", (
     event,
-    args: { kind: "stems"; req: StemsRequest } | { kind: "structure"; req: StructureRequest },
+    args:
+      | { kind: "stems"; req: StemsRequest }
+      | { kind: "structure"; req: StructureRequest }
+      | { kind: "transcribe"; req: TranscribeRequest },
   ): string => {
     // TypeScript erases the union tag at runtime — a malformed renderer
     // call could otherwise land an arbitrary `kind` value, fall through
     // the `=== "stems"` check, and silently invoke analyzeStructure on a
     // StemsRequest. Reject anything we don't recognize upfront.
     const rawKind = (args as { kind?: unknown } | null | undefined)?.kind;
-    if (rawKind !== "stems" && rawKind !== "structure") {
+    if (rawKind !== "stems" && rawKind !== "structure" && rawKind !== "transcribe") {
       throw new Error(`audio:analyze:start: unknown kind ${JSON.stringify(rawKind)}`);
     }
 
@@ -1198,7 +1201,9 @@ ipcMain.handle("open-audio-import-dialog", async (): Promise<string | null> => {
       try {
         const iter = args.kind === "stems"
           ? getClient().separateStems(args.req, { signal: ctrl.signal })
-          : getClient().analyzeStructure(args.req, { signal: ctrl.signal });
+          : args.kind === "structure"
+            ? getClient().analyzeStructure(args.req, { signal: ctrl.signal })
+            : getClient().transcribeNotes(args.req, { signal: ctrl.signal });
         for await (const ev of iter) {
           if (wc.isDestroyed()) break;
           wc.send(eventCh, ev);

@@ -185,6 +185,12 @@
                     <div class="progress-row__pct">—</div>
                     <div class="progress-row__detail">idle</div>
                   </div>
+                  <div class="progress-row" data-kind="transcribe" data-state="idle">
+                    <div class="progress-row__label">TRANSCRIBE</div>
+                    <div class="progress-row__track"><div class="progress-row__fill"></div></div>
+                    <div class="progress-row__pct">—</div>
+                    <div class="progress-row__detail">idle</div>
+                  </div>
                   <div class="progress-row__carrier" id="progress-carrier" data-running="false"></div>
                 </div>
                 <div class="job-detail__results">
@@ -196,6 +202,10 @@
                   <div class="results-block" id="results-structure">
                     <div class="results-block__title">segments</div>
                     <ul class="results-block__list" id="results-structure-list"></ul>
+                  </div>
+                  <div class="results-block" id="results-transcribe">
+                    <div class="results-block__title">transcription</div>
+                    <ul class="results-block__list" id="results-transcribe-list"></ul>
                   </div>
                 </div>
               </div>
