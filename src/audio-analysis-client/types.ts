@@ -83,3 +83,31 @@ export type TranscribeEvent =
   | ProgressEvent
   | ResultEvent<NoteTranscribeServiceResult>
   | ErrorEvent;
+
+// Per-section note triage. The result payload is again deliberately
+// small — the full per-section data (candidates + polyphony profiles)
+// stays on disk at `triage_path` and can grow to MBs on a busy song.
+// Hand-mirrored from audio_analysis_mcp/schemas.py.
+export interface TriageSection {
+  start_time: number;
+  end_time: number;
+  label: string;
+}
+
+export type TriageRequest = {
+  audio_path: string;
+  sections: TriageSection[];
+  min_duration?: number;
+  max_candidates?: number;
+  jitter_tolerance?: number;
+};
+
+export interface NoteTriageBySectionsServiceResult {
+  triage_path: string;
+  cached: boolean;
+}
+
+export type TriageEvent =
+  | ProgressEvent
+  | ResultEvent<NoteTriageBySectionsServiceResult>
+  | ErrorEvent;

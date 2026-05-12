@@ -114,6 +114,7 @@ function createIpcAudioClient() {
     separateStems: (req, opts = {}) => ipcAnalyzeStream("stems", req, opts.signal),
     analyzeStructure: (req, opts = {}) => ipcAnalyzeStream("structure", req, opts.signal),
     transcribeNotes: (req, opts = {}) => ipcAnalyzeStream("transcribe", req, opts.signal),
+    triageNotesBySections: (req, opts = {}) => ipcAnalyzeStream("triage", req, opts.signal),
   };
 }
 
@@ -177,11 +178,13 @@ const progressRows = {
   stems:      document.querySelector('.progress-row[data-kind="stems"]'),
   structure:  document.querySelector('.progress-row[data-kind="structure"]'),
   transcribe: document.querySelector('.progress-row[data-kind="transcribe"]'),
+  triage:     document.querySelector('.progress-row[data-kind="triage"]'),
 };
 
 const resultsStemsListEl      = document.getElementById("results-stems-list");
 const resultsStructureListEl  = document.getElementById("results-structure-list");
 const resultsTranscribeListEl = document.getElementById("results-transcribe-list");
+const resultsTriageListEl     = document.getElementById("results-triage-list");
 
 // ─── State ─────────────────────────────────────────────────────────
 let jobs = [];                  // AnalysisJobSummary[]
@@ -430,6 +433,23 @@ function renderResults(job) {
       resultsTranscribeListEl.append(li);
     }
   }
+
+  // Triage — same single-line treatment as transcribe; full path on hover.
+  if (resultsTriageListEl) {
+    resultsTriageListEl.replaceChildren();
+    const triagePath = cached.triage?.triage_path;
+    if (triagePath) {
+      const li = document.createElement("li");
+      const key = document.createElement("span");
+      key.className = "results-key";
+      key.textContent = "json";
+      const val = document.createElement("span");
+      val.textContent = triagePath.replace(/^.*[/\\]/, "");
+      val.title = triagePath;
+      li.append(key, val);
+      resultsTriageListEl.append(li);
+    }
+  }
 }
 
 function fmtTime(seconds) {
@@ -473,7 +493,7 @@ function resetProgress(kind) {
 function recordProgress(jobName, kind, snap) {
   let slot = jobProgress.get(jobName);
   if (!slot) {
-    slot = { stems: null, structure: null, transcribe: null };
+    slot = { stems: null, structure: null, transcribe: null, triage: null };
     jobProgress.set(jobName, slot);
   }
   slot[kind] = snap;
@@ -493,7 +513,7 @@ function lastFractionFor(jobName, kind) {
 // job yet (or when no job is selected).
 function paintProgressForActive() {
   const slot = activeJobName ? jobProgress.get(activeJobName) : null;
-  for (const kind of ["stems", "structure", "transcribe"]) {
+  for (const kind of ["stems", "structure", "transcribe", "triage"]) {
     const snap = slot?.[kind];
     if (snap) setProgress(kind, snap);
     else resetProgress(kind);
@@ -627,6 +647,12 @@ async function onAnalyze() {
   recordProgress(owningJobName, "transcribe", {
     fraction: 0, stage: "waiting for stems", detail: null, state: "idle",
   });
+  // Triage needs BOTH transcribe (notes JSON on disk) AND structure
+  // (segments) to be done; record an idle snap up front so the row
+  // shows the right state even if you switch jobs immediately.
+  recordProgress(owningJobName, "triage", {
+    fraction: 0, stage: "waiting for transcribe + structure", detail: null, state: "idle",
+  });
   // Repaint only if the operator is still on this job. paintProgressForActive
   // resolves to startSnap when owning === active, and to whatever the
   // previously-selected job has when not.
@@ -643,6 +669,7 @@ async function onAnalyze() {
     stems: new AbortController(),
     structure: new AbortController(),
     transcribe: new AbortController(),
+    triage: new AbortController(),
   };
 
   const failKind = (kind, err) => {
@@ -717,6 +744,48 @@ async function onAnalyze() {
   });
 
   await Promise.allSettled([stemsTask, consumeStructure()]);
+
+  // Triage needs the transcription notes JSON (written by /jobs/transcribe)
+  // AND SongFormer's segment list. We only attempt it when both deps
+  // landed successfully; otherwise record an "idle" snapshot explaining
+  // what's missing so a job switch back doesn't show a stuck "waiting"
+  // state.
+  const cachedJob = cachedResults.get(owningJobName) ?? {};
+  const transcribeDone = jobProgress.get(owningJobName)?.transcribe?.state === "done";
+  const segments = cachedJob.structure?.segments;
+  if (transcribeDone && stemsOtherPath && Array.isArray(segments) && segments.length > 0) {
+    const snap = { fraction: 0, stage: "starting", detail: null, state: "running" };
+    recordProgress(owningJobName, "triage", snap);
+    if (owningJobName === activeJobName) setProgress("triage", snap);
+    try {
+      for await (const ev of client.triageNotesBySections(
+        {
+          audio_path: stemsOtherPath,
+          sections: segments.map((s) => ({
+            start_time: s.start, end_time: s.end, label: s.label,
+          })),
+        },
+        { signal: controllers.triage.signal },
+      )) {
+        applyEvent("triage", ev, owningJobName);
+      }
+    } catch (err) {
+      failKind("triage", err);
+    }
+  } else {
+    // Build a precise reason string so it's obvious which prerequisite
+    // didn't land — easier to debug live than a generic "skipped".
+    const missing = [];
+    if (!stemsOtherPath || !transcribeDone) missing.push("transcribe");
+    if (!segments || segments.length === 0) missing.push("structure");
+    recordProgress(owningJobName, "triage", {
+      fraction: 0,
+      stage: `skipped — missing ${missing.join(" + ")}`,
+      detail: null,
+      state: "idle",
+    });
+    if (owningJobName === activeJobName) paintProgressForActive();
+  }
 
   inFlightJobs.delete(owningJobName);
   // The result events landed real files on disk — refresh so the LED
@@ -828,6 +897,7 @@ export async function mount() {
   resetProgress("stems");
   resetProgress("structure");
   resetProgress("transcribe");
+  resetProgress("triage");
 
   await refreshJobs();
   startHealthLoop();
