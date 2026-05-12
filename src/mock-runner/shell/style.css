@@ -2025,6 +2025,11 @@ body.bay--resizing iframe { pointer-events: none; }
   box-shadow: 0 0 8px -2px var(--c-amber-glow);
 }
 
+.waveform-row:focus-visible {
+  outline: 1px solid var(--c-amber);
+  outline-offset: 1px;
+}
+
 .waveform-row__label {
   display: flex;
   align-items: center;

@@ -395,6 +395,11 @@ function renderResults(job) {
   const cached = cachedResults.get(job.name) ?? {};
   const stems = cached.stems?.stems;
   const segments = cached.structure?.segments;
+  // Capture the job identity at IIFE entry — if the user switches jobs
+  // while we're awaiting the import or the mount, the work below is
+  // stale. We compare against `activeJobName` after every await before
+  // mutating `lastMountKey`.
+  const owningJob = job.name;
 
   // Lazy-load the pane module on first use so the panel paints fast
   // even before peaks.js + konva + waveform-data are parsed.
@@ -407,6 +412,7 @@ function renderResults(job) {
         return;
       }
     }
+    if (owningJob !== activeJobName) return;
 
     // If stems aren't on the table yet, tear down any prior mount (so
     // an empty / leftover pane from a previous job doesn't linger) and
@@ -421,9 +427,14 @@ function renderResults(job) {
 
     // Job switch — full rebuild. The audio decode is sub-second, so
     // tear/rebuild stays simpler than per-job instance caching.
-    if (lastMountKey !== job.name) {
+    if (lastMountKey !== owningJob) {
       await waveformPane.mount({ stems, segments });
-      lastMountKey = job.name;
+      // mount() can take a few hundred ms; re-check before committing
+      // the key so a stale mount doesn't stamp the wrong job name.
+      // (waveform-pane has its own mountGen guard for the rows map;
+      // this guards our panel-side bookkeeping.)
+      if (owningJob !== activeJobName) return;
+      lastMountKey = owningJob;
       return;
     }
 

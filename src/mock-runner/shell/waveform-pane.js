@@ -142,7 +142,12 @@ async function initInstanceForRow(stem, stemPath, gen) {
 
   // <audio> drives PLAYBACK (timeupdate events that peaks observes for
   // the playhead). Electron's media pipeline loads file:// fine.
-  audioEl.src = `file://${stemPath}`;
+  // encodeURI escapes spaces, '#', '?', and other URL-unsafe chars
+  // while leaving '/' alone — workspace paths can in principle contain
+  // any of those if the source filename did. Path is absolute on macOS
+  // (always starts with '/'), so `file://` + `/Users/...` → `file:///...`
+  // which is the canonical three-slash form.
+  audioEl.src = "file://" + encodeURI(stemPath);
   audioEl.muted = stem !== activeStem;
 
   // Web Audio drives WAVEFORM RENDERING. peaks.js's internal fetch for
@@ -270,8 +275,23 @@ function attachRowClickHandlers() {
   for (const stem of STEM_ORDER) {
     const row = $row(stem);
     if (!row) continue;
-    // Idempotent: replace any previous handler if mount is called twice.
+    // Make rows keyboard-operable: focusable + Enter/Space activate +
+    // aria-pressed reflects the active state for screen readers.
+    // role="button" matches the click-to-activate semantics; aria-pressed
+    // is a toggle indicator, which fits "only one row is active at a time"
+    // without forcing us into a full radio-group pattern.
+    row.setAttribute("role", "button");
+    row.setAttribute("tabindex", "0");
+    row.setAttribute("aria-pressed", stem === activeStem ? "true" : "false");
+    row.setAttribute("aria-label", `Activate ${stem} stem`);
+    // Idempotent: replace any previous handlers if mount is called twice.
     row.onclick = () => {
+      if (stem === activeStem) return;
+      setActiveStem(stem);
+    };
+    row.onkeydown = (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
       if (stem === activeStem) return;
       setActiveStem(stem);
     };
@@ -345,6 +365,7 @@ export function setActiveStem(name) {
     if (!row || !rec) continue;
     const isActive = stem === activeStem;
     row.setAttribute("data-active", isActive ? "true" : "false");
+    row.setAttribute("aria-pressed", isActive ? "true" : "false");
     rec.audio.muted = !isActive;
     if (!isActive) {
       try { rec.audio.pause(); } catch { /* ignore */ }

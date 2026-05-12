@@ -10,6 +10,7 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, type WebContents } from "electron";
 import { join, dirname, basename } from "node:path";
 import { statSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, readSync, closeSync, realpathSync, watch as fsWatch, type FSWatcher } from "node:fs";
+import { readFile as readFileAsync } from "node:fs/promises";
 import { homedir } from "node:os";
 import { sep } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -1166,7 +1167,11 @@ ipcMain.handle("open-audio-import-dialog", async (): Promise<string | null> => {
   // re-realpath both the workspace jobs root and the requested path and
   // check separator-aware containment before reading, same defense as
   // write-job-metadata so a malicious renderer can't read arbitrary files.
-  ipcMain.handle("audio:read-wav", (_event, audioPath: string): Buffer => {
+  //
+  // Async readFile (fs/promises) rather than sync — six stems × tens of MB
+  // each would otherwise stall the Electron main event loop for a chunk
+  // of time long enough to drop IPC responsiveness on parallel calls.
+  ipcMain.handle("audio:read-wav", async (_event, audioPath: string): Promise<Buffer> => {
     if (typeof audioPath !== "string") {
       throw new Error("audio:read-wav: path must be a string");
     }
@@ -1185,7 +1190,7 @@ ipcMain.handle("open-audio-import-dialog", async (): Promise<string | null> => {
     if (!resolvedTarget.toLowerCase().endsWith(".wav")) {
       throw new Error(`audio:read-wav: expected .wav, got: ${audioPath}`);
     }
-    return readFileSync(resolvedTarget);
+    return await readFileAsync(resolvedTarget);
   });
 
   // Each active stream remembers its AbortController AND the WebContents
