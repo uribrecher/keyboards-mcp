@@ -1973,71 +1973,131 @@ body.bay--resizing iframe { pointer-events: none; }
 }
 
 /* ── Results section ────────────────────────────────────────────── */
-.job-detail__results {
+/* ═════════════ Waveform pane ═════════════ */
+
+/* Replaces the old text-list RESULTS section: six peaks.js instances
+ * stacked vertically, one per Demucs stem. Brushed-metal chassis carries
+ * the same vibe as the chassis above. */
+.waveforms {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
+  padding: 8px 0;
 }
 
-.job-detail__results-title {
+.waveforms__title {
   font-family: var(--font-display);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.5em;
   text-transform: uppercase;
   color: var(--c-text-faint);
-  margin: 0 0 4px;
+  margin: 0 0 8px;
   text-align: center;
 }
 
-.results-block {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.waveform-row {
+  display: grid;
+  /* Narrow label column: text is rotated 90° (vertical-rl) so its width
+   * is bounded by font-size, not by string length. 22px is comfortable
+   * for the 9px label + a small breathing margin. */
+  grid-template-columns: 22px 1fr;
+  column-gap: 6px;
+  align-items: stretch;
+  background: var(--c-chassis-low);
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  padding: 4px 6px;
+  transition: opacity .15s, border-color .15s, box-shadow .15s;
 }
 
-.results-block__title {
+.waveform-row[data-active="false"] {
+  opacity: 0.4;
+  cursor: pointer;
+}
+
+.waveform-row[data-active="false"]:hover {
+  opacity: 0.6;
+}
+
+.waveform-row[data-active="true"] {
+  border-color: var(--c-amber);
+  box-shadow: 0 0 8px -2px var(--c-amber-glow);
+}
+
+.waveform-row:focus-visible {
+  outline: 1px solid var(--c-amber);
+  outline-offset: 1px;
+}
+
+.waveform-row__label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Vertical text reading bottom-to-top — standard for audio software
+   * track labels. `sideways-lr` is a single property: 90° CCW rotation
+   * with glyphs upright. */
+  writing-mode: sideways-lr;
   font-family: var(--font-display);
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.32em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--c-text-dim);
+  user-select: none;
+  /* Keep the rotated text from getting clipped at the column edge. */
+  padding: 4px 0;
 }
 
-.results-block__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.waveform-row[data-active="true"] .waveform-row__label {
+  color: var(--c-amber);
 }
 
-.results-block__list li {
-  font-family: var(--font-chat);
-  font-size: 11px;
-  color: var(--c-text);
-  padding: 3px 8px;
-  border-left: 1px solid var(--c-rule);
-  display: grid;
-  grid-template-columns: minmax(60px, max-content) 1fr;
-  column-gap: 10px;
-  align-items: baseline;
+/* Peaks.js requires a sized container for the canvas; height is fixed
+ * so six rows stack predictably inside the detail pane. */
+.waveform-row__view {
+  height: 64px;
+  min-width: 0;
+  background: #0a0a0c;
+  border: 1px solid rgba(0,0,0,0.4);
+  border-radius: 2px;
+  overflow: hidden;
 }
 
-.results-block__list .results-key {
-  color: var(--c-text-dim);
-  letter-spacing: 0.04em;
+/* The keyboards (other) stem is the operator's primary signal — Demucs
+ * leaves whatever isn't drums/bass/vocals/piano/guitar here, so this is
+ * where the keyboard parts the agent has to match actually live. Double
+ * the height to give it more visual real estate. */
+.waveform-row[data-stem="other"] .waveform-row__view {
+  height: 128px;
 }
 
-.results-block__list:empty::before {
-  content: "— none yet —";
-  font-family: var(--font-display);
-  font-size: 10px;
-  letter-spacing: 0.3em;
-  color: var(--c-text-faint);
+/* Segment tooltip — single shared element, positioned at cursor on
+ * peaks segments.mouseenter, hidden on mouseleave. position: fixed +
+ * pointer-events: none means it doesn't intercept the hover or get
+ * stuck if the mouse moves fast across a segment boundary. */
+.segment-tooltip {
+  position: fixed;
+  z-index: 1000;
   padding: 4px 8px;
+  background: rgba(8, 8, 10, 0.92);
+  color: var(--c-text-bright);
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+
+/* The <audio> element is needed for peaks.js to observe playback state
+ * but is never shown — the peaks canvas IS the visible affordance. */
+.waveform-row audio {
+  display: none;
 }
 
 /* ═════════════ Backup picker modal ═════════════ */
