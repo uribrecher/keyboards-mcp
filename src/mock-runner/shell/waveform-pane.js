@@ -79,7 +79,8 @@ function getAudioContext() {
   return audioContext;
 }
 
-// Per-row record. Keyed by stem name.
+// Per-row record. Keyed by stem name. `duration` is stored so the
+// ResizeObserver path can call setZoom() without re-decoding the audio.
 const rows = new Map();
 
 let activeStem = null;
@@ -91,12 +92,54 @@ let currentSegments = [];
 // avoid the stale-init writing into the current row map.
 let mountGen = 0;
 
+// ResizeObserver lives until destroy() — the waveforms parent grows /
+// shrinks whenever the operator collapses or expands the chat console,
+// and peaks doesn't auto-refit. Debounce so a smooth drag doesn't spam
+// fitToContainer calls.
+let resizeObserver = null;
+let resizeDebounce = null;
+
 function $row(stem) {
   return document.querySelector(`.waveform-row[data-stem="${stem}"]`);
 }
 
 function colorFor(label) {
   return LABEL_COLORS[String(label).toLowerCase()] ?? DEFAULT_COLOR;
+}
+
+// peaks.js calls this for every segment when overlay rendering is on
+// and a `createSegmentLabel` callback is set. Returning a Konva.Node
+// supersedes the built-in overlayLabel* drawing — we use this hook
+// solely to ROTATE the 3-letter code 90° CCW so it reads bottom-up
+// inside narrow segments. Width constraint becomes ~font-size (10px),
+// which fits any realistic SongFormer section.
+function createRotatedSegmentLabel(options) {
+  const { segment } = options;
+  if (!segment.labelText) return null;
+  return new window.Konva.Text({
+    text:        segment.labelText,
+    fontFamily:  "monospace",
+    fontSize:    11,
+    fontStyle:   "bold",
+    fill:        "#ffffff",
+    // Soft black shadow so the label stays legible over any palette
+    // color at PALETTE_OPACITY.
+    shadowColor:  "#000000",
+    shadowOpacity: 0.55,
+    shadowBlur:   2,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    // -90° rotates CCW. Konva.Text rotates around (x, y), and the
+    // unrotated text's TOP-LEFT corner sits at (x, y); after -90° the
+    // text's BOTTOM-LEFT is at (x, y) and the glyph row reads upward.
+    // Place y at ~textWidth so the rotated text occupies y∈[~6, y].
+    rotation:    -90,
+    x:           4,
+    y:           28,
+    // Inert overlay — no need to capture clicks; the row click handler
+    // catches activations at the row level.
+    listening:   false,
+  });
 }
 
 function buildSegmentList(segments) {
@@ -160,9 +203,9 @@ async function initInstanceForRow(stem, stemPath, gen) {
       // Translucent region overlay treatment — no drag handles, no
       // editable boundaries. Per-segment color overrides the default
       // overlayColor. Border dropped to 0 so the visible thing is the
-      // fill, not a thin outline. `overlayLabelAlign: "top-left"`
-      // pins each segment's code to the top edge rather than centering
-      // it over the loudest part of the waveform.
+      // fill, not a thin outline. overlayLabel* options below are
+      // overridden by createSegmentLabel (custom rotated text), but
+      // kept as a sensible fallback if the callback ever returns null.
       segmentOptions: {
         overlay:            true,
         overlayColor:       DEFAULT_COLOR,
@@ -172,6 +215,7 @@ async function initInstanceForRow(stem, stemPath, gen) {
         overlayLabelColor:  "#ffffff",
         overlayLabelAlign:  "top-left",
       },
+      createSegmentLabel: createRotatedSegmentLabel,
     }, (err, instance) => {
       if (err) {
         console.error(`peaks.init failed for stem "${stem}":`, err);
@@ -205,7 +249,12 @@ async function initInstanceForRow(stem, stemPath, gen) {
           try { view.enableSeek(false); } catch { /* ignore */ }
         }
       }
-      rows.set(stem, { peaks: instance, audio: audioEl, view: viewEl });
+      rows.set(stem, {
+        peaks:    instance,
+        audio:    audioEl,
+        view:     viewEl,
+        duration: audioBuffer.duration,
+      });
       // If segments arrived before this instance finished init, replay.
       if (currentSegments.length) {
         try { instance.segments.add(buildSegmentList(currentSegments)); }
@@ -214,6 +263,38 @@ async function initInstanceForRow(stem, stemPath, gen) {
       resolve(instance);
     });
   });
+}
+
+// Refit every active peaks instance against its container's current
+// size. Called on the resize-debounce trailing edge. Cheap — peaks
+// reuses the decoded AudioBuffer; no re-decode.
+function refitAllPeaks() {
+  for (const rec of rows.values()) {
+    const view = rec.peaks.views.getView("zoomview");
+    if (!view) continue;
+    try {
+      view.fitToContainer();
+      view.setZoom({ seconds: rec.duration });
+    } catch (e) {
+      console.warn("waveform refit failed:", e);
+    }
+  }
+}
+
+function installResizeObserver() {
+  if (resizeObserver) return;
+  const waveformsEl = document.getElementById("waveforms");
+  if (!waveformsEl) return;
+  resizeObserver = new ResizeObserver(() => {
+    // Debounce — a smooth chat-console drag fires many entries; we
+    // only need a refit on the trailing edge.
+    if (resizeDebounce) clearTimeout(resizeDebounce);
+    resizeDebounce = setTimeout(() => {
+      resizeDebounce = null;
+      refitAllPeaks();
+    }, 60);
+  });
+  resizeObserver.observe(waveformsEl);
 }
 
 function attachRowClickHandlers() {
@@ -262,6 +343,7 @@ export async function mount({ stems, segments }) {
   );
 
   attachRowClickHandlers();
+  installResizeObserver();
 }
 
 /** Replace the segment overlays on every instance. Used when structure
@@ -317,6 +399,14 @@ export function setActiveStem(name) {
 
 /** Full tear-down before mount() rebuilds or before the panel is hidden. */
 export function destroy() {
+  if (resizeObserver) {
+    try { resizeObserver.disconnect(); } catch { /* ignore */ }
+    resizeObserver = null;
+  }
+  if (resizeDebounce) {
+    clearTimeout(resizeDebounce);
+    resizeDebounce = null;
+  }
   for (const { peaks, audio } of rows.values()) {
     try { peaks.destroy(); } catch { /* ignore */ }
     try {
