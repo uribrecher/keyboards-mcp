@@ -31,7 +31,11 @@ function ipcAnalyzeStream(kind, req, signal) {
       let streamId = null;
       let unsubEvent = () => {};
 
+      // Drop events that arrive after the consumer is done (abort / error
+      // before analyzeStart resolved leaves the subscription installed but
+      // no one is awaiting — without this guard we'd grow `queue` forever).
       const push = (ev) => {
+        if (finished) return;
         if (waiters.length) waiters.shift().resolve({ value: ev, done: false });
         else queue.push(ev);
       };
@@ -49,6 +53,13 @@ function ipcAnalyzeStream(kind, req, signal) {
 
       const ready = (async () => {
         streamId = await window.mockRunnerAPI.audio.analyzeStart(kind, req);
+        // The consumer may have aborted (or hit an error) while we were
+        // awaiting the IPC. Skip the subscription and cancel the stream
+        // server-side instead of leaking the subscription.
+        if (finished) {
+          void window.mockRunnerAPI.audio.analyzeCancel(streamId);
+          return;
+        }
         unsubEvent = window.mockRunnerAPI.audio.onAnalyzeEvent(streamId, push);
         window.mockRunnerAPI.audio.onAnalyzeDone(streamId, (payload) => {
           if (payload && payload.ok === false) {
@@ -66,6 +77,9 @@ function ipcAnalyzeStream(kind, req, signal) {
           finish(new DOMException("aborted", "AbortError"));
         } else {
           signal.addEventListener("abort", () => {
+            // streamId is null if abort beat analyzeStart's resolution; the
+            // post-await `if (finished)` check above will cancel server-side
+            // once the id lands.
             if (streamId) void window.mockRunnerAPI.audio.analyzeCancel(streamId);
             finish(new DOMException("aborted", "AbortError"));
           }, { once: true });

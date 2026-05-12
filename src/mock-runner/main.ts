@@ -1159,18 +1159,37 @@ ipcMain.handle("open-audio-import-dialog", async (): Promise<string | null> => {
     getClient().importAudio(req),
   );
 
-  const activeStreams = new Map<string, AbortController>();
+  // Each active stream remembers its AbortController AND the WebContents
+  // id of the renderer that started it, so audio:analyze:cancel can reject
+  // requests coming from a different sender (defense against id-guessing
+  // across renderer windows).
+  const activeStreams = new Map<string, { ctrl: AbortController; ownerWcId: number }>();
 
   ipcMain.handle("audio:analyze:start", (
     event,
     args: { kind: "stems"; req: StemsRequest } | { kind: "structure"; req: StructureRequest },
   ): string => {
+    // TypeScript erases the union tag at runtime — a malformed renderer
+    // call could otherwise land an arbitrary `kind` value, fall through
+    // the `=== "stems"` check, and silently invoke analyzeStructure on a
+    // StemsRequest. Reject anything we don't recognize upfront.
+    const rawKind = (args as { kind?: unknown } | null | undefined)?.kind;
+    if (rawKind !== "stems" && rawKind !== "structure") {
+      throw new Error(`audio:analyze:start: unknown kind ${JSON.stringify(rawKind)}`);
+    }
+
     const id = randomUUID();
     const ctrl = new AbortController();
-    activeStreams.set(id, ctrl);
     const wc: WebContents = event.sender;
+    activeStreams.set(id, { ctrl, ownerWcId: wc.id });
     const eventCh = `audio:analyze:event:${id}`;
     const doneCh = `audio:analyze:done:${id}`;
+
+    // If the renderer goes away mid-stream, abort the SSE read instead
+    // of just bailing on the for-await — otherwise the HTTP connection
+    // and the SSE generator on the service side would linger.
+    const onDestroyed = (): void => ctrl.abort();
+    wc.once("destroyed", onDestroyed);
 
     // Iterate in the background; don't block the handler return. The
     // renderer's invoke() resolves with the id immediately so it can
@@ -1193,14 +1212,23 @@ ipcMain.handle("open-audio-import-dialog", async (): Promise<string | null> => {
         }
       } finally {
         activeStreams.delete(id);
+        if (!wc.isDestroyed()) {
+          try { wc.removeListener("destroyed", onDestroyed); } catch { /* ignore */ }
+        }
       }
     })();
 
     return id;
   });
 
-  ipcMain.handle("audio:analyze:cancel", (_event, id: string): void => {
-    activeStreams.get(id)?.abort();
+  ipcMain.handle("audio:analyze:cancel", (event, id: string): void => {
+    const entry = activeStreams.get(id);
+    if (!entry) return;
+    // Only the renderer that started the stream can cancel it. Prevents
+    // a misbehaving / compromised secondary window from killing another
+    // window's in-flight analysis.
+    if (entry.ownerWcId !== event.sender.id) return;
+    entry.ctrl.abort();
   });
 }
 
