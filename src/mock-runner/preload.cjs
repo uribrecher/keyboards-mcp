@@ -54,6 +54,25 @@ contextBridge.exposeInMainWorld("mockRunnerAPI", {
   onAnalysisJobsChanged: (cb) =>
     ipcRenderer.on("audio-analysis:jobs-changed", () => cb()),
   openAudioImportDialog: () => ipcRenderer.invoke("open-audio-import-dialog"),
-  getAudioServiceUrl: () => ipcRenderer.invoke("get-audio-service-url"),
   writeJobMetadata: (args) => ipcRenderer.invoke("write-job-metadata", args),
+
+  // Audio-analysis service relay — main owns the HTTP client; renderer
+  // never hits the network directly. Streaming methods return a job id
+  // and the renderer subscribes via audio.onAnalyzeEvent / onAnalyzeDone.
+  audio: {
+    healthz: () => ipcRenderer.invoke("audio:healthz"),
+    importAudio: (req) => ipcRenderer.invoke("audio:import-audio", req),
+    analyzeStart: (kind, req) => ipcRenderer.invoke("audio:analyze:start", { kind, req }),
+    analyzeCancel: (id) => ipcRenderer.invoke("audio:analyze:cancel", id),
+    onAnalyzeEvent: (id, cb) => {
+      const ch = `audio:analyze:event:${id}`;
+      const handler = (_e, ev) => cb(ev);
+      ipcRenderer.on(ch, handler);
+      return () => ipcRenderer.removeListener(ch, handler);
+    },
+    onAnalyzeDone: (id, cb) => {
+      const ch = `audio:analyze:done:${id}`;
+      ipcRenderer.once(ch, (_e, payload) => cb(payload));
+    },
+  },
 });
