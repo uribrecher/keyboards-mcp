@@ -13,6 +13,7 @@ Currently supported: **Nord Electro 5D**, **Roland JUNO-X**, **Prophet-6**
 - **Browse inventory** — list programs and songs from extracted backups with name and bank filtering
 - **Extract backup files** into a structured inventory of all sounds, programs, and set lists
 - **Mock device** with a model-specific web UI for development and testing without hardware
+- **Song Analysis workbench** — second view in the Mock Runner that imports audio, runs stem separation + structure analysis via the sibling `audio-analysis-mcp` service, and visualises live progress
 
 ## Architecture
 
@@ -49,6 +50,7 @@ The **midi-connections-broker (MCB)** is a separate long-running process that ow
 | `src/midi/` | MIDI I/O manager (implements MidiConnection) |
 | `src/mcb/` | midi-connections-broker — lease registry, session manager, HTTP-over-UDS API |
 | `src/mock-runner/` | Thin Electron mock engine — virtual MIDI In/Out + WS, source-aware routing; delegates all model logic to `MockHandler` (see [docs/mock_runner.md](docs/mock_runner.md#engine-and-handler--runtime-contract)) |
+| `src/audio-analysis-client/` | TypeScript HTTP+SSE client for the sibling `audio-analysis-mcp` service. Consumed by the Mock Runner's [Song Analysis](docs/mock_runner.md#song-analysis) view |
 | `docs/plans/` | Implementation plans (numbered by execution order) |
 
 ### Adding a new keyboard model
@@ -127,14 +129,21 @@ Once connected, the following tools are available:
 
 ### Mock device
 
-For development without hardware, the **Mock Runner** is an Electron app that simulates one or more keyboards as a tabbed multi-device rack with model-specific web UIs, persistent rack setups, and a built-in chat console.
+For development without hardware, the **Mock Runner** is an Electron app that simulates one or more keyboards as a tabbed multi-device rack with model-specific web UIs, persistent rack setups, and a built-in chat console. The rail's **WAVE** button swaps in a second view — **Song Analysis** — that drives the sibling `audio-analysis-mcp` service for audio import, stem separation, and structure analysis.
 
 ```bash
 npm run mock:runner     # Electron app
 npm run mock:headless   # Plain Node (--model <id> required) — for tests/CI
 ```
 
-See [docs/mock_runner.md](docs/mock_runner.md) for the full UI tour — tabs, labels and per-instance backups, the File menu and `.mockrack` save format, backup extraction, and the chat console.
+The Song Analysis view needs the audio-analysis service running separately:
+
+```bash
+cd ../audio-analysis-mcp
+uv run python -m audio_analysis_mcp.service
+```
+
+See [docs/mock_runner.md](docs/mock_runner.md) for the full UI tour — tabs, labels and per-instance backups, the File menu and `.mockrack` save format, backup extraction, [Song Analysis](docs/mock_runner.md#song-analysis), and the chat console.
 
 ## License
 
