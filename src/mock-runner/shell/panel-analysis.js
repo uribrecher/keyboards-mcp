@@ -132,14 +132,9 @@ const carrierEl        = document.getElementById("progress-carrier");
 const healthEl         = document.getElementById("analysis-health");
 const healthLabelEl    = document.getElementById("analysis-health-label");
 
-// Stems quality preset. Source of truth lives in `aria-checked` on the
-// DOM buttons (so visual state and accessibility state can't drift apart).
-function currentPreset() {
-  const checked = presetBtnEls.find((b) => b.getAttribute("aria-checked") === "true");
-  return checked?.dataset.preset ?? "medium";
-}
-
-function setPreset(name) {
+// DOM-side flip of the segmented control. Pure UI; the per-job store
+// below is the source of truth.
+function setPresetDom(name) {
   for (const b of presetBtnEls) {
     b.setAttribute("aria-checked", b.dataset.preset === name ? "true" : "false");
   }
@@ -158,8 +153,27 @@ let jobs = [];                  // AnalysisJobSummary[]
 let activeJobName = null;       // string | null
 let activeJobPath = null;       // string | null — used for click-to-copy
 let pendingImportBasename = null;
-let analyzeInFlight = false;
+// Per-job in-flight set: ANALYZE is "ANALYZING…" for jobs in here, idle
+// for everyone else. The previous single-boolean version greyed out
+// ANALYZE on every job whenever any one was running.
+const inFlightJobs = new Set();
+// Per-job preset selection so switching to a different job restores the
+// preset that was last picked for THAT job, not the panel-global one.
+// Default "medium" until the user picks something for a given job.
+const jobPreset = new Map();
 let serviceUp = null;           // null = unknown, true/false = last probe result
+
+function isInFlight(jobName) {
+  return jobName != null && inFlightJobs.has(jobName);
+}
+
+function getPresetFor(jobName) {
+  return (jobName != null && jobPreset.get(jobName)) || "medium";
+}
+
+function paintPresetForActive() {
+  setPresetDom(getPresetFor(activeJobName));
+}
 // Cached results per job, keyed by job.name. Populated on result events
 // and (best-effort) on initial selection by reading the structure JSON
 // — but for now we just rely on live results from the SSE stream.
@@ -303,14 +317,15 @@ function renderJobDetail() {
 
   if (analyzeBtnEl) {
     const serviceDown = serviceUp === false;
-    analyzeBtnEl.disabled = analyzeInFlight || !job.hasSource || serviceDown;
-    analyzeBtnEl.textContent = analyzeInFlight
+    const running = isInFlight(job.name);
+    analyzeBtnEl.disabled = running || !job.hasSource || serviceDown;
+    analyzeBtnEl.textContent = running
       ? "ANALYZING…"
       : serviceDown ? "SERVICE DOWN" : "ANALYZE";
   }
 
   if (presetSelectorEl) {
-    presetSelectorEl.setAttribute("data-disabled", analyzeInFlight ? "true" : "false");
+    presetSelectorEl.setAttribute("data-disabled", isInFlight(job.name) ? "true" : "false");
   }
 
   renderResults(job);
@@ -423,11 +438,13 @@ function refreshCarrier() {
 function selectJob(name) {
   if (activeJobName === name) return;
   activeJobName = name;
-  // Repaint the progress rows from the newly-selected job's recorded
-  // state — if it's running we want to see its current fraction; if
-  // it's idle we want the idle treatment; etc. The previous code blindly
-  // reset to idle, which masked in-flight jobs after a switch.
+  // Repaint the progress rows and the preset selector from the newly-
+  // selected job's recorded state — if it's running we want its current
+  // fraction, if it had a preset picked we want that preset highlighted.
+  // The previous code reset progress to idle and left the preset DOM at
+  // whatever the previous job had, both of which leaked across jobs.
   paintProgressForActive();
+  paintPresetForActive();
   renderJobsList();
   renderJobDetail();
 }
@@ -462,6 +479,11 @@ async function refreshJobs() {
     activeJobName = null;
   }
 
+  // refreshJobs can flip activeJobName above without going through
+  // selectJob (auto-select after import; orphaned selection cleared),
+  // so re-paint the per-job UI bits here too.
+  paintProgressForActive();
+  paintPresetForActive();
   renderJobsList();
   renderJobDetail();
 }
@@ -519,7 +541,8 @@ async function onAnalyze() {
   // mid-analysis, results land under THIS job, not whatever is selected
   // when the result event arrives.
   const owningJobName = job.name;
-  analyzeInFlight = true;
+  if (inFlightJobs.has(owningJobName)) return;  // already analyzing this job
+  inFlightJobs.add(owningJobName);
   renderJobDetail();
 
   const startSnap = { fraction: 0, stage: "starting", detail: null, state: "running" };
@@ -531,10 +554,12 @@ async function onAnalyze() {
   paintProgressForActive();
 
   const audio_path = `${job.path}/source.wav`;
-  // Capture the preset at start too, so a mid-run switch doesn't change
-  // the request the panel "thinks" it sent (the service has already
-  // accepted the original preset by then anyway).
-  const preset = currentPreset();
+  // Capture the preset at start too — read from the per-job store so a
+  // mid-run switch to another job (where the user picks a different
+  // preset) doesn't change the request the panel "thinks" it sent for
+  // THIS job. The service has already accepted the original preset
+  // anyway, so the captured value is what's actually running.
+  const preset = getPresetFor(owningJobName);
   const controllers = {
     stems: new AbortController(),
     structure: new AbortController(),
@@ -568,7 +593,7 @@ async function onAnalyze() {
 
   await Promise.allSettled([consumeStems(), consumeStructure()]);
 
-  analyzeInFlight = false;
+  inFlightJobs.delete(owningJobName);
   // The result events landed real files on disk — refresh so the LED
   // flips green and the metadata line picks up any updates.
   await refreshJobs();
@@ -655,8 +680,13 @@ export async function mount() {
   });
   for (const btn of presetBtnEls) {
     btn.addEventListener("click", () => {
-      if (analyzeInFlight) return;
-      setPreset(btn.dataset.preset);
+      if (activeJobName == null) return;
+      // Can't change preset for an analysis already in flight on this
+      // job — the service has accepted the original preset.
+      if (isInFlight(activeJobName)) return;
+      const name = btn.dataset.preset;
+      jobPreset.set(activeJobName, name);
+      setPresetDom(name);
     });
   }
 
