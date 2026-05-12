@@ -7,12 +7,14 @@
  * sequentially from BASE_WS_PORT and freed on tab close.
  */
 
-import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, dialog, ipcMain, type WebContents } from "electron";
 import { join, dirname, basename } from "node:path";
 import { statSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, readSync, closeSync, realpathSync, watch as fsWatch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { sep } from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { AudioAnalysisClient, type ImportRequest, type ImportAudioResult, type StemsRequest, type StructureRequest } from "../audio-analysis-client/index.js";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
 import { MockTransport, type MidiEventPayload } from "./transport.js";
@@ -1027,10 +1029,6 @@ function listAnalysisJobs(): AnalysisJobSummary[] {
 
 ipcMain.handle("list-analysis-jobs", (): AnalysisJobSummary[] => listAnalysisJobs());
 
-ipcMain.handle("get-audio-service-url", (): string =>
-  process.env.AUDIO_ANALYSIS_SERVICE_URL ?? "http://127.0.0.1:8765",
-);
-
 // Renderer writes this right after a successful import so the operator
 // sees the song title rather than the sanitized slug. jobPath must be
 // inside the workspace jobs dir; we re-check containment via realpath
@@ -1137,6 +1135,101 @@ ipcMain.handle("open-audio-import-dialog", async (): Promise<string | null> => {
   // watch failed transiently. Cheap; only kicks while detached.
   setInterval(() => { if (!watcher) tryAttach(); }, 5000).unref();
   tryAttach();
+}
+
+// ── Audio-analysis IPC relay ──
+//
+// The renderer is sandboxed (file:// origin, contextIsolation on) so we
+// don't let it talk HTTP directly. Main owns the AudioAnalysisClient;
+// renderer goes through these IPC handlers. Streaming methods get a job
+// id back and listen on `audio:analyze:event:<id>` / `audio:analyze:done:<id>`.
+{
+  let _client: AudioAnalysisClient | null = null;
+  const getClient = (): AudioAnalysisClient => {
+    if (!_client) {
+      const serverUrl = process.env.AUDIO_ANALYSIS_SERVICE_URL ?? "http://127.0.0.1:8765";
+      _client = new AudioAnalysisClient({ serverUrl });
+    }
+    return _client;
+  };
+
+  ipcMain.handle("audio:healthz", (): Promise<boolean> => getClient().healthz());
+
+  ipcMain.handle("audio:import-audio", (_event, req: ImportRequest): Promise<ImportAudioResult> =>
+    getClient().importAudio(req),
+  );
+
+  // Each active stream remembers its AbortController AND the WebContents
+  // id of the renderer that started it, so audio:analyze:cancel can reject
+  // requests coming from a different sender (defense against id-guessing
+  // across renderer windows).
+  const activeStreams = new Map<string, { ctrl: AbortController; ownerWcId: number }>();
+
+  ipcMain.handle("audio:analyze:start", (
+    event,
+    args: { kind: "stems"; req: StemsRequest } | { kind: "structure"; req: StructureRequest },
+  ): string => {
+    // TypeScript erases the union tag at runtime — a malformed renderer
+    // call could otherwise land an arbitrary `kind` value, fall through
+    // the `=== "stems"` check, and silently invoke analyzeStructure on a
+    // StemsRequest. Reject anything we don't recognize upfront.
+    const rawKind = (args as { kind?: unknown } | null | undefined)?.kind;
+    if (rawKind !== "stems" && rawKind !== "structure") {
+      throw new Error(`audio:analyze:start: unknown kind ${JSON.stringify(rawKind)}`);
+    }
+
+    const id = randomUUID();
+    const ctrl = new AbortController();
+    const wc: WebContents = event.sender;
+    activeStreams.set(id, { ctrl, ownerWcId: wc.id });
+    const eventCh = `audio:analyze:event:${id}`;
+    const doneCh = `audio:analyze:done:${id}`;
+
+    // If the renderer goes away mid-stream, abort the SSE read instead
+    // of just bailing on the for-await — otherwise the HTTP connection
+    // and the SSE generator on the service side would linger.
+    const onDestroyed = (): void => ctrl.abort();
+    wc.once("destroyed", onDestroyed);
+
+    // Iterate in the background; don't block the handler return. The
+    // renderer's invoke() resolves with the id immediately so it can
+    // subscribe before the first event lands.
+    void (async () => {
+      try {
+        const iter = args.kind === "stems"
+          ? getClient().separateStems(args.req, { signal: ctrl.signal })
+          : getClient().analyzeStructure(args.req, { signal: ctrl.signal });
+        for await (const ev of iter) {
+          if (wc.isDestroyed()) break;
+          wc.send(eventCh, ev);
+        }
+        if (!wc.isDestroyed()) wc.send(doneCh, { ok: true });
+      } catch (err) {
+        if (!wc.isDestroyed()) {
+          const message = err instanceof Error ? err.message : String(err);
+          const name = err instanceof Error ? err.name : "Error";
+          wc.send(doneCh, { ok: false, error: message, errorName: name });
+        }
+      } finally {
+        activeStreams.delete(id);
+        if (!wc.isDestroyed()) {
+          try { wc.removeListener("destroyed", onDestroyed); } catch { /* ignore */ }
+        }
+      }
+    })();
+
+    return id;
+  });
+
+  ipcMain.handle("audio:analyze:cancel", (event, id: string): void => {
+    const entry = activeStreams.get(id);
+    if (!entry) return;
+    // Only the renderer that started the stream can cancel it. Prevents
+    // a misbehaving / compromised secondary window from killing another
+    // window's in-flight analysis.
+    if (entry.ownerWcId !== event.sender.id) return;
+    entry.ctrl.abort();
+  });
 }
 
 // ── App lifecycle ──
