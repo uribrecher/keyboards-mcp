@@ -46,4 +46,14 @@ contextBridge.exposeInMainWorld("mockRunnerAPI", {
   // Todo #5 — per-tab MIDI traffic forwarded from each tab's MockTransport.
   // Payload shape: { tabId, ts, direction, kind, ...kindSpecificFields }.
   onMidiEvent: (cb) => ipcRenderer.on("midi:event", (_e, payload) => cb(payload)),
+
+  // SONG ANALYSIS panel — workspace scan + audio-analysis service plumbing.
+  // Jobs live under $AUDIO_ANALYSIS_WORKSPACE/jobs (or ~/.audio-analysis-mcp/workspace/jobs);
+  // service URL defaults to http://127.0.0.1:8765 ($AUDIO_ANALYSIS_SERVICE_URL).
+  listAnalysisJobs: () => ipcRenderer.invoke("list-analysis-jobs"),
+  onAnalysisJobsChanged: (cb) =>
+    ipcRenderer.on("audio-analysis:jobs-changed", () => cb()),
+  openAudioImportDialog: () => ipcRenderer.invoke("open-audio-import-dialog"),
+  getAudioServiceUrl: () => ipcRenderer.invoke("get-audio-service-url"),
+  writeJobMetadata: (args) => ipcRenderer.invoke("write-job-metadata", args),
 });

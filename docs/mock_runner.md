@@ -11,27 +11,49 @@ npm run mock:headless --model nord-electro-5d   # Plain Node, for CI/E2E tests
 
 ## Anatomy
 
-The shell is a two-column layout: the **rack column** on the left (chassis with tab bar + slot + MIDI monitor drawer), the **rail** in the middle (full window height, combined splitter + collapse toggle), and the **console drawer** on the right.
+The shell is a three-column layout: the **rack column** on the left (host to one of two view-switchable panels — MIDI or SONG ANALYSIS), the **rail** in the middle (full window height; vertical selector cluster + splitter), and the **console drawer** on the right.
+
+The two rack-column views own the entire column when active — including the top chassis bar. Each view has its own brushed-metal chassis (the MIDI view's is the `MOCK RUNNER` tab strip; the SONG ANALYSIS view's is its own `SONG ANALYSIS · JOBS · STEMS · STRUCTURE` bar with a service-health chip). The inactive panel stays mounted (`visibility: hidden`) so model iframes keep their WebSocket sessions while the operator peeks at the other view.
+
+**MIDI view** (default) — the workspace operators spend most of their time in: model picker / mock UIs + MIDI monitor at the bottom.
 
 ```
-┌─────────────────────────────────────────────────────┬─┬──────────────────┐
-│ MOCK RUNNER · [●tab][●tab][●tab][+]                 │ │ [CHAT●] [LOG●]   │
-├─────────────────────────────────────────────────────┤ ├──────────────────┤
-│                                                     │ │ SID:abc12345 ▮▮▮ │
-│         (model UI iframe — drawbars, knobs,         │R│                  │
-│          LEDs, parameter state for active tab)      │A│  > history…      │
-│                                                     │I│                  │
-│                                                     │L│                  │
-├─────────────────────────────────────────────────────┤ │                  │
-│ MIDI MONITOR                              0 events ▴│ │  › composer ↵    │
-└─────────────────────────────────────────────────────┴─┴──────────────────┘
+┌─────────────────────────────────────────────────────┬──┬──────────────────┐
+│ MOCK RUNNER · [●tab][●tab][●tab][+]                 │MI│ [CHAT●] [LOG●]   │
+├─────────────────────────────────────────────────────┤DI├──────────────────┤
+│                                                     │──│ SID:abc12345 ▮▮▮ │
+│         (model UI iframe — drawbars, knobs,         │WV│                  │
+│          LEDs, parameter state for active tab)      │  │  > history…      │
+│                                                     │◀▶│                  │
+│                                                     │  │                  │
+├─────────────────────────────────────────────────────┤  │                  │
+│ MIDI MONITOR                              0 events ▴│  │  › composer ↵    │
+└─────────────────────────────────────────────────────┴──┴──────────────────┘
 ```
 
-- **Chassis** — brand strip plus tab bar with a `+` button. Sits at the top of the **rack column only** (PR #82 made the rail full-height); the chassis no longer spans across the console. Each tab carries a status LED (see [Tab LEDs](#tab-leds-and-mcb)).
-- **Slot** — the active tab's iframe. Each tab loads either the model picker (`chooser.html`) or, once a model is chosen, that model's web UI from `src/keyboard_models/<mfr>/<model>/web/`. Inactive tabs stay mounted but hidden.
+**SONG ANALYSIS view** — jobs explorer + per-job analyze workbench. See [Song Analysis](#song-analysis).
+
+```
+┌─────────────────────────────────────────────────────┬──┬──────────────────┐
+│ SONG ANALYSIS · JOBS · STEMS · STRUCTURE  ●up      │MI│ [CHAT●] [LOG●]   │
+├─────────────────────────────────────────────────────┤DI├──────────────────┤
+│ ┌─ JOBS ──────────┐ ┌─ JOB DETAIL ─────────────────┐│──│ SID:abc12345 ▮▮▮ │
+│ │ ● Kind Of Blue   │ │ Kind Of Blue                ││WV│                  │
+│ │   3:42 · 44.1k · │ │ kind-of-blue · /.../jobs/…  ││  │  > history…      │
+│ │ ○ get-lucky      │ │                              ││◀▶│                  │
+│ │   5:08 · 44.1k · │ │ [ ANALYZE ]                  ││  │                  │
+│ │                  │ │ STEMS     [████░░░] 52%      ││  │                  │
+│ │ [+ NEW JOB…]     │ │ STRUCTURE [██████░] 71%      ││  │  › composer ↵   │
+│ └──────────────────┘ └──────────────────────────────┘│  │                  │
+└─────────────────────────────────────────────────────┴──┴──────────────────┘
+```
+
+- **Chassis** — brand strip plus tab bar with a `+` button (MIDI view) or the SONG ANALYSIS title + service-health chip (analysis view). Each view's chassis lives inside its own panel — neither spans across the rail.
+- **Rack panels** — two stacked panels share the rack column. Rail selectors pick which is visible; the inactive one stays mounted. Tab LEDs are still meaningful in MIDI view (see [Tab LEDs](#tab-leds-and-mcb)).
+- **Slot** (MIDI view) — the active tab's iframe. Loads `chooser.html` until a model is picked, then that model's UI from `src/keyboard_models/<mfr>/<model>/web/`. Inactive tabs stay mounted but hidden.
 - **Empty rack slot** — placeholder shown when no tabs are open.
-- **MIDI monitor drawer** — collapsible strip at the bottom of the rack column showing the active tab's recent MIDI traffic (see [MIDI monitor](#midi-monitor)).
-- **Rail** — full-height combined splitter + collapse toggle between the rack and the console. Drag to resize, click to collapse.
+- **MIDI monitor drawer** — collapsible strip at the bottom of the MIDI view showing the active tab's recent MIDI traffic (see [MIDI monitor](#midi-monitor)).
+- **Rail** — full-height vertical strip (34px) on the slot-facing edge of the console. Top-to-bottom: **selector cluster** (MIDI / WAVE buttons, click-only, jewel-LED active state); **splitter** (fills the rest of the rail, drag to resize the console, click to collapse, chevron at the top under the buttons).
 - **Console drawer** — tabbed pane on the right with **CHAT** (talk to the agent) and **LOG** (mock-runner event log). See [Console](#console--chat-and-event-log).
 
 ## Tabs and devices
@@ -131,6 +153,79 @@ Use the **backup** button in the console header (or **File → Extract Backup…
 - Programs-only folder extraction merges into the existing cache for that label — it requires a previously cached full backup under the same label.
 - After extraction, the live transport for that model + label reloads its cache; a markdown inventory is written to `data/backups/<label>/<model_slug>_backup_inventory.md`.
 
+## Song Analysis
+
+The second rack-column view, behind the **WAVE** rail button. Drives the sibling `audio-analysis-mcp` FastAPI service via the in-repo `audio-analysis-client` (`src/audio-analysis-client/`).
+
+### Prerequisite — running the service
+
+The Mock Runner does **not** spawn the audio-analysis service. Start it in another terminal before clicking ANALYZE:
+
+```bash
+cd ../audio-analysis-mcp
+uv run python -m audio_analysis_mcp.service
+```
+
+Defaults: listens on `http://127.0.0.1:8765`, workspace at `~/.audio-analysis-mcp/workspace`. Both are overridable:
+
+| Env var | Default | What it controls |
+|---|---|---|
+| `AUDIO_ANALYSIS_SERVICE_URL` | `http://127.0.0.1:8765` | Where the renderer's `AudioAnalysisClient` POSTs |
+| `AUDIO_ANALYSIS_WORKSPACE` | `~/.audio-analysis-mcp/workspace` | Root the panel scans for `jobs/<name>/` |
+| `AUDIO_ANALYSIS_SERVICE_PORT` | `8765` | Read by the FastAPI service itself (set on **both** sides if changed) |
+
+The service-health chip in the panel's chassis bar polls `/healthz` every 10 s. **Green** = service up; **red** = down (ANALYZE is disabled, the chip explains why).
+
+### Jobs explorer
+
+The left pane lists everything under `<workspace>/jobs/`. Rows are populated by a debounced `fs.watch` in the Electron main process — drop a directory into the workspace by any means (the service's `import_audio`, manual copy, git checkout) and the row appears within ~1 s without a manual refresh.
+
+| Row state (LED) | Meaning |
+|---|---|
+| Amber, solid | `source.wav` exists but no analysis on disk yet — ready for ANALYZE |
+| Green | At least one `stems/` or `song_structure/` result on disk |
+| Amber, pulsing | Import in flight from this Mock Runner session |
+| Matte (off) | `source.wav` missing — broken or partial import |
+
+Per-row metadata (`3:42 · 44.1k · mono`) is parsed from the WAV header on the fly; no decoding is done, just RIFF chunk walking.
+
+### Display name vs slug
+
+The `audio-analysis-mcp` service sanitizes the imported filename into a slug (`Kind Of Blue.mp3` → `kind-of-blue`) and uses it as the job directory. To preserve the original title the Mock Runner writes a sidecar `<job_path>/.mock-runner.json` right after a successful import:
+
+```json
+{
+  "displayName": "Kind Of Blue",
+  "originalFilename": "Kind Of Blue.mp3",
+  "importedAt": "2026-05-12T15:32:18.412Z"
+}
+```
+
+Jobs with this sidecar render the title in Fraunces (song-title typography). Jobs without it — manually created directories, jobs imported through other tooling — fall back to the slug in Roboto Mono. The slug is always visible in the job-detail header for grep/`ls` parity.
+
+The sidecar lives in the job dir, not in the service, so it survives `git clean` of `node_modules`, Electron upgrades, etc. — anything that doesn't touch the workspace.
+
+### Analyze
+
+The **ANALYZE** button fires `separateStems` and `analyzeStructure` in parallel against the active job's `source.wav`. Each is an async iterable of typed SSE events from the audio-analysis service:
+
+```
+progress { stage, fraction, detail } → 0..N times
+result   { result }                  → terminal
+error    { errorType, message }      → terminal (instead of result)
+```
+
+The two progress bars update independently. A 1 Hz amber carrier-wave sweeps behind the bars while either job is running. On `result` the row's LED flips amber → green and the RESULTS section below the bars populates with the stems list and structure segments. On `error` the bar fills with the oxblood fault color and the stage line shows the message.
+
+Cached re-runs (the service detects existing output on disk) come back in milliseconds with `cached: true` on the `result` event — the bars jump straight to 100% and the stage line reads `done · cached`.
+
+### Out of scope (current)
+
+- **Service lifecycle from Electron.** Start `audio_analysis_mcp.service` yourself; the chip surfaces "down" if it isn't running.
+- **Cancel / abort during ANALYZE.** The `AbortController` plumbing is in place but no UI cancel button yet.
+- **Waveform / spectrum visualization.** Results are surfaced as lists; richer viz lives in a follow-up plan.
+- **Rename or delete jobs from the UI.** Jobs are filesystem dirs — manage externally.
+
 ## Console — chat and event log
 
 The right-hand pane is a tabbed drawer with two panes that share one strip of chrome and one composer:
@@ -211,15 +306,17 @@ Tests use this via `tests/helpers/mock-process.ts` (headless spawn + WebSocket a
 
 | Path | Role |
 |---|---|
-| `src/mock-runner/main.ts` | Electron main — owns tabs, transports, file menu, IPC |
+| `src/mock-runner/main.ts` | Electron main — owns tabs, transports, file menu, IPC (incl. audio-analysis workspace scan, fs.watch, file dialog, job-metadata write) |
 | `src/mock-runner/cli.ts` | Headless entry point |
 | `src/mock-runner/transport.ts` | `MockTransport` — MIDI virtual ports + WebSocket server + broadcast + routing glue |
 | `src/mock-runner/transport.md` | File-level walkthrough of `transport.ts` |
 | `src/mock-runner/preload.cjs` | Exposes `mockRunnerAPI` to the shell |
 | `src/mock-runner/event-log-ipc.ts` | Main → renderer event log channel |
-| `src/mock-runner/shell/index.html` | Tab bar, slot, MIDI drawer, console drawer, backup picker |
-| `src/mock-runner/shell/app.js` | Tab routing, MIDI drawer, chat + event log, MCB LED polling, splitter, dirty/title sync |
+| `src/mock-runner/shell/index.html` | Tab bar, slot, MIDI drawer, console drawer, rail (MIDI/WAVE selectors + splitter), SONG ANALYSIS panel scaffold, backup picker |
+| `src/mock-runner/shell/app.js` | Tab routing, MIDI drawer, chat + event log, MCB LED polling, splitter, rack-view switching, dirty/title sync |
+| `src/mock-runner/shell/panel-analysis.js` | SONG ANALYSIS panel — lazy-imported; owns jobs list, import + analyze flows, health probe |
 | `src/mock-runner/shell/chooser.html` | Model picker iframe |
+| `src/audio-analysis-client/` | TypeScript client for the sibling `audio-analysis-mcp` service (HTTP + SSE) — see [its README](../src/audio-analysis-client/README.md) |
 | `src/shared/midi-codec.ts` | `MidiCodec` interface — param ↔ MIDI translation, shared by mock + MCP |
 | `src/shared/mcb-client.ts` | HTTP-over-UDS client for midi-connections-broker (lease queries + broker-liveness) |
 | `src/shared/mock-registry.ts` | At-rest index of running mocks, written by each `MockTransport` |
