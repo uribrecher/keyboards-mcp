@@ -15,6 +15,7 @@
     "mock:runner:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 MOCK_RUNNER_DEVTOOLS=1 electron --inspect=5858 dist/mock-runner/main.js 2>&1 | tee /tmp/mock-runner.log",
     "mock:headless": "tsx src/mock-runner/cli.ts",
     "mcb": "tsx src/mcb/index.ts",
+    "generate:audio-analysis-types": "openapi-typescript src/audio-analysis-client/openapi.json -o src/audio-analysis-client/generated/openapi-types.ts",
     "lint": "eslint src/ tests/",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e:mcb && npm run test:e2e",
     "test:unit": "find tests/unit -name '*.test.ts' | xargs npx tsx --test",
@@ -41,6 +42,7 @@
     "@types/ws": "^8.18.1",
     "electron": "^41.1.1",
     "eslint": "^9.39.4",
+    "openapi-typescript": "^7.13.0",
     "tsx": "^4.0.0",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.58.2"
