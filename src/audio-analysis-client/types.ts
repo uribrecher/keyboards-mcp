@@ -67,3 +67,19 @@ export interface ErrorEvent {
 
 export type StemsEvent = ProgressEvent | ResultEvent<StemSeparateResult> | ErrorEvent;
 export type StructureEvent = ProgressEvent | ResultEvent<StructureAnalyzeResult> | ErrorEvent;
+
+// Transcribe (Basic Pitch) request/result. The service result payload is
+// deliberately small — note events are written to disk as a sidecar JSON
+// next to the MIDI, not inlined in the SSE result frame. Hand-mirrored
+// from audio_analysis_mcp/schemas.py::NoteTranscribeServiceResult.
+export type TranscribeRequest = { audio_path: string };
+
+export interface NoteTranscribeServiceResult {
+  midi_path: string;
+  cached: boolean;
+}
+
+export type TranscribeEvent =
+  | ProgressEvent
+  | ResultEvent<NoteTranscribeServiceResult>
+  | ErrorEvent;

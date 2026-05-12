@@ -10,9 +10,12 @@ export type {
   StructureRequest,
   StructureAnalyzeResult,
   StructureSegment,
+  TranscribeRequest,
+  NoteTranscribeServiceResult,
   ProgressEvent,
   ResultEvent,
   ErrorEvent,
   StemsEvent,
   StructureEvent,
+  TranscribeEvent,
 } from "./types.js";
