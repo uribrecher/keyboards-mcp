@@ -199,25 +199,62 @@
                   </div>
                   <div class="progress-row__carrier" id="progress-carrier" data-running="false"></div>
                 </div>
-                <div class="job-detail__results">
-                  <h3 class="job-detail__results-title">─ RESULTS ─</h3>
-                  <div class="results-block" id="results-stems">
-                    <div class="results-block__title">stems</div>
-                    <ul class="results-block__list" id="results-stems-list"></ul>
+                <!--
+                  Waveform pane: 6 peaks.js instances stacked. `other` is
+                  active by default (audible + seekable), the rest are
+                  dimmed + muted. Clicking an inactive row activates it.
+                  SongFormer segments are overlaid as translucent regions
+                  on every row. Driven by shell/waveform-pane.js.
+                -->
+                <section class="waveforms" id="waveforms">
+                  <h3 class="waveforms__title">─ WAVEFORMS ─</h3>
+                  <!--
+                    Single shared tooltip — waveform-pane shows + moves
+                    + hides on peaks segment mouseenter/mouseleave. Lives
+                    inside .waveforms so it stays within the panel's
+                    layout context; position: fixed pins to the viewport
+                    so we don't have to compute pane-relative offsets.
+                  -->
+                  <div class="segment-tooltip" id="segment-tooltip" hidden></div>
+                  <!--
+                    `data-stem="other"` matches the Demucs stem name on
+                    disk (the underlying file is still other.wav); the
+                    label reads KEYBOARDS because that's what this stem
+                    actually is once Demucs has removed drums / bass /
+                    vocals / piano / guitar. data-active="true" makes
+                    it the default audible + seekable row.
+                  -->
+                  <div class="waveform-row" data-stem="other" data-active="true">
+                    <div class="waveform-row__label">KEYBOARDS</div>
+                    <div class="waveform-row__view"></div>
+                    <audio preload="metadata"></audio>
                   </div>
-                  <div class="results-block" id="results-structure">
-                    <div class="results-block__title">segments</div>
-                    <ul class="results-block__list" id="results-structure-list"></ul>
+                  <div class="waveform-row" data-stem="drums" data-active="false">
+                    <div class="waveform-row__label">DRUMS</div>
+                    <div class="waveform-row__view"></div>
+                    <audio preload="metadata" muted></audio>
                   </div>
-                  <div class="results-block" id="results-transcribe">
-                    <div class="results-block__title">transcription</div>
-                    <ul class="results-block__list" id="results-transcribe-list"></ul>
+                  <div class="waveform-row" data-stem="bass" data-active="false">
+                    <div class="waveform-row__label">BASS</div>
+                    <div class="waveform-row__view"></div>
+                    <audio preload="metadata" muted></audio>
                   </div>
-                  <div class="results-block" id="results-triage">
-                    <div class="results-block__title">triage</div>
-                    <ul class="results-block__list" id="results-triage-list"></ul>
+                  <div class="waveform-row" data-stem="vocals" data-active="false">
+                    <div class="waveform-row__label">VOCALS</div>
+                    <div class="waveform-row__view"></div>
+                    <audio preload="metadata" muted></audio>
                   </div>
-                </div>
+                  <div class="waveform-row" data-stem="piano" data-active="false">
+                    <div class="waveform-row__label">PIANO</div>
+                    <div class="waveform-row__view"></div>
+                    <audio preload="metadata" muted></audio>
+                  </div>
+                  <div class="waveform-row" data-stem="guitar" data-active="false">
+                    <div class="waveform-row__label">GUITAR</div>
+                    <div class="waveform-row__view"></div>
+                    <audio preload="metadata" muted></audio>
+                  </div>
+                </section>
               </div>
             </section>
           </div>
@@ -366,6 +403,16 @@
     }
   }
   </script>
+  <!--
+    peaks.js UMD bundle + peer deps. Order matters: Konva and
+    waveform-data must be on window before peaks.ext.min.js loads
+    (we ship the "ext" build that doesn't bundle them). All three
+    files are copied from node_modules/ into vendor/ by
+    `npm run copy:peaks-vendor` (wired via postinstall + prebuild).
+  -->
+  <script src="vendor/konva.min.js"></script>
+  <script src="vendor/waveform-data.min.js"></script>
+  <script src="vendor/peaks.min.js"></script>
   <script src="app.js" type="module"></script>
 </body>
 </html>

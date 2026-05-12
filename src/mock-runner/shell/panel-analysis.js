@@ -181,10 +181,12 @@ const progressRows = {
   triage:     document.querySelector('.progress-row[data-kind="triage"]'),
 };
 
-const resultsStemsListEl      = document.getElementById("results-stems-list");
-const resultsStructureListEl  = document.getElementById("results-structure-list");
-const resultsTranscribeListEl = document.getElementById("results-transcribe-list");
-const resultsTriageListEl     = document.getElementById("results-triage-list");
+// The four text-list result blocks (stems / structure / transcribe /
+// triage) used to live here. They've been replaced by the peaks.js
+// waveform pane (shell/waveform-pane.js + .waveforms in index.html);
+// see renderResults() further down for the new integration.
+let waveformPane = null;  // lazy ESM import, populated on first use
+let lastMountKey = null;  // jobName the pane is currently mounted for
 
 // ─── State ─────────────────────────────────────────────────────────
 let jobs = [];                  // AnalysisJobSummary[]
@@ -382,82 +384,68 @@ function renderJobDetail() {
 }
 
 function renderResults(job) {
+  // Replaced the four text-list result blocks with the peaks.js
+  // waveform pane. Mount strategy:
+  //   • If stems haven't landed yet, destroy any prior mount and bail.
+  //   • If we're switching to a different job than the one currently
+  //     mounted, destroy + re-mount with the new job's data.
+  //   • If structure has also landed, pass segments along so the
+  //     overlay regions paint with the initial mount. Otherwise mount
+  //     stems-only; setSegments fires when structure finishes.
   const cached = cachedResults.get(job.name) ?? {};
+  const stems = cached.stems?.stems;
+  const segments = cached.structure?.segments;
+  // Capture the job identity at IIFE entry — if the user switches jobs
+  // while we're awaiting the import or the mount, the work below is
+  // stale. We compare against `activeJobName` after every await before
+  // mutating `lastMountKey`.
+  const owningJob = job.name;
 
-  // Stems list — only render once we have live results in cache.
-  if (resultsStemsListEl) {
-    resultsStemsListEl.replaceChildren();
-    const stems = cached.stems?.stems ?? [];
-    for (const s of stems) {
-      const li = document.createElement("li");
-      const key = document.createElement("span");
-      key.className = "results-key";
-      key.textContent = s.stem;
-      const val = document.createElement("span");
-      val.textContent = s.path.replace(/^.*\//, "");
-      val.title = s.path;
-      li.append(key, val);
-      resultsStemsListEl.append(li);
+  // Lazy-load the pane module on first use so the panel paints fast
+  // even before peaks.js + konva + waveform-data are parsed.
+  void (async () => {
+    if (!waveformPane) {
+      try {
+        waveformPane = await import("./waveform-pane.js");
+      } catch (err) {
+        console.error("Failed to load waveform-pane.js:", err);
+        return;
+      }
     }
-  }
+    if (owningJob !== activeJobName) return;
 
-  // Structure segments
-  if (resultsStructureListEl) {
-    resultsStructureListEl.replaceChildren();
-    const segs = cached.structure?.segments ?? [];
-    for (const seg of segs) {
-      const li = document.createElement("li");
-      const key = document.createElement("span");
-      key.className = "results-key";
-      key.textContent = seg.label;
-      const val = document.createElement("span");
-      val.textContent = `${fmtTime(seg.start)} – ${fmtTime(seg.end)}`;
-      li.append(key, val);
-      resultsStructureListEl.append(li);
+    // If stems aren't on the table yet, tear down any prior mount (so
+    // an empty / leftover pane from a previous job doesn't linger) and
+    // wait for the next render after stems land.
+    if (!stems || stems.length === 0) {
+      if (lastMountKey !== null) {
+        waveformPane.destroy();
+        lastMountKey = null;
+      }
+      return;
     }
-  }
 
-  // Transcription — single line, MIDI basename only; full path on hover.
-  if (resultsTranscribeListEl) {
-    resultsTranscribeListEl.replaceChildren();
-    const midiPath = cached.transcribe?.midi_path;
-    if (midiPath) {
-      const li = document.createElement("li");
-      const key = document.createElement("span");
-      key.className = "results-key";
-      key.textContent = "midi";
-      const val = document.createElement("span");
-      val.textContent = midiPath.replace(/^.*[/\\]/, "");
-      val.title = midiPath;
-      li.append(key, val);
-      resultsTranscribeListEl.append(li);
+    // Job switch — full rebuild. The audio decode is sub-second, so
+    // tear/rebuild stays simpler than per-job instance caching.
+    if (lastMountKey !== owningJob) {
+      await waveformPane.mount({ stems, segments });
+      // mount() can take a few hundred ms; re-check before committing
+      // the key so a stale mount doesn't stamp the wrong job name.
+      // (waveform-pane has its own mountGen guard for the rows map;
+      // this guards our panel-side bookkeeping.)
+      if (owningJob !== activeJobName) return;
+      lastMountKey = owningJob;
+      return;
     }
-  }
 
-  // Triage — same single-line treatment as transcribe; full path on hover.
-  if (resultsTriageListEl) {
-    resultsTriageListEl.replaceChildren();
-    const triagePath = cached.triage?.triage_path;
-    if (triagePath) {
-      const li = document.createElement("li");
-      const key = document.createElement("span");
-      key.className = "results-key";
-      key.textContent = "json";
-      const val = document.createElement("span");
-      val.textContent = triagePath.replace(/^.*[/\\]/, "");
-      val.title = triagePath;
-      li.append(key, val);
-      resultsTriageListEl.append(li);
+    // Same job: structure may have just landed after the initial mount.
+    // Push segments in if we have them.
+    if (segments && segments.length) {
+      waveformPane.setSegments(segments);
     }
-  }
+  })();
 }
 
-function fmtTime(seconds) {
-  if (seconds == null || !Number.isFinite(seconds)) return "—";
-  const m = Math.floor(seconds / 60);
-  const s = seconds - m * 60;
-  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
-}
 
 function setProgress(kind, { fraction, stage, detail, state }) {
   const row = progressRows[kind];

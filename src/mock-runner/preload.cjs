@@ -62,6 +62,11 @@ contextBridge.exposeInMainWorld("mockRunnerAPI", {
   audio: {
     healthz: () => ipcRenderer.invoke("audio:healthz"),
     importAudio: (req) => ipcRenderer.invoke("audio:import-audio", req),
+    // Read a stem WAV from disk and return the raw bytes — the renderer
+    // can't fetch file:// → file:// under default Electron webSecurity,
+    // but Web Audio's decodeAudioData() needs the buffer. Main reads,
+    // renderer decodes.
+    readWav: (path) => ipcRenderer.invoke("audio:read-wav", path),
     analyzeStart: (kind, req) => ipcRenderer.invoke("audio:analyze:start", { kind, req }),
     analyzeCancel: (id) => ipcRenderer.invoke("audio:analyze:cancel", id),
     onAnalyzeEvent: (id, cb) => {
