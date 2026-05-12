@@ -66,6 +66,22 @@ describe("parseSseStream", () => {
     assert.deepEqual(evts, [{ event: "progress", data: "ok" }]);
   });
 
+  it("handles \\r\\n split across a chunk boundary", async () => {
+    // Real-world: TCP can flush after the \r and deliver the \n in the next
+    // chunk. A naive `replace(/\r\n?/g, "\n")` on each chunk would turn the
+    // trailing \r into \n immediately, then treat the next chunk's leading \n
+    // as a blank line and dispatch a phantom event.
+    const evts = await collect(
+      streamOf("event: progress\r\ndata: ok\r", "\n\r\n"),
+    );
+    assert.deepEqual(evts, [{ event: "progress", data: "ok" }]);
+  });
+
+  it("treats a bare \\r at end-of-stream as a line terminator, not data", async () => {
+    const evts = await collect(streamOf("event: result\ndata: hi\r"));
+    assert.deepEqual(evts, [{ event: "result", data: "hi" }]);
+  });
+
   it("flushes a final event missing trailing blank line", async () => {
     // Real servers always emit the blank line, but be defensive against
     // an abrupt close after the last `data:`.

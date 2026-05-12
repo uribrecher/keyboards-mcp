@@ -232,6 +232,60 @@ describe("AudioAnalysisClient.separateStems", () => {
   });
 });
 
+describe("AudioAnalysisClient streams cancel on early termination", () => {
+  it("cancels the response body when a terminal event ends iteration", async () => {
+    let canceled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const enc = new TextEncoder();
+        controller.enqueue(enc.encode('event: result\ndata: {"ok":true,"stems":[],"model":"","preset":"medium","cached":false}\n\n'));
+        // Leave the stream open — simulates a server (or proxy) that doesn't
+        // immediately close after the terminal event. Without cancel-on-early
+        // termination, the connection would linger.
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    const client = new AudioAnalysisClient({
+      serverUrl: "http://x",
+      fetch: makeFetch(async () =>
+        new Response(body, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      ),
+    });
+    const events: StemsEvent[] = await collect(
+      client.separateStems({ audio_path: "a", preset: "medium" }),
+    );
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "result");
+    assert.equal(canceled, true);
+  });
+});
+
+describe("AudioAnalysisClient request types", () => {
+  it("allows omitting preset on StemsRequest (server applies default)", async () => {
+    let seenBody = "";
+    const client = new AudioAnalysisClient({
+      serverUrl: "http://x",
+      fetch: makeFetch(async (_url, init) => {
+        seenBody = init?.body as string;
+        return new Response(
+          'event: result\ndata: {"stems":[],"model":"","preset":"medium","cached":false}\n\n',
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }),
+    });
+    // No `preset` — must typecheck and must not be present on the wire.
+    const events: StemsEvent[] = await collect(client.separateStems({ audio_path: "a" }));
+    assert.equal(events.length, 1);
+    const parsed = JSON.parse(seenBody) as Record<string, unknown>;
+    assert.equal("preset" in parsed, false);
+  });
+});
+
 describe("AudioAnalysisClient.analyzeStructure", () => {
   it("decodes structure result event", async () => {
     const result = {

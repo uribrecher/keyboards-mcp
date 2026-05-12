@@ -5,9 +5,17 @@ type Schemas = components["schemas"];
 
 export type ImportRequest = Schemas["ImportRequest"];
 export type ImportAudioResult = Schemas["ImportAudioResult"];
-export type StemsRequest = Schemas["StemsRequest"];
 export type StructureRequest = Schemas["StructureRequest"];
-export type StemPreset = StemsRequest["preset"];
+
+// openapi-typescript marks any property with a `default` as required in the
+// generated type, even when the OpenAPI `required` list omits it. For a
+// request body the server applies the default when the field is missing, so
+// `preset` is genuinely optional from the caller's perspective. Re-wrap.
+type GeneratedStemsRequest = Schemas["StemsRequest"];
+export type StemsRequest = Omit<GeneratedStemsRequest, "preset"> & {
+  preset?: GeneratedStemsRequest["preset"];
+};
+export type StemPreset = GeneratedStemsRequest["preset"];
 
 // SSE payload shapes — NOT in the OpenAPI spec because FastAPI types streaming
 // responses as `{}`. Mirrored by hand from
