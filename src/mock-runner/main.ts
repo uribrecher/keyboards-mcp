@@ -1159,6 +1159,35 @@ ipcMain.handle("open-audio-import-dialog", async (): Promise<string | null> => {
     getClient().importAudio(req),
   );
 
+  // peaks.js / Web Audio decode happens in the renderer, but its internal
+  // fetch of the audio bytes is blocked by Electron's default webSecurity
+  // on file:// → file:// requests. Read the bytes here and ship them as a
+  // Buffer; the renderer feeds them to audioContext.decodeAudioData(). We
+  // re-realpath both the workspace jobs root and the requested path and
+  // check separator-aware containment before reading, same defense as
+  // write-job-metadata so a malicious renderer can't read arbitrary files.
+  ipcMain.handle("audio:read-wav", (_event, audioPath: string): Buffer => {
+    if (typeof audioPath !== "string") {
+      throw new Error("audio:read-wav: path must be a string");
+    }
+    let resolvedRoot: string;
+    let resolvedTarget: string;
+    try {
+      resolvedRoot = realpathSync(audioWorkspaceJobsDir());
+      resolvedTarget = realpathSync(audioPath);
+    } catch {
+      throw new Error(`audio:read-wav: not found: ${audioPath}`);
+    }
+    const rootWithSep = resolvedRoot.endsWith(sep) ? resolvedRoot : resolvedRoot + sep;
+    if (resolvedTarget !== resolvedRoot && !resolvedTarget.startsWith(rootWithSep)) {
+      throw new Error(`audio:read-wav: path is outside the workspace: ${audioPath}`);
+    }
+    if (!resolvedTarget.toLowerCase().endsWith(".wav")) {
+      throw new Error(`audio:read-wav: expected .wav, got: ${audioPath}`);
+    }
+    return readFileSync(resolvedTarget);
+  });
+
   // Each active stream remembers its AbortController AND the WebContents
   // id of the renderer that started it, so audio:analyze:cancel can reject
   // requests coming from a different sender (defense against id-guessing

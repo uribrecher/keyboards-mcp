@@ -89,17 +89,36 @@ function buildSegmentList(segments) {
   }));
 }
 
-function initInstanceForRow(stem, stemPath, gen) {
+async function initInstanceForRow(stem, stemPath, gen) {
   const row = $row(stem);
-  if (!row) return Promise.resolve(null);
+  if (!row) return null;
   const audioEl = row.querySelector("audio");
   const viewEl  = row.querySelector(".waveform-row__view");
-  if (!audioEl || !viewEl) return Promise.resolve(null);
+  if (!audioEl || !viewEl) return null;
 
-  // file:// is allowed from the renderer's file:// origin; Electron's
-  // media pipeline loads via the standard <audio> path, not fetch.
+  // <audio> drives PLAYBACK (timeupdate events that peaks observes for
+  // the playhead). Electron's media pipeline loads file:// fine.
   audioEl.src = `file://${stemPath}`;
   audioEl.muted = stem !== activeStem;
+
+  // Web Audio drives WAVEFORM RENDERING. peaks.js's internal fetch for
+  // the audio bytes is blocked by Electron's default webSecurity on
+  // file:// → file:// requests, so we read the bytes in main and
+  // decode here. The decoded AudioBuffer goes into webAudio.audioBuffer
+  // so peaks skips its own fetch entirely.
+  let audioBuffer = null;
+  try {
+    const bytes = await window.mockRunnerAPI.audio.readWav(stemPath);
+    // IPC delivers a Node Buffer; convert to ArrayBuffer slice for decodeAudioData.
+    const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+    audioBuffer = await getAudioContext().decodeAudioData(ab);
+  } catch (err) {
+    console.error(`failed to decode stem "${stem}" at ${stemPath}:`, err);
+    return null;
+  }
+  // mount() may have been called again while we were decoding.
+  if (gen !== mountGen) return null;
 
   return new Promise((resolve) => {
     const isActive = stem === activeStem;
@@ -107,7 +126,7 @@ function initInstanceForRow(stem, stemPath, gen) {
       mediaElement: audioEl,
       zoomview: { container: viewEl },
       webAudio: {
-        audioContext: getAudioContext(),
+        audioBuffer,
         multiChannel: false,
       },
       // Translucent region overlay treatment — no drag handles, no
