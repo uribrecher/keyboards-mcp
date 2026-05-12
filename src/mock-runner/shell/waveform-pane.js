@@ -47,6 +47,27 @@ const DEFAULT_COLOR = "#c4c4c4";
 // drowning the waveform itself.
 const PALETTE_OPACITY = 0.5;
 
+// Three-letter codes used as the in-overlay labelText. Full SongFormer
+// labels (e.g. "pre-chorus") don't fit inside a narrow segment — peaks
+// wraps them character-by-character and the result is unreadable. Codes
+// fit in any realistic section width without wrapping. Fallback for
+// unknown labels: first three chars uppercased.
+const LABEL_CODES = {
+  intro:        "INT",
+  verse:        "VRS",
+  chorus:       "CHO",
+  bridge:       "BRG",
+  outro:        "OUT",
+  inst:         "INS",
+  "pre-chorus": "PRE",
+  silence:      "SLN",
+};
+
+function codeFor(label) {
+  const key = String(label).toLowerCase();
+  return LABEL_CODES[key] ?? key.slice(0, 3).toUpperCase();
+}
+
 let audioContext = null;
 function getAudioContext() {
   if (!audioContext) {
@@ -81,13 +102,15 @@ function colorFor(label) {
 function buildSegmentList(segments) {
   // SongFormer's segments use {start, end, label}; peaks wants
   // {startTime, endTime, ...}. The `id` keeps each segment uniquely
-  // addressable for later updates/removals.
+  // addressable for later updates/removals. labelText is the 3-letter
+  // code rather than the full label so it fits even narrow segments
+  // without wrapping.
   return (segments ?? []).map((s, i) => ({
     id:        `seg-${i}`,
     startTime: Number(s.start),
     endTime:   Number(s.end),
     color:     colorFor(s.label),
-    labelText: s.label,
+    labelText: codeFor(s.label),
     overlay:   true,
     markers:   false,
     editable:  false,
@@ -137,14 +160,17 @@ async function initInstanceForRow(stem, stemPath, gen) {
       // Translucent region overlay treatment — no drag handles, no
       // editable boundaries. Per-segment color overrides the default
       // overlayColor. Border dropped to 0 so the visible thing is the
-      // fill, not a thin outline.
+      // fill, not a thin outline. `overlayLabelAlign: "top-left"`
+      // pins each segment's code to the top edge rather than centering
+      // it over the loudest part of the waveform.
       segmentOptions: {
         overlay:            true,
         overlayColor:       DEFAULT_COLOR,
         overlayOpacity:     PALETTE_OPACITY,
         overlayBorderColor: "rgba(255,255,255,0.15)",
         overlayBorderWidth: 0,
-        overlayLabelColor:  "#fff",
+        overlayLabelColor:  "#ffffff",
+        overlayLabelAlign:  "top-left",
       },
     }, (err, instance) => {
       if (err) {
@@ -162,11 +188,18 @@ async function initInstanceForRow(stem, stemPath, gen) {
       }
       const view = instance.views.getView("zoomview");
       if (view) {
-        // Fit the entire track into the row at startup — peaks defaults
-        // to a much zoomed-in scale that hides everything past ~30 sec.
-        // setZoom({seconds}) re-renders the waveform at the new scale.
-        try { view.setZoom({ seconds: audioBuffer.duration }); }
-        catch (e) { console.warn(`setZoom failed for "${stem}":`, e); }
+        // fitToContainer first: peaks sized the canvas at init time from
+        // the container's then-current width, which can be stale by a
+        // few px once flex layout settles. Force a recompute against
+        // the live width. setZoom then picks the samples-per-pixel scale
+        // that fits the whole track into that width — peaks defaults to
+        // a heavy zoom (~30s visible) which buries the rest of the song.
+        try {
+          view.fitToContainer();
+          view.setZoom({ seconds: audioBuffer.duration });
+        } catch (e) {
+          console.warn(`fitToContainer/setZoom failed for "${stem}":`, e);
+        }
         // Inactive views can't seek — clicks on the timeline are ignored.
         if (!isActive) {
           try { view.enableSeek(false); } catch { /* ignore */ }

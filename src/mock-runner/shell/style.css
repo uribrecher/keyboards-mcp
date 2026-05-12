@@ -1998,8 +1998,11 @@ body.bay--resizing iframe { pointer-events: none; }
 
 .waveform-row {
   display: grid;
-  grid-template-columns: 72px 1fr;
-  column-gap: 10px;
+  /* Narrow label column: text is rotated 90° (vertical-rl) so its width
+   * is bounded by font-size, not by string length. 22px is comfortable
+   * for the 9px label + a small breathing margin. */
+  grid-template-columns: 22px 1fr;
+  column-gap: 6px;
   align-items: stretch;
   background: var(--c-chassis-low);
   border: 1px solid var(--c-edge);
@@ -2025,14 +2028,20 @@ body.bay--resizing iframe { pointer-events: none; }
 .waveform-row__label {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
+  /* Vertical text reading bottom-to-top — standard for audio software
+   * track labels. `sideways-lr` is a single property: 90° CCW rotation
+   * with glyphs upright. */
+  writing-mode: sideways-lr;
   font-family: var(--font-display);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.32em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--c-text-dim);
   user-select: none;
+  /* Keep the rotated text from getting clipped at the column edge. */
+  padding: 4px 0;
 }
 
 .waveform-row[data-active="true"] .waveform-row__label {
@@ -2057,6 +2066,7 @@ body.bay--resizing iframe { pointer-events: none; }
 .waveform-row[data-stem="other"] .waveform-row__view {
   height: 128px;
 }
+
 
 /* The <audio> element is needed for peaks.js to observe playback state
  * but is never shown — the peaks canvas IS the visible affordance. */
