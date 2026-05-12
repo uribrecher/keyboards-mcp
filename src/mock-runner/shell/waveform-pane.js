@@ -335,24 +335,33 @@ function onWheel(e) {
   if (rows.size === 0) return;
 
   const isZoom = e.ctrlKey || e.metaKey;
-  e.preventDefault();
+
+  // Decide whether we're going to consume this event BEFORE calling
+  // preventDefault — vertical wheel without a modifier should fall
+  // through to native page scroll so the operator can scroll the
+  // panel up/down past the waveforms naturally. We only capture:
+  //   • zoom gestures (Cmd/Ctrl held, or trackpad pinch)
+  //   • horizontal-dominant wheels (trackpad two-finger horizontal,
+  //     dedicated horizontal mouse wheels)
   if (isZoom) {
+    e.preventDefault();
     // deltaY > 0 = wheel down = zoom OUT (more seconds visible).
-    // Larger step size for trackpad pinch (e.deltaY can be ~1–3 per
-    // event with very high frequency); 1.05^N converges smoothly.
     const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
     applyZoom(zoomSeconds * factor);
     return;
   }
-  // Scroll. Trackpad two-finger horizontal lands in deltaX; mouse
-  // wheel (vertical) lands in deltaY. Pick the larger magnitude.
-  const delta = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-  if (!delta) return;
+
+  // Horizontal scroll only. Skip vertical-dominant wheels so the
+  // surrounding page can scroll. Tiny noise in deltaX (a few px during
+  // a vertical-dominant trackpad swipe) shouldn't pull focus — require
+  // |deltaX| to actually exceed |deltaY|.
+  if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  e.preventDefault();
   // Convert pixel delta → seconds at the current zoom: 1 px on screen
   // represents (zoomSeconds / canvasWidth) seconds of audio.
   const sampleRow = rows.values().next().value;
   const canvasWidthPx = sampleRow?.view?.clientWidth || 1;
-  const deltaSeconds = (delta / canvasWidthPx) * zoomSeconds;
+  const deltaSeconds = (e.deltaX / canvasWidthPx) * zoomSeconds;
   applyScroll(deltaSeconds);
 }
 
