@@ -20,7 +20,9 @@
  *
  * peaks.js + konva + waveform-data are loaded as UMD bundles via
  * <script> tags in index.html, so we reference them off the window
- * globals (`window.Peaks`).
+ * globals. NOTE: peaks.ext.min.js sets `window.peaks` (lowercase) —
+ * not `Peaks` — even though the ESM export is `Peaks`. Konva +
+ * WaveformData stay PascalCase. UMDs are not consistent here.
  */
 
 // htdemucs_6s order matches the upstream stem inventory.
@@ -122,7 +124,7 @@ async function initInstanceForRow(stem, stemPath, gen) {
 
   return new Promise((resolve) => {
     const isActive = stem === activeStem;
-    window.Peaks.init({
+    window.peaks.init({
       mediaElement: audioEl,
       zoomview: { container: viewEl },
       webAudio: {
