@@ -133,11 +133,43 @@ const healthEl         = document.getElementById("analysis-health");
 const healthLabelEl    = document.getElementById("analysis-health-label");
 
 // DOM-side flip of the segmented control. Pure UI; the per-job store
-// below is the source of truth.
+// below is the source of truth. Also maintains roving tabindex per the
+// WAI-ARIA radio-group pattern — only the checked button stays in the
+// tab order, arrow keys move selection across the rest.
 function setPresetDom(name) {
   for (const b of presetBtnEls) {
-    b.setAttribute("aria-checked", b.dataset.preset === name ? "true" : "false");
+    const checked = b.dataset.preset === name;
+    b.setAttribute("aria-checked", checked ? "true" : "false");
+    b.setAttribute("tabindex", checked ? "0" : "-1");
   }
+}
+
+// Keyboard navigation for the radio-group. Arrow keys move + select;
+// Home/End jump to first/last. Space/Enter is implicit (buttons already
+// activate on those), and the click handler does the writing.
+function onPresetKeydown(e) {
+  if (activeJobName == null) return;
+  if (isInFlight(activeJobName)) return;
+  const i = presetBtnEls.indexOf(e.currentTarget);
+  if (i < 0) return;
+  let next = -1;
+  switch (e.key) {
+    case "ArrowLeft": case "ArrowUp":
+      next = (i - 1 + presetBtnEls.length) % presetBtnEls.length; break;
+    case "ArrowRight": case "ArrowDown":
+      next = (i + 1) % presetBtnEls.length; break;
+    case "Home":
+      next = 0; break;
+    case "End":
+      next = presetBtnEls.length - 1; break;
+    default:
+      return;
+  }
+  e.preventDefault();
+  const name = presetBtnEls[next].dataset.preset;
+  jobPreset.set(activeJobName, name);
+  setPresetDom(name);
+  presetBtnEls[next].focus();
 }
 
 const progressRows = {
@@ -325,7 +357,19 @@ function renderJobDetail() {
   }
 
   if (presetSelectorEl) {
-    presetSelectorEl.setAttribute("data-disabled", isInFlight(job.name) ? "true" : "false");
+    const disabled = isInFlight(job.name);
+    presetSelectorEl.setAttribute("data-disabled", disabled ? "true" : "false");
+    // Mirror to ARIA + per-button tabindex so keyboard / assistive-tech
+    // users can't focus or trip arrow-key selection while a run is in
+    // flight (pointer-events:none in CSS only blocks the mouse path).
+    presetSelectorEl.setAttribute("aria-disabled", disabled ? "true" : "false");
+    if (disabled) {
+      for (const b of presetBtnEls) b.setAttribute("tabindex", "-1");
+    } else {
+      // Re-paint tabindex through the radio-group helper so the checked
+      // button gets tabindex=0 again and the others stay -1.
+      setPresetDom(getPresetFor(activeJobName));
+    }
   }
 
   renderResults(job);
@@ -413,6 +457,15 @@ function recordProgress(jobName, kind, snap) {
     jobProgress.set(jobName, slot);
   }
   slot[kind] = snap;
+}
+
+// Look up the last-recorded fraction for a given job/kind so error
+// snapshots can carry it forward. Without this, the error snap lacks
+// `fraction`, setProgress() leaves the fill width untouched, and a
+// repaint-on-switch shows whatever fill width happened to be on screen
+// from the previously-active job (or from before the error).
+function lastFractionFor(jobName, kind) {
+  return jobProgress.get(jobName)?.[kind]?.fraction ?? 0;
 }
 
 // Repaint both progress rows from the active job's stored snapshots.
@@ -566,7 +619,12 @@ async function onAnalyze() {
   };
 
   const failKind = (kind, err) => {
-    const snap = { stage: "error", detail: errStr(err), state: "error" };
+    const snap = {
+      fraction: lastFractionFor(owningJobName, kind),
+      stage:    "error",
+      detail:   errStr(err),
+      state:    "error",
+    };
     recordProgress(owningJobName, kind, snap);
     if (owningJobName === activeJobName) setProgress(kind, snap);
   };
@@ -628,7 +686,12 @@ function applyEvent(kind, ev, owningJobName) {
     const cached = ev.result?.cached ? "cached" : "fresh";
     snap = { fraction: 1, stage: "done", detail: cached, state: "done" };
   } else if (ev.type === "error") {
-    snap = { stage: ev.errorType || "error", detail: ev.message, state: "error" };
+    snap = {
+      fraction: lastFractionFor(owningJobName, kind),
+      stage:    ev.errorType || "error",
+      detail:   ev.message,
+      state:    "error",
+    };
   }
   if (snap) recordProgress(owningJobName, kind, snap);
 
@@ -688,6 +751,7 @@ export async function mount() {
       jobPreset.set(activeJobName, name);
       setPresetDom(name);
     });
+    btn.addEventListener("keydown", onPresetKeydown);
   }
 
   window.mockRunnerAPI?.onAnalysisJobsChanged?.(() => {
