@@ -8,6 +8,9 @@ import type {
   StructureRequest,
   StructureAnalyzeResult,
   StructureEvent,
+  TranscribeRequest,
+  NoteTranscribeServiceResult,
+  TranscribeEvent,
 } from "./types.js";
 
 export interface AudioAnalysisClientOptions {
@@ -62,6 +65,17 @@ export class AudioAnalysisClient {
   ): AsyncIterable<StructureEvent> {
     return this.#streamJob<StructureAnalyzeResult, StructureEvent>(
       "/jobs/structure",
+      req,
+      opts,
+    );
+  }
+
+  transcribeNotes(
+    req: TranscribeRequest,
+    opts: RequestOptions = {},
+  ): AsyncIterable<TranscribeEvent> {
+    return this.#streamJob<NoteTranscribeServiceResult, TranscribeEvent>(
+      "/jobs/transcribe",
       req,
       opts,
     );
