@@ -78,6 +78,14 @@ let mountGen = 0;
 let resizeObserver = null;
 let resizeDebounce = null;
 
+// Shared wheel-navigation state. zoomSeconds is the duration currently
+// visible inside the zoomview canvas; we mirror it across all six peaks
+// instances so the timeline stays in sync. Scroll position lives inside
+// each peaks view (getStartTime/scrollWaveform); we don't shadow it.
+let zoomSeconds = 0;
+let wheelHandler = null;
+const MIN_ZOOM_SECONDS = 2;
+
 function $row(stem) {
   return document.querySelector(`.waveform-row[data-stem="${stem}"]`);
 }
@@ -208,15 +216,21 @@ async function initInstanceForRow(stem, stemPath, gen) {
         // fitToContainer first: peaks sized the canvas at init time from
         // the container's then-current width, which can be stale by a
         // few px once flex layout settles. Force a recompute against
-        // the live width. setZoom then picks the samples-per-pixel scale
-        // that fits the whole track into that width — peaks defaults to
-        // a heavy zoom (~30s visible) which buries the rest of the song.
+        // the live width. setZoom uses the current shared zoomSeconds
+        // (the first instance to init sets it; subsequent instances
+        // inherit so they match).
+        if (zoomSeconds <= 0) zoomSeconds = audioBuffer.duration;
         try {
           view.fitToContainer();
-          view.setZoom({ seconds: audioBuffer.duration });
+          view.setZoom({ seconds: zoomSeconds });
         } catch (e) {
           console.warn(`fitToContainer/setZoom failed for "${stem}":`, e);
         }
+        // Take ownership of wheel events — our handler on #waveforms
+        // does both scroll (plain wheel) and zoom (Cmd/Ctrl + wheel)
+        // with cross-stem sync; peaks's built-in scroll mode would
+        // double-apply on the row that received the event.
+        try { view.setWheelMode("none"); } catch { /* ignore */ }
         // Inactive views can't seek — clicks on the timeline are ignored.
         if (!isActive) {
           try { view.enableSeek(false); } catch { /* ignore */ }
@@ -242,13 +256,25 @@ async function initInstanceForRow(stem, stemPath, gen) {
 // Refit every active peaks instance against its container's current
 // size. Called on the resize-debounce trailing edge. Cheap — peaks
 // reuses the decoded AudioBuffer; no re-decode.
+function maxDuration() {
+  let max = 0;
+  for (const rec of rows.values()) {
+    if (rec.duration > max) max = rec.duration;
+  }
+  return max || MIN_ZOOM_SECONDS;
+}
+
 function refitAllPeaks() {
+  // Refit to the operator's CURRENT zoom level, not the full-track
+  // fit. Without this, every chat-console collapse would snap the
+  // waveforms back to whole-track and discard the user's zoom-in.
+  const target = zoomSeconds > 0 ? zoomSeconds : maxDuration();
   for (const rec of rows.values()) {
     const view = rec.peaks.views.getView("zoomview");
     if (!view) continue;
     try {
       view.fitToContainer();
-      view.setZoom({ seconds: rec.duration });
+      view.setZoom({ seconds: target });
     } catch (e) {
       console.warn("waveform refit failed:", e);
     }
@@ -269,6 +295,118 @@ function installResizeObserver() {
     }, 60);
   });
   resizeObserver.observe(waveformsEl);
+}
+
+// ─── Wheel zoom / scroll, synced across all six instances ──────────
+//
+// peaks.js's built-in `setWheelMode("scroll")` is disabled in
+// initInstanceForRow so we can own the wheel handling: vertical wheel
+// scrolls the timeline; Cmd / Ctrl + wheel zooms (Chromium also emits
+// pinch-to-zoom on trackpads as wheel + ctrlKey, so pinch works for
+// free); horizontal wheel (trackpad two-finger) also scrolls. Every
+// computed zoom or scroll fans out to ALL peaks instances so the six
+// stems stay in lock-step.
+
+function applyZoom(nextSeconds) {
+  const max = maxDuration();
+  const clamped = Math.max(MIN_ZOOM_SECONDS, Math.min(max, nextSeconds));
+  if (clamped === zoomSeconds) return;
+  zoomSeconds = clamped;
+  for (const { peaks } of rows.values()) {
+    const view = peaks.views.getView("zoomview");
+    if (!view) continue;
+    try { view.setZoom({ seconds: zoomSeconds }); } catch { /* ignore */ }
+  }
+}
+
+function applyScroll(deltaSeconds) {
+  if (!deltaSeconds) return;
+  for (const { peaks } of rows.values()) {
+    const view = peaks.views.getView("zoomview");
+    if (!view) continue;
+    // peaks clamps at track edges internally — no double-clamp needed.
+    try { view.scrollWaveform({ seconds: deltaSeconds }); } catch { /* ignore */ }
+  }
+}
+
+function applyAbsoluteStart(startSeconds) {
+  const t = Math.max(0, startSeconds);
+  for (const { peaks } of rows.values()) {
+    const view = peaks.views.getView("zoomview");
+    if (!view) continue;
+    try { view.setStartTime(t); } catch { /* ignore */ }
+  }
+}
+
+function onWheel(e) {
+  // Only act when the wheel target is inside the waveforms section.
+  // (We attach to #waveforms so this is implicit, but defensive.)
+  if (rows.size === 0) return;
+
+  const isZoom = e.ctrlKey || e.metaKey;
+
+  // Decide whether we're going to consume this event BEFORE calling
+  // preventDefault — vertical wheel without a modifier should fall
+  // through to native page scroll so the operator can scroll the
+  // panel up/down past the waveforms naturally. We only capture:
+  //   • zoom gestures (Cmd/Ctrl held, or trackpad pinch)
+  //   • horizontal-dominant wheels (trackpad two-finger horizontal,
+  //     dedicated horizontal mouse wheels)
+  if (isZoom) {
+    e.preventDefault();
+    // Zoom-to-cursor: the time directly under the mouse must stay
+    // under the mouse after the zoom changes scale. Without this
+    // anchor, setZoom keeps the LEFT EDGE pinned at the old start
+    // time, which makes the operator's point of interest fly off
+    // screen as you zoom in.
+    //
+    //   1. Find the cursor's fractional X position inside the canvas
+    //      (cursorFrac ∈ [0, 1]).
+    //   2. Compute the time currently at that X (tCursor).
+    //   3. Apply the new zoom scale.
+    //   4. Pick a new startTime so tCursor lands at the same X again:
+    //        startTime_new = tCursor − cursorFrac × zoomSeconds_new
+    const sampleRow = rows.values().next().value;
+    if (!sampleRow) return;
+    const rect = sampleRow.view.getBoundingClientRect();
+    const width = rect.width || 1;
+    const cursorFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / width));
+    const leadView = sampleRow.peaks.views.getView("zoomview");
+    const startBefore = leadView?.getStartTime?.() ?? 0;
+    const tCursor = startBefore + cursorFrac * zoomSeconds;
+
+    // deltaY > 0 = wheel down = zoom OUT (more seconds visible).
+    const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+    const before = zoomSeconds;
+    applyZoom(zoomSeconds * factor);
+    if (zoomSeconds === before) return;     // clamped at min/max — no shift needed
+
+    applyAbsoluteStart(tCursor - cursorFrac * zoomSeconds);
+    return;
+  }
+
+  // Horizontal scroll only. Skip vertical-dominant wheels so the
+  // surrounding page can scroll. Tiny noise in deltaX (a few px during
+  // a vertical-dominant trackpad swipe) shouldn't pull focus — require
+  // |deltaX| to actually exceed |deltaY|.
+  if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  // Convert pixel delta → seconds at the current zoom: 1 px on screen
+  // represents (zoomSeconds / canvasWidth) seconds of audio.
+  const sampleRow = rows.values().next().value;
+  const canvasWidthPx = sampleRow?.view?.clientWidth || 1;
+  const deltaSeconds = (e.deltaX / canvasWidthPx) * zoomSeconds;
+  applyScroll(deltaSeconds);
+}
+
+function installWheelHandler() {
+  if (wheelHandler) return;
+  const waveformsEl = document.getElementById("waveforms");
+  if (!waveformsEl) return;
+  wheelHandler = onWheel;
+  // `passive: false` so preventDefault() works — Chromium defaults
+  // wheel listeners on document-scrolling regions to passive.
+  waveformsEl.addEventListener("wheel", wheelHandler, { passive: false });
 }
 
 function attachRowClickHandlers() {
@@ -306,6 +444,11 @@ export async function mount({ stems, segments }) {
   // the previous mount so they don't write into the new row map.
   destroy();
   const gen = ++mountGen;
+  // Reset shared zoom — the first stem to decode will seed it to its
+  // duration in initInstanceForRow. Without this reset, switching to a
+  // shorter / longer song would inherit the previous job's zoom level
+  // and either clamp weirdly or display half a track.
+  zoomSeconds = 0;
 
   activeStem = "other";
   currentSegments = segments ?? [];
@@ -333,6 +476,7 @@ export async function mount({ stems, segments }) {
 
   attachRowClickHandlers();
   installResizeObserver();
+  installWheelHandler();
 }
 
 /** Replace the segment overlays on every instance. Used when structure
@@ -397,6 +541,11 @@ export function destroy() {
     clearTimeout(resizeDebounce);
     resizeDebounce = null;
   }
+  if (wheelHandler) {
+    const waveformsEl = document.getElementById("waveforms");
+    if (waveformsEl) waveformsEl.removeEventListener("wheel", wheelHandler);
+    wheelHandler = null;
+  }
   hideTooltip();
   for (const { peaks, audio } of rows.values()) {
     try { peaks.destroy(); } catch { /* ignore */ }
@@ -409,6 +558,7 @@ export function destroy() {
   rows.clear();
   activeStem = null;
   currentSegments = [];
+  zoomSeconds = 0;
   for (const stem of STEM_ORDER) {
     const row = $row(stem);
     if (row) row.setAttribute("data-active", "false");
