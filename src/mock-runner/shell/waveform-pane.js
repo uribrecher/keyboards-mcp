@@ -329,6 +329,15 @@ function applyScroll(deltaSeconds) {
   }
 }
 
+function applyAbsoluteStart(startSeconds) {
+  const t = Math.max(0, startSeconds);
+  for (const { peaks } of rows.values()) {
+    const view = peaks.views.getView("zoomview");
+    if (!view) continue;
+    try { view.setStartTime(t); } catch { /* ignore */ }
+  }
+}
+
 function onWheel(e) {
   // Only act when the wheel target is inside the waveforms section.
   // (We attach to #waveforms so this is implicit, but defensive.)
@@ -345,9 +354,34 @@ function onWheel(e) {
   //     dedicated horizontal mouse wheels)
   if (isZoom) {
     e.preventDefault();
+    // Zoom-to-cursor: the time directly under the mouse must stay
+    // under the mouse after the zoom changes scale. Without this
+    // anchor, setZoom keeps the LEFT EDGE pinned at the old start
+    // time, which makes the operator's point of interest fly off
+    // screen as you zoom in.
+    //
+    //   1. Find the cursor's fractional X position inside the canvas
+    //      (cursorFrac ∈ [0, 1]).
+    //   2. Compute the time currently at that X (tCursor).
+    //   3. Apply the new zoom scale.
+    //   4. Pick a new startTime so tCursor lands at the same X again:
+    //        startTime_new = tCursor − cursorFrac × zoomSeconds_new
+    const sampleRow = rows.values().next().value;
+    if (!sampleRow) return;
+    const rect = sampleRow.view.getBoundingClientRect();
+    const width = rect.width || 1;
+    const cursorFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / width));
+    const leadView = sampleRow.peaks.views.getView("zoomview");
+    const startBefore = leadView?.getStartTime?.() ?? 0;
+    const tCursor = startBefore + cursorFrac * zoomSeconds;
+
     // deltaY > 0 = wheel down = zoom OUT (more seconds visible).
     const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+    const before = zoomSeconds;
     applyZoom(zoomSeconds * factor);
+    if (zoomSeconds === before) return;     // clamped at min/max — no shift needed
+
+    applyAbsoluteStart(tCursor - cursorFrac * zoomSeconds);
     return;
   }
 
