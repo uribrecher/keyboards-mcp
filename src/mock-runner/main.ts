@@ -7,12 +7,14 @@
  * sequentially from BASE_WS_PORT and freed on tab close.
  */
 
-import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, dialog, ipcMain, type WebContents } from "electron";
 import { join, dirname, basename } from "node:path";
 import { statSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, readSync, closeSync, realpathSync, watch as fsWatch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { sep } from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { AudioAnalysisClient, type ImportRequest, type ImportAudioResult, type StemsRequest, type StructureRequest } from "../audio-analysis-client/index.js";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
 import { MockTransport, type MidiEventPayload } from "./transport.js";
@@ -1027,10 +1029,6 @@ function listAnalysisJobs(): AnalysisJobSummary[] {
 
 ipcMain.handle("list-analysis-jobs", (): AnalysisJobSummary[] => listAnalysisJobs());
 
-ipcMain.handle("get-audio-service-url", (): string =>
-  process.env.AUDIO_ANALYSIS_SERVICE_URL ?? "http://127.0.0.1:8765",
-);
-
 // Renderer writes this right after a successful import so the operator
 // sees the song title rather than the sanitized slug. jobPath must be
 // inside the workspace jobs dir; we re-check containment via realpath
@@ -1137,6 +1135,73 @@ ipcMain.handle("open-audio-import-dialog", async (): Promise<string | null> => {
   // watch failed transiently. Cheap; only kicks while detached.
   setInterval(() => { if (!watcher) tryAttach(); }, 5000).unref();
   tryAttach();
+}
+
+// ── Audio-analysis IPC relay ──
+//
+// The renderer is sandboxed (file:// origin, contextIsolation on) so we
+// don't let it talk HTTP directly. Main owns the AudioAnalysisClient;
+// renderer goes through these IPC handlers. Streaming methods get a job
+// id back and listen on `audio:analyze:event:<id>` / `audio:analyze:done:<id>`.
+{
+  let _client: AudioAnalysisClient | null = null;
+  const getClient = (): AudioAnalysisClient => {
+    if (!_client) {
+      const serverUrl = process.env.AUDIO_ANALYSIS_SERVICE_URL ?? "http://127.0.0.1:8765";
+      _client = new AudioAnalysisClient({ serverUrl });
+    }
+    return _client;
+  };
+
+  ipcMain.handle("audio:healthz", (): Promise<boolean> => getClient().healthz());
+
+  ipcMain.handle("audio:import-audio", (_event, req: ImportRequest): Promise<ImportAudioResult> =>
+    getClient().importAudio(req),
+  );
+
+  const activeStreams = new Map<string, AbortController>();
+
+  ipcMain.handle("audio:analyze:start", (
+    event,
+    args: { kind: "stems"; req: StemsRequest } | { kind: "structure"; req: StructureRequest },
+  ): string => {
+    const id = randomUUID();
+    const ctrl = new AbortController();
+    activeStreams.set(id, ctrl);
+    const wc: WebContents = event.sender;
+    const eventCh = `audio:analyze:event:${id}`;
+    const doneCh = `audio:analyze:done:${id}`;
+
+    // Iterate in the background; don't block the handler return. The
+    // renderer's invoke() resolves with the id immediately so it can
+    // subscribe before the first event lands.
+    void (async () => {
+      try {
+        const iter = args.kind === "stems"
+          ? getClient().separateStems(args.req, { signal: ctrl.signal })
+          : getClient().analyzeStructure(args.req, { signal: ctrl.signal });
+        for await (const ev of iter) {
+          if (wc.isDestroyed()) break;
+          wc.send(eventCh, ev);
+        }
+        if (!wc.isDestroyed()) wc.send(doneCh, { ok: true });
+      } catch (err) {
+        if (!wc.isDestroyed()) {
+          const message = err instanceof Error ? err.message : String(err);
+          const name = err instanceof Error ? err.name : "Error";
+          wc.send(doneCh, { ok: false, error: message, errorName: name });
+        }
+      } finally {
+        activeStreams.delete(id);
+      }
+    })();
+
+    return id;
+  });
+
+  ipcMain.handle("audio:analyze:cancel", (_event, id: string): void => {
+    activeStreams.get(id)?.abort();
+  });
 }
 
 // ── App lifecycle ──

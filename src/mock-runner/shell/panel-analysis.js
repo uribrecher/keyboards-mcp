@@ -11,12 +11,96 @@
  *     as two async iterables, updates two progress bars independently.
  *   • Health chip: probes /healthz periodically (10s) + on view show.
  *
- * Imports the in-repo AudioAnalysisClient via its compiled artifact.
- * The shell is plain JS served from src/mock-runner/shell/; the client
- * is TypeScript compiled into dist/audio-analysis-client/.
+ * The renderer is sandboxed and does NOT make HTTP calls directly.
+ * `mockRunnerAPI.audio` is an IPC relay to the main process, which owns
+ * the AudioAnalysisClient. Streaming methods come back as async iterables
+ * driven by `audio:analyze:event:<id>` / `audio:analyze:done:<id>` events.
  */
 
-import { AudioAnalysisClient } from "../../../dist/audio-analysis-client/index.js";
+// Async-iterable backed by IPC events. The main process iterates the
+// real SSE stream and forwards each event over webContents.send; this
+// wrapper exposes the same `for await` shape the panel used to consume
+// directly from the in-renderer AudioAnalysisClient.
+function ipcAnalyzeStream(kind, req, signal) {
+  return {
+    [Symbol.asyncIterator]() {
+      const queue = [];
+      const waiters = [];          // { resolve, reject }
+      let finished = false;
+      let finishError = null;
+      let streamId = null;
+      let unsubEvent = () => {};
+
+      const push = (ev) => {
+        if (waiters.length) waiters.shift().resolve({ value: ev, done: false });
+        else queue.push(ev);
+      };
+      const finish = (err) => {
+        if (finished) return;
+        finished = true;
+        finishError = err;
+        unsubEvent();
+        while (waiters.length) {
+          const w = waiters.shift();
+          if (err) w.reject(err);
+          else w.resolve({ value: undefined, done: true });
+        }
+      };
+
+      const ready = (async () => {
+        streamId = await window.mockRunnerAPI.audio.analyzeStart(kind, req);
+        unsubEvent = window.mockRunnerAPI.audio.onAnalyzeEvent(streamId, push);
+        window.mockRunnerAPI.audio.onAnalyzeDone(streamId, (payload) => {
+          if (payload && payload.ok === false) {
+            const err = new Error(payload.error || "analyze failed");
+            err.name = payload.errorName || "Error";
+            finish(err);
+          } else {
+            finish(null);
+          }
+        });
+      })().catch((err) => finish(err));
+
+      if (signal) {
+        if (signal.aborted) {
+          finish(new DOMException("aborted", "AbortError"));
+        } else {
+          signal.addEventListener("abort", () => {
+            if (streamId) void window.mockRunnerAPI.audio.analyzeCancel(streamId);
+            finish(new DOMException("aborted", "AbortError"));
+          }, { once: true });
+        }
+      }
+
+      return {
+        async next() {
+          await ready;
+          if (queue.length) return { value: queue.shift(), done: false };
+          if (finished) {
+            if (finishError) throw finishError;
+            return { value: undefined, done: true };
+          }
+          return new Promise((resolve, reject) => waiters.push({ resolve, reject }));
+        },
+        async return() {
+          if (streamId) await window.mockRunnerAPI.audio.analyzeCancel(streamId);
+          finish(null);
+          return { value: undefined, done: true };
+        },
+      };
+    },
+  };
+}
+
+// Drop-in replacement for AudioAnalysisClient — same shape, backed by IPC.
+function createIpcAudioClient() {
+  return {
+    healthz: () => window.mockRunnerAPI.audio.healthz(),
+    importAudio: (req) => window.mockRunnerAPI.audio.importAudio(req),
+    separateStems: (req, opts = {}) => ipcAnalyzeStream("stems", req, opts.signal),
+    analyzeStructure: (req, opts = {}) => ipcAnalyzeStream("structure", req, opts.signal),
+  };
+}
 
 // ─── DOM refs ──────────────────────────────────────────────────────
 const jobsListEl       = document.getElementById("jobs-list");
@@ -491,9 +575,7 @@ export async function mount() {
   if (mounted) return;
   mounted = true;
 
-  const serverUrl = (await window.mockRunnerAPI?.getAudioServiceUrl?.())
-    ?? "http://127.0.0.1:8765";
-  client = new AudioAnalysisClient({ serverUrl });
+  client = createIpcAudioClient();
 
   jobNewBtnEl?.addEventListener("click", () => { void onNewJob(); });
   analyzeBtnEl?.addEventListener("click", () => { void onAnalyze(); });
