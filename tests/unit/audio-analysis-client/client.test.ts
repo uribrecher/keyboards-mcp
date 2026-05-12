@@ -5,6 +5,7 @@ import type {
   StemSeparateResult,
   StemsEvent,
   StructureEvent,
+  TriageEvent,
 } from "../../../src/audio-analysis-client/index.js";
 
 function bodyOf(...chunks: string[]): ReadableStream<Uint8Array> {
@@ -309,5 +310,54 @@ describe("AudioAnalysisClient.analyzeStructure", () => {
     } else {
       assert.fail("expected result event");
     }
+  });
+});
+
+describe("AudioAnalysisClient.triageNotesBySections", () => {
+  it("POSTs to /jobs/triage and decodes progress + result events", async () => {
+    let seenUrl = "";
+    let seenMethod = "";
+    let seenBody = "";
+
+    const result = { triage_path: "/o/triage_by_sections.json", cached: false };
+    const stream =
+      `event: progress\ndata: ${JSON.stringify({ stage: "section", fraction: 0.5, detail: "verse" })}\n\n` +
+      `event: result\ndata: ${JSON.stringify(result)}\n\n`;
+
+    const client = new AudioAnalysisClient({
+      serverUrl: "http://x",
+      fetch: makeFetch(async (url, init) => {
+        seenUrl = url;
+        seenMethod = String(init?.method);
+        seenBody = String(init?.body);
+        return sseResponse(stream);
+      }),
+    });
+
+    const events: TriageEvent[] = await collect(
+      client.triageNotesBySections({
+        audio_path: "jobs/foo/stems/medium/other.wav",
+        sections: [{ start_time: 0, end_time: 10, label: "verse" }],
+      }),
+    );
+
+    // Wiring assertions — the new method must hit the right path with the
+    // right shape; nothing else proves the renderer-side wiring is good.
+    assert.equal(seenUrl, "http://x/jobs/triage");
+    assert.equal(seenMethod, "POST");
+    const parsed = JSON.parse(seenBody);
+    assert.equal(parsed.audio_path, "jobs/foo/stems/medium/other.wav");
+    assert.deepEqual(parsed.sections, [
+      { start_time: 0, end_time: 10, label: "verse" },
+    ]);
+
+    // Event decode assertions.
+    assert.equal(events.length, 2);
+    if (events[0].type !== "progress") assert.fail("expected progress first");
+    assert.equal(events[0].stage, "section");
+    assert.equal(events[0].fraction, 0.5);
+    assert.equal(events[0].detail, "verse");
+    if (events[1].type !== "result") assert.fail("expected result second");
+    assert.deepEqual(events[1].result, result);
   });
 });

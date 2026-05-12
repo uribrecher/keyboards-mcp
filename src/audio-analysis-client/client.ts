@@ -11,6 +11,9 @@ import type {
   TranscribeRequest,
   NoteTranscribeServiceResult,
   TranscribeEvent,
+  TriageRequest,
+  NoteTriageBySectionsServiceResult,
+  TriageEvent,
 } from "./types.js";
 
 export interface AudioAnalysisClientOptions {
@@ -76,6 +79,17 @@ export class AudioAnalysisClient {
   ): AsyncIterable<TranscribeEvent> {
     return this.#streamJob<NoteTranscribeServiceResult, TranscribeEvent>(
       "/jobs/transcribe",
+      req,
+      opts,
+    );
+  }
+
+  triageNotesBySections(
+    req: TriageRequest,
+    opts: RequestOptions = {},
+  ): AsyncIterable<TriageEvent> {
+    return this.#streamJob<NoteTriageBySectionsServiceResult, TriageEvent>(
+      "/jobs/triage",
       req,
       opts,
     );
