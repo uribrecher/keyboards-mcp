@@ -9,8 +9,9 @@
 
 import { app, BrowserWindow, Menu, dialog, ipcMain } from "electron";
 import { join, dirname, basename } from "node:path";
-import { statSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, watch as fsWatch, type FSWatcher } from "node:fs";
+import { statSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, readSync, closeSync, realpathSync, watch as fsWatch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
+import { sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverModels, loadModelById } from "../shared/model-registry.js";
 import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
@@ -928,25 +929,37 @@ function audioWorkspaceJobsDir(): string {
 // Read sample rate, channels, and duration from a canonical PCM WAV produced
 // by the audio-analysis-mcp normalizer (44.1kHz 16-bit mono). Returns null
 // fields on any parse failure — the panel just renders them as blank.
+//
+// Scans chunk headers via small fd reads so we don't slurp the entire file
+// (a 5-minute 44.1k/16-bit mono source.wav is ~26MB) just to grab the format
+// chunk and the data-chunk size. The fmt chunk and the data header almost
+// always live in the first few KB.
 function probeWavHeader(filePath: string): { sampleRate: number; channels: number; durationSeconds: number } | null {
+  let fd: number | null = null;
   try {
-    const fd = readFileSync(filePath);
-    if (fd.length < 44) return null;
-    if (fd.toString("ascii", 0, 4) !== "RIFF") return null;
-    if (fd.toString("ascii", 8, 12) !== "WAVE") return null;
-    // Walk chunks starting at offset 12. Each chunk: 4-byte id + 4-byte LE size + payload.
+    fd = openSync(filePath, "r");
+    const header = Buffer.alloc(12);
+    if (readSync(fd, header, 0, 12, 0) < 12) return null;
+    if (header.toString("ascii", 0, 4) !== "RIFF") return null;
+    if (header.toString("ascii", 8, 12) !== "WAVE") return null;
+
     let off = 12;
     let sampleRate = 0;
     let channels = 0;
     let byteRate = 0;
     let dataSize = 0;
-    while (off + 8 <= fd.length) {
-      const id = fd.toString("ascii", off, off + 4);
-      const size = fd.readUInt32LE(off + 4);
+    const chunkHdr = Buffer.alloc(8);
+    const fmtBuf = Buffer.alloc(16);
+    while (true) {
+      if (readSync(fd, chunkHdr, 0, 8, off) < 8) break;
+      const id = chunkHdr.toString("ascii", 0, 4);
+      const size = chunkHdr.readUInt32LE(4);
       if (id === "fmt ") {
-        channels   = fd.readUInt16LE(off + 8 + 2);
-        sampleRate = fd.readUInt32LE(off + 8 + 4);
-        byteRate   = fd.readUInt32LE(off + 8 + 8);
+        const wanted = Math.min(size, fmtBuf.length);
+        if (readSync(fd, fmtBuf, 0, wanted, off + 8) < wanted) break;
+        channels   = fmtBuf.readUInt16LE(2);
+        sampleRate = fmtBuf.readUInt32LE(4);
+        byteRate   = fmtBuf.readUInt32LE(8);
       } else if (id === "data") {
         dataSize = size;
         break;
@@ -957,6 +970,10 @@ function probeWavHeader(filePath: string): { sampleRate: number; channels: numbe
     return { sampleRate, channels, durationSeconds: dataSize / byteRate };
   } catch {
     return null;
+  } finally {
+    if (fd !== null) {
+      try { closeSync(fd); } catch { /* ignore */ }
+    }
   }
 }
 
@@ -1016,20 +1033,31 @@ ipcMain.handle("get-audio-service-url", (): string =>
 
 // Renderer writes this right after a successful import so the operator
 // sees the song title rather than the sanitized slug. jobPath must be
-// inside the workspace jobs dir; we re-check the prefix to keep callers
-// honest (a malicious renderer can't aim this at arbitrary filesystem
-// locations).
+// inside the workspace jobs dir; we re-check containment via realpath
+// (defeats `/jobs-evil` prefix tricks, symlink escapes, `..` segments) so
+// a malicious renderer can't aim this at arbitrary filesystem locations.
 ipcMain.handle("write-job-metadata", (
   _event,
   args: { jobPath: string; displayName?: string; originalFilename?: string },
 ): { ok: boolean; message?: string } => {
-  const jobsRoot = audioWorkspaceJobsDir();
   const target = args.jobPath;
-  if (typeof target !== "string" || !target.startsWith(jobsRoot)) {
+  if (typeof target !== "string") {
+    return { ok: false, message: "Job path is outside the workspace." };
+  }
+  let resolvedRoot: string;
+  let resolvedTarget: string;
+  try {
+    resolvedRoot = realpathSync(audioWorkspaceJobsDir());
+    resolvedTarget = realpathSync(target);
+  } catch {
+    return { ok: false, message: "Job path does not exist." };
+  }
+  const rootWithSep = resolvedRoot.endsWith(sep) ? resolvedRoot : resolvedRoot + sep;
+  if (resolvedTarget !== resolvedRoot && !resolvedTarget.startsWith(rootWithSep)) {
     return { ok: false, message: "Job path is outside the workspace." };
   }
   try {
-    if (!statSync(target).isDirectory()) {
+    if (!statSync(resolvedTarget).isDirectory()) {
       return { ok: false, message: "Job path is not a directory." };
     }
   } catch {
@@ -1037,7 +1065,7 @@ ipcMain.handle("write-job-metadata", (
   }
   // Merge with any existing metadata so we don't clobber fields that a
   // future code path might have added.
-  const existing = readJobMetadata(target) ?? {};
+  const existing = readJobMetadata(resolvedTarget) ?? {};
   const merged: JobMetadata = {
     ...existing,
     ...(args.displayName     !== undefined && { displayName:      args.displayName }),
@@ -1045,7 +1073,7 @@ ipcMain.handle("write-job-metadata", (
     importedAt: existing.importedAt ?? new Date().toISOString(),
   };
   try {
-    writeFileSync(join(target, JOB_META_FILE), JSON.stringify(merged, null, 2), "utf-8");
+    writeFileSync(join(resolvedTarget, JOB_META_FILE), JSON.stringify(merged, null, 2), "utf-8");
     return { ok: true };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };

@@ -183,14 +183,15 @@
     <aside class="console" id="console" data-collapsed="false">
       <!--
         Rail — vertical strip on the slot-facing edge of the console.
-        Three stacked sub-regions, top to bottom:
-          1. Selector cluster (MIDI / WAVEFORM): click-only buttons that
-             flip which .rack-panels child is visible. role="tab".
+        Two stacked sub-regions, top to bottom:
+          1. Selector cluster (.rail__selectors): MIDI / WAVEFORM click-
+             only buttons that flip which .rack-panels child is visible.
+             role="tab".
           2. Splitter (.rail__split): the legacy console__latch behavior —
              pointer drag resizes, click without drag toggles
-             data-collapsed.
-          3. Spacer (.rail__spacer): brushed-metal fill the rest of the
-             height, no interaction.
+             data-collapsed. Flexes to fill the remaining rail height so
+             the operator has a generous drag target; no separate spacer
+             element is needed.
         Width tracks --rail-w (34px). The two SVG icons are inline so the
         whole rail stays self-contained (no icon library).
       -->

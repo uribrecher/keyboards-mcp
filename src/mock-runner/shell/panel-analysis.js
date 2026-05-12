@@ -43,8 +43,10 @@ const resultsStructureListEl = document.getElementById("results-structure-list")
 // ─── State ─────────────────────────────────────────────────────────
 let jobs = [];                  // AnalysisJobSummary[]
 let activeJobName = null;       // string | null
+let activeJobPath = null;       // string | null — used for click-to-copy
 let pendingImportBasename = null;
 let analyzeInFlight = false;
+let serviceUp = null;           // null = unknown, true/false = last probe result
 // Cached results per job, keyed by job.name. Populated on result events
 // and (best-effort) on initial selection by reading the structure JSON
 // — but for now we just rely on live results from the SSE stream.
@@ -175,10 +177,17 @@ function renderJobDetail() {
     // — useful for grep, ls, etc.
     jobPathEl.textContent = job.displayName ? `${job.name}  ·  ${job.path}` : job.path;
   }
+  // Track the canonical path so click-to-copy lands a real filesystem
+  // path on the clipboard even when the visible text is the mixed
+  // "slug · path" form above.
+  activeJobPath = job.path;
 
   if (analyzeBtnEl) {
-    analyzeBtnEl.disabled = analyzeInFlight || !job.hasSource;
-    analyzeBtnEl.textContent = analyzeInFlight ? "ANALYZING…" : "ANALYZE";
+    const serviceDown = serviceUp === false;
+    analyzeBtnEl.disabled = analyzeInFlight || !job.hasSource || serviceDown;
+    analyzeBtnEl.textContent = analyzeInFlight
+      ? "ANALYZING…"
+      : serviceDown ? "SERVICE DOWN" : "ANALYZE";
   }
 
   renderResults(job);
@@ -358,6 +367,10 @@ async function onNewJob() {
 async function onAnalyze() {
   const job = jobs.find((j) => j.name === activeJobName);
   if (!job || !job.hasSource) return;
+  // Capture the job identity at start. If the operator switches jobs
+  // mid-analysis, results land under THIS job, not whatever is selected
+  // when the result event arrives.
+  const owningJobName = job.name;
   analyzeInFlight = true;
   renderJobDetail();
 
@@ -375,20 +388,24 @@ async function onAnalyze() {
   const consumeStems = async () => {
     try {
       for await (const ev of client.separateStems({ audio_path }, { signal: controllers.stems.signal })) {
-        applyEvent("stems", ev);
+        applyEvent("stems", ev, owningJobName);
       }
     } catch (err) {
-      setProgress("stems", { stage: "error", detail: errStr(err), state: "error" });
+      if (owningJobName === activeJobName) {
+        setProgress("stems", { stage: "error", detail: errStr(err), state: "error" });
+      }
     }
   };
 
   const consumeStructure = async () => {
     try {
       for await (const ev of client.analyzeStructure({ audio_path }, { signal: controllers.structure.signal })) {
-        applyEvent("structure", ev);
+        applyEvent("structure", ev, owningJobName);
       }
     } catch (err) {
-      setProgress("structure", { stage: "error", detail: errStr(err), state: "error" });
+      if (owningJobName === activeJobName) {
+        setProgress("structure", { stage: "error", detail: errStr(err), state: "error" });
+      }
     }
   };
 
@@ -401,7 +418,22 @@ async function onAnalyze() {
   renderJobDetail();
 }
 
-function applyEvent(kind, ev) {
+function applyEvent(kind, ev, owningJobName) {
+  // Always cache results under the job the analysis was started on, even
+  // if the operator has since selected a different one.
+  if (ev.type === "result") {
+    const slot = cachedResults.get(owningJobName) ?? {};
+    slot[kind] = ev.result;
+    cachedResults.set(owningJobName, slot);
+    if (owningJobName === activeJobName) {
+      const job = jobs.find((j) => j.name === activeJobName);
+      if (job) renderResults(job);
+    }
+  }
+  // Progress / errors only update the on-screen bars when the active job
+  // still matches — otherwise we'd be painting another job's bars.
+  if (owningJobName !== activeJobName) return;
+
   if (ev.type === "progress") {
     setProgress(kind, {
       fraction: ev.fraction,
@@ -410,13 +442,6 @@ function applyEvent(kind, ev) {
       state:    "running",
     });
   } else if (ev.type === "result") {
-    const job = jobs.find((j) => j.name === activeJobName);
-    if (job) {
-      const slot = cachedResults.get(job.name) ?? {};
-      slot[kind] = ev.result;
-      cachedResults.set(job.name, slot);
-      renderResults(job);
-    }
     const cached = ev.result?.cached ? "cached" : "fresh";
     setProgress(kind, {
       fraction: 1,
@@ -443,9 +468,16 @@ async function probeHealth() {
   if (!client) return;
   let up = false;
   try { up = await client.healthz(); } catch { up = false; }
-  if (!healthEl) return;
-  healthEl.setAttribute("data-state", up ? "up" : "down");
+  const changed = serviceUp !== up;
+  serviceUp = up;
+  if (healthEl) {
+    healthEl.setAttribute("data-state", up ? "up" : "down");
+  }
   if (healthLabelEl) healthLabelEl.textContent = up ? "service up" : "service down";
+  // The ANALYZE button's disabled state depends on serviceUp — re-render
+  // the job detail so it picks up the new status without waiting for the
+  // next selection change.
+  if (changed) renderJobDetail();
 }
 
 function startHealthLoop() {
@@ -466,8 +498,9 @@ export async function mount() {
   jobNewBtnEl?.addEventListener("click", () => { void onNewJob(); });
   analyzeBtnEl?.addEventListener("click", () => { void onAnalyze(); });
   jobPathEl?.addEventListener("click", () => {
-    const path = jobPathEl.textContent ?? "";
-    if (path) navigator.clipboard?.writeText(path).catch(() => { /* ignore */ });
+    // The visible text can be `${slug}  ·  ${path}` when a displayName
+    // is set — copy only the real filesystem path.
+    if (activeJobPath) navigator.clipboard?.writeText(activeJobPath).catch(() => { /* ignore */ });
   });
 
   window.mockRunnerAPI?.onAnalysisJobsChanged?.(() => {

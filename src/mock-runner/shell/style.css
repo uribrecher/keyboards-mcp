@@ -351,11 +351,11 @@ body > .bay { height: 100vh; }
   display: grid;
   /* Two columns: rack (chassis + rack-panels, flex) | console
    * (operator-set width via --console-w). The console's leading edge is
-   * the .rail — three stacked sub-regions:
-   *   • selector cluster (MIDI / WAVEFORM) — chooses which rack-panel is
-   *     visible (click-only, no drag)
-   *   • splitter (.rail__split) — drag resizes, click toggles collapse
-   *   • spacer (.rail__spacer) — brushed-metal fill
+   * the .rail — two stacked sub-regions:
+   *   • selector cluster (.rail__selectors, MIDI / WAVEFORM) — chooses
+   *     which rack-panel is visible (click-only, no drag)
+   *   • splitter (.rail__split) — drag resizes, click toggles collapse;
+   *     flexes to fill the remaining rail height, no separate spacer
    * Rail width = 34px (wide enough for a 20px icon + micro-label without
    * crowding). The slot has an implicit floor of 600px enforced by the
    * splitter drag clamp in app.js. When the console collapses, the column
@@ -717,15 +717,16 @@ body.bay--resizing iframe { pointer-events: none; }
   display: none;
 }
 
-/* ── Rail: selector cluster + splitter + spacer ──
+/* ── Rail: selector cluster + splitter ──
  *
  * Vertical rail at the slot-facing edge of the console. 34px wide.
- * Three stacked sub-regions:
+ * Two stacked sub-regions:
  *   1. .rail__selectors — two click-only buttons (MIDI / WAVEFORM) that
  *      flip which .rack-panels child is visible. role="tab".
  *   2. .rail__split    — the legacy latch: pointer drag resizes,
- *      click-without-drag toggles `data-collapsed`. Carries the chevron.
- *   3. .rail__spacer   — brushed-metal fill, no interaction.
+ *      click-without-drag toggles `data-collapsed`. Carries the chevron
+ *      and flexes to fill the remaining rail height, so a dedicated
+ *      spacer element isn't needed.
  *
  * Brushed-metal gradient + faint vertical scribe line keep it
  * consistent with the chassis without the visual weight of a heavier panel.
