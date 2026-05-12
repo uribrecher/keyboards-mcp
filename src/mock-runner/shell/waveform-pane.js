@@ -47,27 +47,6 @@ const DEFAULT_COLOR = "#c4c4c4";
 // drowning the waveform itself.
 const PALETTE_OPACITY = 0.5;
 
-// Three-letter codes used as the in-overlay labelText. Full SongFormer
-// labels (e.g. "pre-chorus") don't fit inside a narrow segment — peaks
-// wraps them character-by-character and the result is unreadable. Codes
-// fit in any realistic section width without wrapping. Fallback for
-// unknown labels: first three chars uppercased.
-const LABEL_CODES = {
-  intro:        "INT",
-  verse:        "VRS",
-  chorus:       "CHO",
-  bridge:       "BRG",
-  outro:        "OUT",
-  inst:         "INS",
-  "pre-chorus": "PRE",
-  silence:      "SLN",
-};
-
-function codeFor(label) {
-  const key = String(label).toLowerCase();
-  return LABEL_CODES[key] ?? key.slice(0, 3).toUpperCase();
-}
-
 let audioContext = null;
 function getAudioContext() {
   if (!audioContext) {
@@ -107,57 +86,51 @@ function colorFor(label) {
   return LABEL_COLORS[String(label).toLowerCase()] ?? DEFAULT_COLOR;
 }
 
-// peaks.js calls this for every segment when overlay rendering is on
-// and a `createSegmentLabel` callback is set. Returning a Konva.Node
-// supersedes the built-in overlayLabel* drawing — we use this hook
-// solely to ROTATE the 3-letter code 90° CCW so it reads bottom-up
-// inside narrow segments. Width constraint becomes ~font-size (10px),
-// which fits any realistic SongFormer section.
-function createRotatedSegmentLabel(options) {
-  const { segment } = options;
-  if (!segment.labelText) return null;
-  return new window.Konva.Text({
-    text:        segment.labelText,
-    fontFamily:  "monospace",
-    fontSize:    11,
-    fontStyle:   "bold",
-    fill:        "#ffffff",
-    // Soft black shadow so the label stays legible over any palette
-    // color at PALETTE_OPACITY.
-    shadowColor:  "#000000",
-    shadowOpacity: 0.55,
-    shadowBlur:   2,
-    shadowOffsetX: 0,
-    shadowOffsetY: 0,
-    // -90° rotates CCW. Konva.Text rotates around (x, y), and the
-    // unrotated text's TOP-LEFT corner sits at (x, y); after -90° the
-    // text's BOTTOM-LEFT is at (x, y) and the glyph row reads upward.
-    // Place y at ~textWidth so the rotated text occupies y∈[~6, y].
-    rotation:    -90,
-    x:           4,
-    y:           28,
-    // Inert overlay — no need to capture clicks; the row click handler
-    // catches activations at the row level.
-    listening:   false,
-  });
-}
-
 function buildSegmentList(segments) {
   // SongFormer's segments use {start, end, label}; peaks wants
   // {startTime, endTime, ...}. The `id` keeps each segment uniquely
-  // addressable for later updates/removals. labelText is the 3-letter
-  // code rather than the full label so it fits even narrow segments
-  // without wrapping.
+  // addressable for later updates/removals. No `labelText` — segments
+  // are pure colored regions; the FULL label rides on a custom
+  // `sectionLabel` property and surfaces only as a hover tooltip
+  // (see attachSegmentTooltipHandlers).
   return (segments ?? []).map((s, i) => ({
-    id:        `seg-${i}`,
-    startTime: Number(s.start),
-    endTime:   Number(s.end),
-    color:     colorFor(s.label),
-    labelText: codeFor(s.label),
-    overlay:   true,
-    markers:   false,
-    editable:  false,
+    id:           `seg-${i}`,
+    startTime:    Number(s.start),
+    endTime:      Number(s.end),
+    color:        colorFor(s.label),
+    overlay:      true,
+    markers:      false,
+    editable:     false,
+    sectionLabel: s.label,
   }));
+}
+
+function showTooltip(evt, label) {
+  const el = document.getElementById("segment-tooltip");
+  if (!el || !label) return;
+  el.textContent = label;
+  // Position near the cursor; pin to viewport via position: fixed in
+  // CSS so we don't have to compute offsets against the waveform pane.
+  el.style.left = `${evt.clientX + 12}px`;
+  el.style.top  = `${evt.clientY + 12}px`;
+  el.hidden = false;
+}
+
+function hideTooltip() {
+  const el = document.getElementById("segment-tooltip");
+  if (el) el.hidden = true;
+}
+
+function attachSegmentTooltipHandlers(instance) {
+  // peaks fires segments.mouseenter / mouseleave with { segment, evt }
+  // when overlay rendering is enabled. We read the full label from the
+  // custom `sectionLabel` field set in buildSegmentList.
+  instance.on("segments.mouseenter", (event) => {
+    showTooltip(event.evt, event.segment.sectionLabel);
+  });
+  instance.on("segments.mouseleave", () => {
+    hideTooltip();
+  });
 }
 
 async function initInstanceForRow(stem, stemPath, gen) {
@@ -201,21 +174,16 @@ async function initInstanceForRow(stem, stemPath, gen) {
         multiChannel: false,
       },
       // Translucent region overlay treatment — no drag handles, no
-      // editable boundaries. Per-segment color overrides the default
-      // overlayColor. Border dropped to 0 so the visible thing is the
-      // fill, not a thin outline. overlayLabel* options below are
-      // overridden by createSegmentLabel (custom rotated text), but
-      // kept as a sensible fallback if the callback ever returns null.
+      // editable boundaries, no inline label (segments are pure color
+      // bands; the full label surfaces via a hover tooltip wired on
+      // the segments.mouseenter event below).
       segmentOptions: {
         overlay:            true,
         overlayColor:       DEFAULT_COLOR,
         overlayOpacity:     PALETTE_OPACITY,
         overlayBorderColor: "rgba(255,255,255,0.15)",
         overlayBorderWidth: 0,
-        overlayLabelColor:  "#ffffff",
-        overlayLabelAlign:  "top-left",
       },
-      createSegmentLabel: createRotatedSegmentLabel,
     }, (err, instance) => {
       if (err) {
         console.error(`peaks.init failed for stem "${stem}":`, err);
@@ -255,6 +223,7 @@ async function initInstanceForRow(stem, stemPath, gen) {
         view:     viewEl,
         duration: audioBuffer.duration,
       });
+      attachSegmentTooltipHandlers(instance);
       // If segments arrived before this instance finished init, replay.
       if (currentSegments.length) {
         try { instance.segments.add(buildSegmentList(currentSegments)); }
@@ -407,6 +376,7 @@ export function destroy() {
     clearTimeout(resizeDebounce);
     resizeDebounce = null;
   }
+  hideTooltip();
   for (const { peaks, audio } of rows.values()) {
     try { peaks.destroy(); } catch { /* ignore */ }
     try {

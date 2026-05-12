@@ -2067,6 +2067,27 @@ body.bay--resizing iframe { pointer-events: none; }
   height: 128px;
 }
 
+/* Segment tooltip — single shared element, positioned at cursor on
+ * peaks segments.mouseenter, hidden on mouseleave. position: fixed +
+ * pointer-events: none means it doesn't intercept the hover or get
+ * stuck if the mouse moves fast across a segment boundary. */
+.segment-tooltip {
+  position: fixed;
+  z-index: 1000;
+  padding: 4px 8px;
+  background: rgba(8, 8, 10, 0.92);
+  color: var(--c-text-bright);
+  border: 1px solid var(--c-edge);
+  border-radius: 2px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
 
 /* The <audio> element is needed for peaks.js to observe playback state
  * but is never shown — the peaks canvas IS the visible affordance. */

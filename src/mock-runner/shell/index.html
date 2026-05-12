@@ -209,6 +209,14 @@
                 <section class="waveforms" id="waveforms">
                   <h3 class="waveforms__title">─ WAVEFORMS ─</h3>
                   <!--
+                    Single shared tooltip — waveform-pane shows + moves
+                    + hides on peaks segment mouseenter/mouseleave. Lives
+                    inside .waveforms so it stays within the panel's
+                    layout context; position: fixed pins to the viewport
+                    so we don't have to compute pane-relative offsets.
+                  -->
+                  <div class="segment-tooltip" id="segment-tooltip" hidden></div>
+                  <!--
                     `data-stem="other"` matches the Demucs stem name on
                     disk (the underlying file is still other.wav); the
                     label reads KEYBOARDS because that's what this stem
