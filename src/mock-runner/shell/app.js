@@ -245,6 +245,60 @@ function setConsoleCollapsed(collapsed) {
   if (consoleLatchGlyphEl) consoleLatchGlyphEl.textContent = collapsed ? "◀" : "▶";
 }
 
+// ── Rack-view switching (MIDI ⇄ SONG ANALYSIS) ────────────────────
+//
+// Two rail buttons select which .rack-panels child is visible. Both
+// panels stay mounted so model iframes don't unload their WebSockets
+// when the operator peeks at SONG ANALYSIS. Lazy-import the analysis
+// module on first activation — keeps shell startup cheap when the
+// audio service isn't running.
+const RACK_VIEW_STORAGE_KEY = "mock-runner:rack-view";
+const railBtnMidiEl     = document.getElementById("rail-btn-midi");
+const railBtnAnalysisEl = document.getElementById("rail-btn-analysis");
+const panelMidiEl       = document.getElementById("panel-midi");
+const panelAnalysisEl   = document.getElementById("panel-analysis");
+let analysisPanelLoaded = false;
+let analysisPanelModule = null;
+
+function setRackView(view) {
+  const isAnalysis = view === "analysis";
+  panelMidiEl?.setAttribute("data-view-active", isAnalysis ? "false" : "true");
+  panelAnalysisEl?.setAttribute("data-view-active", isAnalysis ? "true" : "false");
+  panelMidiEl?.setAttribute("aria-hidden", isAnalysis ? "true" : "false");
+  panelAnalysisEl?.setAttribute("aria-hidden", isAnalysis ? "false" : "true");
+  railBtnMidiEl?.setAttribute("aria-selected", isAnalysis ? "false" : "true");
+  railBtnAnalysisEl?.setAttribute("aria-selected", isAnalysis ? "true" : "false");
+  try { localStorage.setItem(RACK_VIEW_STORAGE_KEY, view); } catch { /* ignore */ }
+
+  if (isAnalysis && !analysisPanelLoaded) {
+    analysisPanelLoaded = true;
+    // Dynamic import — analysis module attaches its own listeners on
+    // first call and re-uses them across subsequent activations.
+    import("./panel-analysis.js")
+      .then((mod) => {
+        analysisPanelModule = mod;
+        mod.mount?.();
+      })
+      .catch((err) => {
+        console.error("Failed to load panel-analysis.js:", err);
+        analysisPanelLoaded = false;
+      });
+  } else if (isAnalysis && analysisPanelModule?.onShow) {
+    analysisPanelModule.onShow();
+  }
+}
+
+railBtnMidiEl?.addEventListener("click", () => setRackView("midi"));
+railBtnAnalysisEl?.addEventListener("click", () => setRackView("analysis"));
+
+// Restore last view on load — default to MIDI.
+(function initRackView() {
+  let saved = "midi";
+  try { saved = localStorage.getItem(RACK_VIEW_STORAGE_KEY) || "midi"; } catch { /* ignore */ }
+  if (saved !== "midi" && saved !== "analysis") saved = "midi";
+  setRackView(saved);
+})();
+
 function renderTabButton(tab) {
   const btn = document.createElement("button");
   btn.className = "tab" + (tab.modelInfoId ? "" : " is-pending");
@@ -1264,7 +1318,7 @@ const SPLITTER_STORAGE_KEY = "mock-runner:console-w";
 const CONSOLE_MIN_PX = 380;
 const CONSOLE_MAX_PX = 800;
 const SLOT_FLOOR_PX  = 600;
-const RAIL_PX        = 12;
+const RAIL_PX        = 34;
 const DRAG_THRESHOLD_PX = 4;
 
 const bayEl = document.querySelector(".bay");
