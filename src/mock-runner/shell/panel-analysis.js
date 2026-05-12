@@ -126,9 +126,51 @@ const jobDetailEmptyEl = document.getElementById("job-detail-empty");
 const jobNameEl        = document.getElementById("job-detail-name");
 const jobPathEl        = document.getElementById("job-detail-path");
 const analyzeBtnEl     = document.getElementById("job-analyze-btn");
+const presetSelectorEl = document.getElementById("preset-selector");
+const presetBtnEls     = presetSelectorEl ? Array.from(presetSelectorEl.querySelectorAll(".preset-btn")) : [];
 const carrierEl        = document.getElementById("progress-carrier");
 const healthEl         = document.getElementById("analysis-health");
 const healthLabelEl    = document.getElementById("analysis-health-label");
+
+// DOM-side flip of the segmented control. Pure UI; the per-job store
+// below is the source of truth. Also maintains roving tabindex per the
+// WAI-ARIA radio-group pattern — only the checked button stays in the
+// tab order, arrow keys move selection across the rest.
+function setPresetDom(name) {
+  for (const b of presetBtnEls) {
+    const checked = b.dataset.preset === name;
+    b.setAttribute("aria-checked", checked ? "true" : "false");
+    b.setAttribute("tabindex", checked ? "0" : "-1");
+  }
+}
+
+// Keyboard navigation for the radio-group. Arrow keys move + select;
+// Home/End jump to first/last. Space/Enter is implicit (buttons already
+// activate on those), and the click handler does the writing.
+function onPresetKeydown(e) {
+  if (activeJobName == null) return;
+  if (isInFlight(activeJobName)) return;
+  const i = presetBtnEls.indexOf(e.currentTarget);
+  if (i < 0) return;
+  let next = -1;
+  switch (e.key) {
+    case "ArrowLeft": case "ArrowUp":
+      next = (i - 1 + presetBtnEls.length) % presetBtnEls.length; break;
+    case "ArrowRight": case "ArrowDown":
+      next = (i + 1) % presetBtnEls.length; break;
+    case "Home":
+      next = 0; break;
+    case "End":
+      next = presetBtnEls.length - 1; break;
+    default:
+      return;
+  }
+  e.preventDefault();
+  const name = presetBtnEls[next].dataset.preset;
+  jobPreset.set(activeJobName, name);
+  setPresetDom(name);
+  presetBtnEls[next].focus();
+}
 
 const progressRows = {
   stems:     document.querySelector('.progress-row[data-kind="stems"]'),
@@ -143,12 +185,37 @@ let jobs = [];                  // AnalysisJobSummary[]
 let activeJobName = null;       // string | null
 let activeJobPath = null;       // string | null — used for click-to-copy
 let pendingImportBasename = null;
-let analyzeInFlight = false;
+// Per-job in-flight set: ANALYZE is "ANALYZING…" for jobs in here, idle
+// for everyone else. The previous single-boolean version greyed out
+// ANALYZE on every job whenever any one was running.
+const inFlightJobs = new Set();
+// Per-job preset selection so switching to a different job restores the
+// preset that was last picked for THAT job, not the panel-global one.
+// Default "medium" until the user picks something for a given job.
+const jobPreset = new Map();
 let serviceUp = null;           // null = unknown, true/false = last probe result
+
+function isInFlight(jobName) {
+  return jobName != null && inFlightJobs.has(jobName);
+}
+
+function getPresetFor(jobName) {
+  return (jobName != null && jobPreset.get(jobName)) || "medium";
+}
+
+function paintPresetForActive() {
+  setPresetDom(getPresetFor(activeJobName));
+}
 // Cached results per job, keyed by job.name. Populated on result events
 // and (best-effort) on initial selection by reading the structure JSON
 // — but for now we just rely on live results from the SSE stream.
 const cachedResults = new Map();
+// Per-job progress snapshots so switching jobs mid-run paints the bars
+// for whichever job is currently selected (instead of leaking the
+// previously-active job's bars or showing stale idle bars). Keyed by
+// job.name; each slot holds { stems: snap|null, structure: snap|null }
+// where a snap is the same shape setProgress() accepts.
+const jobProgress = new Map();
 let client = null;
 let mounted = false;
 let healthTimer = null;
@@ -282,10 +349,27 @@ function renderJobDetail() {
 
   if (analyzeBtnEl) {
     const serviceDown = serviceUp === false;
-    analyzeBtnEl.disabled = analyzeInFlight || !job.hasSource || serviceDown;
-    analyzeBtnEl.textContent = analyzeInFlight
+    const running = isInFlight(job.name);
+    analyzeBtnEl.disabled = running || !job.hasSource || serviceDown;
+    analyzeBtnEl.textContent = running
       ? "ANALYZING…"
       : serviceDown ? "SERVICE DOWN" : "ANALYZE";
+  }
+
+  if (presetSelectorEl) {
+    const disabled = isInFlight(job.name);
+    presetSelectorEl.setAttribute("data-disabled", disabled ? "true" : "false");
+    // Mirror to ARIA + per-button tabindex so keyboard / assistive-tech
+    // users can't focus or trip arrow-key selection while a run is in
+    // flight (pointer-events:none in CSS only blocks the mouse path).
+    presetSelectorEl.setAttribute("aria-disabled", disabled ? "true" : "false");
+    if (disabled) {
+      for (const b of presetBtnEls) b.setAttribute("tabindex", "-1");
+    } else {
+      // Re-paint tabindex through the radio-group helper so the checked
+      // button gets tabindex=0 again and the others stay -1.
+      setPresetDom(getPresetFor(activeJobName));
+    }
   }
 
   renderResults(job);
@@ -363,6 +447,39 @@ function resetProgress(kind) {
   setProgress(kind, { fraction: 0, stage: null, detail: null, state: "idle" });
 }
 
+// Persist a progress snapshot under a specific job — recorded regardless
+// of whether that job is currently selected, so switching to it later
+// can re-paint the bars from the last known state.
+function recordProgress(jobName, kind, snap) {
+  let slot = jobProgress.get(jobName);
+  if (!slot) {
+    slot = { stems: null, structure: null };
+    jobProgress.set(jobName, slot);
+  }
+  slot[kind] = snap;
+}
+
+// Look up the last-recorded fraction for a given job/kind so error
+// snapshots can carry it forward. Without this, the error snap lacks
+// `fraction`, setProgress() leaves the fill width untouched, and a
+// repaint-on-switch shows whatever fill width happened to be on screen
+// from the previously-active job (or from before the error).
+function lastFractionFor(jobName, kind) {
+  return jobProgress.get(jobName)?.[kind]?.fraction ?? 0;
+}
+
+// Repaint both progress rows from the active job's stored snapshots.
+// Falls back to the idle state when nothing has been recorded for the
+// job yet (or when no job is selected).
+function paintProgressForActive() {
+  const slot = activeJobName ? jobProgress.get(activeJobName) : null;
+  for (const kind of ["stems", "structure"]) {
+    const snap = slot?.[kind];
+    if (snap) setProgress(kind, snap);
+    else resetProgress(kind);
+  }
+}
+
 function refreshCarrier() {
   const anyRunning = Object.values(progressRows).some(
     (r) => r?.getAttribute("data-state") === "running",
@@ -374,10 +491,13 @@ function refreshCarrier() {
 function selectJob(name) {
   if (activeJobName === name) return;
   activeJobName = name;
-  // Reset progress rows when switching jobs — stale percentages from a
-  // previous job would mislead the operator.
-  resetProgress("stems");
-  resetProgress("structure");
+  // Repaint the progress rows and the preset selector from the newly-
+  // selected job's recorded state — if it's running we want its current
+  // fraction, if it had a preset picked we want that preset highlighted.
+  // The previous code reset progress to idle and left the preset DOM at
+  // whatever the previous job had, both of which leaked across jobs.
+  paintProgressForActive();
+  paintPresetForActive();
   renderJobsList();
   renderJobDetail();
 }
@@ -412,6 +532,11 @@ async function refreshJobs() {
     activeJobName = null;
   }
 
+  // refreshJobs can flip activeJobName above without going through
+  // selectJob (auto-select after import; orphaned selection cleared),
+  // so re-paint the per-job UI bits here too.
+  paintProgressForActive();
+  paintPresetForActive();
   renderJobsList();
   renderJobDetail();
 }
@@ -469,29 +594,48 @@ async function onAnalyze() {
   // mid-analysis, results land under THIS job, not whatever is selected
   // when the result event arrives.
   const owningJobName = job.name;
-  analyzeInFlight = true;
+  if (inFlightJobs.has(owningJobName)) return;  // already analyzing this job
+  inFlightJobs.add(owningJobName);
   renderJobDetail();
 
-  resetProgress("stems");
-  resetProgress("structure");
-  setProgress("stems",     { fraction: 0, stage: "starting", state: "running" });
-  setProgress("structure", { fraction: 0, stage: "starting", state: "running" });
+  const startSnap = { fraction: 0, stage: "starting", detail: null, state: "running" };
+  recordProgress(owningJobName, "stems", startSnap);
+  recordProgress(owningJobName, "structure", startSnap);
+  // Repaint only if the operator is still on this job. paintProgressForActive
+  // resolves to startSnap when owning === active, and to whatever the
+  // previously-selected job has when not.
+  paintProgressForActive();
 
   const audio_path = `${job.path}/source.wav`;
+  // Capture the preset at start too — read from the per-job store so a
+  // mid-run switch to another job (where the user picks a different
+  // preset) doesn't change the request the panel "thinks" it sent for
+  // THIS job. The service has already accepted the original preset
+  // anyway, so the captured value is what's actually running.
+  const preset = getPresetFor(owningJobName);
   const controllers = {
     stems: new AbortController(),
     structure: new AbortController(),
   };
 
+  const failKind = (kind, err) => {
+    const snap = {
+      fraction: lastFractionFor(owningJobName, kind),
+      stage:    "error",
+      detail:   errStr(err),
+      state:    "error",
+    };
+    recordProgress(owningJobName, kind, snap);
+    if (owningJobName === activeJobName) setProgress(kind, snap);
+  };
+
   const consumeStems = async () => {
     try {
-      for await (const ev of client.separateStems({ audio_path }, { signal: controllers.stems.signal })) {
+      for await (const ev of client.separateStems({ audio_path, preset }, { signal: controllers.stems.signal })) {
         applyEvent("stems", ev, owningJobName);
       }
     } catch (err) {
-      if (owningJobName === activeJobName) {
-        setProgress("stems", { stage: "error", detail: errStr(err), state: "error" });
-      }
+      failKind("stems", err);
     }
   };
 
@@ -501,15 +645,13 @@ async function onAnalyze() {
         applyEvent("structure", ev, owningJobName);
       }
     } catch (err) {
-      if (owningJobName === activeJobName) {
-        setProgress("structure", { stage: "error", detail: errStr(err), state: "error" });
-      }
+      failKind("structure", err);
     }
   };
 
   await Promise.allSettled([consumeStems(), consumeStructure()]);
 
-  analyzeInFlight = false;
+  inFlightJobs.delete(owningJobName);
   // The result events landed real files on disk — refresh so the LED
   // flips green and the metadata line picks up any updates.
   await refreshJobs();
@@ -528,32 +670,33 @@ function applyEvent(kind, ev, owningJobName) {
       if (job) renderResults(job);
     }
   }
-  // Progress / errors only update the on-screen bars when the active job
-  // still matches — otherwise we'd be painting another job's bars.
-  if (owningJobName !== activeJobName) return;
 
+  // Build the progress snapshot for the event. Recording happens for the
+  // owning job no matter what's currently selected, so a later switch
+  // back can repaint from this exact state.
+  let snap = null;
   if (ev.type === "progress") {
-    setProgress(kind, {
+    snap = {
       fraction: ev.fraction,
       stage:    ev.stage,
       detail:   ev.detail ?? null,
       state:    "running",
-    });
+    };
   } else if (ev.type === "result") {
     const cached = ev.result?.cached ? "cached" : "fresh";
-    setProgress(kind, {
-      fraction: 1,
-      stage:    "done",
-      detail:   cached,
-      state:    "done",
-    });
+    snap = { fraction: 1, stage: "done", detail: cached, state: "done" };
   } else if (ev.type === "error") {
-    setProgress(kind, {
-      stage:  ev.errorType || "error",
-      detail: ev.message,
-      state:  "error",
-    });
+    snap = {
+      fraction: lastFractionFor(owningJobName, kind),
+      stage:    ev.errorType || "error",
+      detail:   ev.message,
+      state:    "error",
+    };
   }
+  if (snap) recordProgress(owningJobName, kind, snap);
+
+  // Paint only when the operator is still looking at this job.
+  if (snap && owningJobName === activeJobName) setProgress(kind, snap);
 }
 
 function errStr(err) {
@@ -598,6 +741,18 @@ export async function mount() {
     // is set — copy only the real filesystem path.
     if (activeJobPath) navigator.clipboard?.writeText(activeJobPath).catch(() => { /* ignore */ });
   });
+  for (const btn of presetBtnEls) {
+    btn.addEventListener("click", () => {
+      if (activeJobName == null) return;
+      // Can't change preset for an analysis already in flight on this
+      // job — the service has accepted the original preset.
+      if (isInFlight(activeJobName)) return;
+      const name = btn.dataset.preset;
+      jobPreset.set(activeJobName, name);
+      setPresetDom(name);
+    });
+    btn.addEventListener("keydown", onPresetKeydown);
+  }
 
   window.mockRunnerAPI?.onAnalysisJobsChanged?.(() => {
     void refreshJobs();
