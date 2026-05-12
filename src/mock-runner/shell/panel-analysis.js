@@ -113,6 +113,7 @@ function createIpcAudioClient() {
     importAudio: (req) => window.mockRunnerAPI.audio.importAudio(req),
     separateStems: (req, opts = {}) => ipcAnalyzeStream("stems", req, opts.signal),
     analyzeStructure: (req, opts = {}) => ipcAnalyzeStream("structure", req, opts.signal),
+    transcribeNotes: (req, opts = {}) => ipcAnalyzeStream("transcribe", req, opts.signal),
   };
 }
 
