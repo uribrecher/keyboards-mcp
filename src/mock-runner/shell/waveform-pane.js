@@ -63,6 +63,11 @@ function getAudioContext() {
 const rows = new Map();
 
 let activeStem = null;
+// Decoupled from activeStem: selection is "what I'm inspecting / scrubbing",
+// playback is "what I'm hearing". Clicking another row changes the former
+// without disturbing the latter — only spacebar / dblclick mutate this.
+let playingStem = null;
+let keydownHandler = null;
 let currentSegments = [];
 
 // Mount generation — bumped on every destroy()/mount() pair. An in-flight
@@ -156,7 +161,9 @@ async function initInstanceForRow(stem, stemPath, gen) {
   // (always starts with '/'), so `file://` + `/Users/...` → `file:///...`
   // which is the canonical three-slash form.
   audioEl.src = "file://" + encodeURI(stemPath);
-  audioEl.muted = stem !== activeStem;
+  // Mute every stem at init; only the currently-playing stem (set by
+  // startPlayback) is unmuted. Active != playing in this pane.
+  audioEl.muted = true;
 
   // Web Audio drives WAVEFORM RENDERING. peaks.js's internal fetch for
   // the audio bytes is blocked by Electron's default webSecurity on
@@ -243,6 +250,19 @@ async function initInstanceForRow(stem, stemPath, gen) {
         duration: audioBuffer.duration,
       });
       attachSegmentTooltipHandlers(instance);
+      // Natural end-of-track: clear playback state so the row's
+      // data-playing styling drops and spacebar / dblclick toggle from
+      // a clean slate next time.
+      audioEl.addEventListener("ended", () => {
+        if (playingStem === stem) {
+          playingStem = null;
+          setPlayingDOM(stem, false);
+          // Restore the "only the playing stem is unmuted" invariant —
+          // mirrors stopPlayback's tail so a stray future audio.play()
+          // on this element can't leak sound.
+          try { audioEl.muted = true; } catch { /* ignore */ }
+        }
+      });
       // If segments arrived before this instance finished init, replay.
       if (currentSegments.length) {
         try { instance.segments.add(buildSegmentList(currentSegments)); }
@@ -409,12 +429,105 @@ function installWheelHandler() {
   waveformsEl.addEventListener("wheel", wheelHandler, { passive: false });
 }
 
+// ─── Playback (spacebar + double-click) ────────────────────────────
+//
+// Selection (activeStem) is decoupled from playback (playingStem):
+// single-click only changes selection; spacebar toggles playback of
+// the selected stem; double-click selects then toggles. At most ONE
+// stem plays at a time — startPlayback always stops the previous.
+
+function setPlayingDOM(stem, on) {
+  const row = $row(stem);
+  if (row) row.setAttribute("data-playing", on ? "true" : "false");
+}
+
+function stopPlayback() {
+  if (!playingStem) return;
+  const rec = rows.get(playingStem);
+  const wasPlaying = playingStem;
+  playingStem = null;
+  setPlayingDOM(wasPlaying, false);
+  if (!rec) return;
+  // Prefer peaks.player.pause so peaks's internal state stays consistent
+  // with the underlying audio element. Fall back to the raw element if
+  // the player API is missing for any reason.
+  try {
+    if (rec.peaks?.player?.pause) rec.peaks.player.pause();
+    else rec.audio.pause();
+  } catch { /* ignore */ }
+  // Re-mute so a future direct audio.play() (shouldn't happen, but
+  // defensive) doesn't leak sound from this row.
+  try { rec.audio.muted = true; } catch { /* ignore */ }
+}
+
+function startPlayback(stem) {
+  const rec = rows.get(stem);
+  if (!rec) return;
+  // Enforce single-playback invariant — if another stem is playing,
+  // pause it first so the two don't overlap.
+  if (playingStem && playingStem !== stem) stopPlayback();
+  try { rec.audio.muted = false; } catch { /* ignore */ }
+  playingStem = stem;
+  setPlayingDOM(stem, true);
+  try {
+    const p = rec.peaks?.player?.play
+      ? rec.peaks.player.play()
+      : rec.audio.play();
+    // play() returns a Promise; an autoplay rejection (unlikely after a
+    // user gesture, but possible) should unwind the playing state.
+    if (p && typeof p.catch === "function") {
+      p.catch((err) => {
+        console.warn(`play() rejected for stem "${stem}":`, err);
+        if (playingStem === stem) {
+          playingStem = null;
+          setPlayingDOM(stem, false);
+          try { rec.audio.muted = true; } catch { /* ignore */ }
+        }
+      });
+    }
+  } catch (err) {
+    console.warn(`play() threw for stem "${stem}":`, err);
+    playingStem = null;
+    setPlayingDOM(stem, false);
+    try { rec.audio.muted = true; } catch { /* ignore */ }
+  }
+}
+
+function togglePlay(stem) {
+  if (!stem || !rows.has(stem)) return;
+  if (playingStem === stem) stopPlayback();
+  else startPlayback(stem);
+}
+
+function onWaveformsKeyDown(e) {
+  if (e.code !== "Space") return;
+  if (e.repeat) return;
+  // Don't hijack space when the user is typing somewhere.
+  const tgt = e.target;
+  if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
+  if (!activeStem || !rows.has(activeStem)) return;
+  e.preventDefault();
+  togglePlay(activeStem);
+}
+
+function installKeydownHandler() {
+  if (keydownHandler) return;
+  const waveformsEl = document.getElementById("waveforms");
+  if (!waveformsEl) return;
+  // Container needs tabindex so it (and its descendants) can hold
+  // focus — without focus, keydown won't fire on the container.
+  if (!waveformsEl.hasAttribute("tabindex")) waveformsEl.setAttribute("tabindex", "-1");
+  keydownHandler = onWaveformsKeyDown;
+  waveformsEl.addEventListener("keydown", keydownHandler);
+}
+
 function attachRowClickHandlers() {
   for (const stem of STEM_ORDER) {
     const row = $row(stem);
     if (!row) continue;
-    // Make rows keyboard-operable: focusable + Enter/Space activate +
-    // aria-pressed reflects the active state for screen readers.
+    // Make rows keyboard-operable: focusable + Enter activates +
+    // aria-pressed reflects the active state for screen readers. Space
+    // is reserved for play/pause (see installKeydownHandler).
     // role="button" matches the click-to-activate semantics; aria-pressed
     // is a toggle indicator, which fits "only one row is active at a time"
     // without forcing us into a full radio-group pattern.
@@ -427,8 +540,21 @@ function attachRowClickHandlers() {
       if (stem === activeStem) return;
       setActiveStem(stem);
     };
+    // Double-click: select (if needed) then toggle playback on this stem.
+    // Same semantics as spacebar after the dblclick — pause if it was
+    // already playing, otherwise start.
+    row.ondblclick = (e) => {
+      // Suppress the browser's default dblclick side-effect (text
+      // selection on the row label) — does NOT stop propagation, but
+      // no ancestor listens for dblclick today so that's not needed.
+      e.preventDefault();
+      if (stem !== activeStem) setActiveStem(stem);
+      togglePlay(stem);
+    };
+    // Space is now reserved for play/pause (handled at the #waveforms
+    // container); Enter still selects the focused row for keyboard users.
     row.onkeydown = (e) => {
-      if (e.key !== "Enter" && e.key !== " ") return;
+      if (e.key !== "Enter") return;
       e.preventDefault();
       if (stem === activeStem) return;
       setActiveStem(stem);
@@ -453,11 +579,13 @@ export async function mount({ stems, segments }) {
   activeStem = "other";
   currentSegments = segments ?? [];
 
-  // Stamp data-active on every row up front so CSS dim states paint
-  // before any async peaks init resolves.
+  // Stamp data-active + data-playing on every row up front so CSS
+  // states paint before any async peaks init resolves.
   for (const stem of STEM_ORDER) {
     const row = $row(stem);
-    if (row) row.setAttribute("data-active", stem === activeStem ? "true" : "false");
+    if (!row) continue;
+    row.setAttribute("data-active", stem === activeStem ? "true" : "false");
+    row.setAttribute("data-playing", "false");
   }
 
   // Build a name -> path map from the stems result.
@@ -477,6 +605,7 @@ export async function mount({ stems, segments }) {
   attachRowClickHandlers();
   installResizeObserver();
   installWheelHandler();
+  installKeydownHandler();
 }
 
 /** Replace the segment overlays on every instance. Used when structure
@@ -494,41 +623,35 @@ export function setSegments(segments) {
   }
 }
 
-/** Flip which stem is the active (audible + seekable) one. */
+/** Flip which stem is the active (seekable / inspected) one.
+ *
+ * Selection-only — does NOT pause, mute, or rewind any audio. Playback
+ * is owned by playingStem and only mutated by start/stopPlayback.
+ * Clicking a different row while a stem is playing leaves that stem
+ * playing; the new selection just becomes the seek target.
+ */
 export function setActiveStem(name) {
   if (!STEM_ORDER.includes(name)) return;
   if (name === activeStem) return;
 
-  // Pause + mute the previous active, unmute + enable seek on the new.
-  const prev = activeStem;
   activeStem = name;
 
   for (const stem of STEM_ORDER) {
     const row = $row(stem);
     const rec = rows.get(stem);
-    if (!row || !rec) continue;
+    if (!row) continue;
     const isActive = stem === activeStem;
     row.setAttribute("data-active", isActive ? "true" : "false");
     row.setAttribute("aria-pressed", isActive ? "true" : "false");
-    rec.audio.muted = !isActive;
-    if (!isActive) {
-      try { rec.audio.pause(); } catch { /* ignore */ }
-    }
+    if (!rec) continue;
+    // Only the active row can be seeked by clicking on its timeline —
+    // makes the "this is my inspection target" affordance clear without
+    // interfering with whichever row is currently audible.
     const view = rec.peaks.views.getView("zoomview");
     if (view) {
       try { view.enableSeek(isActive); } catch { /* ignore */ }
     }
   }
-
-  // Convenience: rewind the new active stem so the user hears it from
-  // the top, not from wherever the previous active stem's playhead was.
-  const newRec = rows.get(activeStem);
-  if (newRec) {
-    try { newRec.audio.currentTime = 0; } catch { /* ignore */ }
-  }
-  // No-op suppress unused warning if `prev` ever becomes useful (e.g.
-  // for a "was: drums, now: vocals" status line later).
-  void prev;
 }
 
 /** Full tear-down before mount() rebuilds or before the panel is hidden. */
@@ -546,6 +669,14 @@ export function destroy() {
     if (waveformsEl) waveformsEl.removeEventListener("wheel", wheelHandler);
     wheelHandler = null;
   }
+  if (keydownHandler) {
+    const waveformsEl = document.getElementById("waveforms");
+    if (waveformsEl) waveformsEl.removeEventListener("keydown", keydownHandler);
+    keydownHandler = null;
+  }
+  // Stop audio before peaks.destroy() so we don't leak playback past
+  // unmount; clears playingStem and any data-playing styling.
+  stopPlayback();
   hideTooltip();
   for (const { peaks, audio } of rows.values()) {
     try { peaks.destroy(); } catch { /* ignore */ }
@@ -557,10 +688,14 @@ export function destroy() {
   }
   rows.clear();
   activeStem = null;
+  playingStem = null;
   currentSegments = [];
   zoomSeconds = 0;
   for (const stem of STEM_ORDER) {
     const row = $row(stem);
-    if (row) row.setAttribute("data-active", "false");
+    if (row) {
+      row.setAttribute("data-active", "false");
+      row.setAttribute("data-playing", "false");
+    }
   }
 }

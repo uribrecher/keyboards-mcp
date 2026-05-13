@@ -2025,6 +2025,20 @@ body.bay--resizing iframe { pointer-events: none; }
   box-shadow: 0 0 8px -2px var(--c-amber-glow);
 }
 
+/* Playing state is independent of active: a row can be playing while a
+ * different row is selected for inspection. Use a green accent so the
+ * eye can distinguish "I'm hearing this" from "I'm inspecting this"
+ * (amber, above) at a glance. Cancels the [data-active="false"]
+ * dim-to-40% rule above so a playing-but-not-selected row stays bright. */
+.waveform-row[data-playing="true"] {
+  opacity: 1;
+  box-shadow: 0 0 8px -2px rgba(95, 255, 138, 0.8);
+}
+
+.waveform-row[data-playing="true"] .waveform-row__label {
+  color: #5fff8a;
+}
+
 .waveform-row:focus-visible {
   outline: 1px solid var(--c-amber);
   outline-offset: 1px;
