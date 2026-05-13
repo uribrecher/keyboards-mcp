@@ -257,6 +257,10 @@ async function initInstanceForRow(stem, stemPath, gen) {
         if (playingStem === stem) {
           playingStem = null;
           setPlayingDOM(stem, false);
+          // Restore the "only the playing stem is unmuted" invariant —
+          // mirrors stopPlayback's tail so a stray future audio.play()
+          // on this element can't leak sound.
+          try { audioEl.muted = true; } catch { /* ignore */ }
         }
       });
       // If segments arrived before this instance finished init, replay.
@@ -540,8 +544,9 @@ function attachRowClickHandlers() {
     // Same semantics as spacebar after the dblclick — pause if it was
     // already playing, otherwise start.
     row.ondblclick = (e) => {
-      // Don't let dblclick bubble up to anything that might also act on
-      // it (e.g. a parent panel collapser).
+      // Suppress the browser's default dblclick side-effect (text
+      // selection on the row label) — does NOT stop propagation, but
+      // no ancestor listens for dblclick today so that's not needed.
       e.preventDefault();
       if (stem !== activeStem) setActiveStem(stem);
       togglePlay(stem);
