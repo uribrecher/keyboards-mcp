@@ -571,6 +571,7 @@ async function refreshJobs() {
 
 // ─── Import flow ───────────────────────────────────────────────────
 async function onNewJob() {
+  if (serviceUp === false) return;
   if (!window.mockRunnerAPI?.openAudioImportDialog) return;
   const filePath = await window.mockRunnerAPI.openAudioImportDialog();
   if (!filePath) return;
@@ -608,8 +609,9 @@ async function onNewJob() {
     // Surface in the empty-state strip — for now just log + revert UI.
     alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    jobNewBtnEl.disabled = false;
-    jobNewBtnEl.textContent = "+ NEW JOB…";
+    const down = serviceUp === false;
+    jobNewBtnEl.disabled = down;
+    jobNewBtnEl.textContent = down ? "SERVICE DOWN" : "+ NEW JOB…";
     renderJobsList();
   }
 }
@@ -839,6 +841,13 @@ async function probeHealth() {
     healthEl.setAttribute("data-state", up ? "up" : "down");
   }
   if (healthLabelEl) healthLabelEl.textContent = up ? "service up" : "service down";
+  // The NEW JOB button is disabled while the service is down — importing
+  // requires the audio-analysis server to be reachable.
+  if (jobNewBtnEl) {
+    jobNewBtnEl.disabled = !up;
+    if (!up) jobNewBtnEl.textContent = "SERVICE DOWN";
+    else if (jobNewBtnEl.textContent === "SERVICE DOWN") jobNewBtnEl.textContent = "+ NEW JOB…";
+  }
   // The ANALYZE button's disabled state depends on serviceUp — re-render
   // the job detail so it picks up the new status without waiting for the
   // next selection change.
