@@ -6,6 +6,7 @@
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 body{margin:0;background:var(--cream);color:var(--body);
      font-family:Inter,system-ui,-apple-system,sans-serif;line-height:1.6}
 h1,h2,h3,.brand{font-family:Poppins,system-ui,sans-serif;color:var(--ink)}
