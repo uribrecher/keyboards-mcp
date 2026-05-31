@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>keyboards-mcp — Sounds &amp; Recreation</title>
+<meta name="description" content="MCP server for controlling MIDI keyboards from any AI agent — Nord Electro 5D, Roland JUNO-X, Prophet-6.">
+<meta property="og:title" content="keyboards-mcp — Sounds & Recreation">
+<meta property="og:description" content="MCP server for controlling MIDI keyboards from any AI agent.">
+<meta property="og:image" content="https://uribrecher.github.io/sounds-and-recreation/assets/img/hero.png">
+<link rel="icon" href="site-assets/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="site-assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="site-assets/favicon-16.png">
+<link rel="apple-touch-icon" href="site-assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site-assets/brand.css">
+<style>:root{--accent:#8b7cf0}</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="https://uribrecher.github.io/sounds-and-recreation/"><img src="site-assets/mark.webp" alt="Sounds & Recreation logo"> Sounds &amp; Recreation</a>
+  <div class="nav-links">
+    <a href="https://uribrecher.github.io/sounds-and-recreation/#repos">All repos</a>
+    <a class="ghbtn" href="https://github.com/uribrecher/keyboards-mcp">★ GitHub</a>
+  </div>
+</nav>
+
+<header class="repo-hero wrap">
+  <span class="lang">TypeScript / Node</span>
+  <h1>keyboards-mcp</h1>
+  <p class="lead">An MCP server that lets an AI agent control hardware MIDI keyboards — read and change synth parameters, load programs and songs, with pluggable model support and a mock device for hardware-free development.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/uribrecher/keyboards-mcp">★ View on GitHub</a>
+    <a class="btn ghost" href="https://github.com/uribrecher/keyboards-mcp#readme">Read the docs</a>
+  </div>
+</header>
+
+<section class="section">
+  <div class="wrap">
+    <div class="label">What it does</div>
+    <h2>Drive real synths from an AI agent</h2>
+    <p class="sub">Supports Nord Electro 5D, Roland JUNO-X, and Prophet-6 with model auto-detection. Tools are thin wrappers — each keyboard device owns its logic. A connections broker manages MIDI port leases so concurrent agent sessions don't collide, and an Electron mock runner lets you develop without hardware.</p>
+    <div class="feat">
+      <div class="item"><strong>Connect &amp; discover</strong><br><code>connect_to_keyboard</code>, <code>list_midi_devices</code>, <code>is_connected</code></div>
+      <div class="item"><strong>Read &amp; set parameters</strong><br><code>set_parameters</code>, <code>get_current_state</code>, <code>list_parameters</code></div>
+      <div class="item"><strong>Programs &amp; songs</strong><br><code>list_programs</code>, <code>load_program</code>, <code>load_song</code></div>
+      <div class="item"><strong>Backups</strong><br><code>extract_backup</code>, <code>get_last_backup_location</code></div>
+      <div class="item"><strong>Model-delegated design</strong><br>Add a keyboard by implementing its device — the MCP tools stay generic.</div>
+      <div class="item"><strong>Mock runner + broker</strong><br>Electron mock device with a model-specific web UI; an MCB broker shares ports across sessions.</div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap">
+    <div class="label">Quickstart</div>
+    <h2>Up and running</h2>
+    <div class="code"><pre><span class="c"># install &amp; build</span>
+npm install
+npm run build
+
+<span class="c"># start the connections broker</span>
+npm run mcb
+
+<span class="c"># optional: Electron mock device (no hardware needed)</span>
+npm run mock:runner</pre></div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="label">In the pipeline</div>
+    <h2>Where it fits</h2>
+    <div class="flow">
+      <span class="node">Audio</span>→<span class="node">Analysis</span>→<span class="node">Agent</span>→<span class="node">MIDI</span>→<span class="node on">Synth</span>
+    </div>
+    <p class="sub" style="margin-top:16px">keyboards-mcp is the final stage — it applies the matched sound to your hardware synth over MIDI.</p>
+    <div class="linkrow">
+      <a href="https://github.com/uribrecher/keyboards-mcp">GitHub</a>
+      <a href="https://github.com/uribrecher/keyboards-mcp/issues">Issues</a>
+      <a href="https://uribrecher.github.io/sounds-and-recreation/">← The collection</a>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="wrap">
+    <div class="brand"><img src="site-assets/mark.webp" alt=""> <span>Sounds &amp; Recreation</span></div>
+    Open-source audio recreation · GPL-3.0 · <a href="https://github.com/uribrecher">GitHub</a>
+  </div>
+</footer>
+
+</body>
+</html>
