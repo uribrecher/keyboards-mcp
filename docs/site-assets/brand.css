@@ -33,6 +33,7 @@ code{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
 .glow{position:absolute;top:-280px;left:50%;transform:translateX(-50%);width:980px;height:560px;
    background:radial-gradient(closest-side,color-mix(in srgb,var(--accent) 26%,transparent),
    color-mix(in srgb,var(--p2) 12%,transparent),transparent);filter:blur(6px);pointer-events:none;z-index:0}
+.hero>*:not(.glow){position:relative;z-index:1}
 
 /* ---- nav ---- */
 .nav{display:flex;align-items:center;justify-content:space-between;
@@ -107,7 +108,6 @@ code{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
    font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--mut);margin-top:8px}
 .flow .node{border:1px solid var(--line2);background:#fff;padding:9px 16px;border-radius:10px;color:var(--ink);font-weight:500}
 .flow .node.on{background:var(--grad);color:var(--on-accent);border-color:transparent;font-weight:700;box-shadow:0 6px 16px rgba(86,118,239,.25)}
-.flow .wrap-note{display:block;width:100%;text-align:center;margin-top:14px;font-family:Inter;color:var(--mut);font-size:14px}
 
 /* ---- architecture boxes ---- */
 .arch{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap;margin:8px 0 4px}
