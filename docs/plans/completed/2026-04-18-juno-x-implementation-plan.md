@@ -9,7 +9,7 @@
 **Tech Stack:** TypeScript, Node.js MIDI (easymidi), WebSocket, Electron (mock runner), vanilla HTML/CSS/JS (mock UI)
 
 **Spec:** `docs/plans/2026-04-18-juno-x-model-design.md`
-**MIDI Reference:** `docs/roland/JUNO-X MIDI Implementation.pdf`, `docs/roland/JUNO-X Parameter W.pdf`
+**MIDI Reference:** Roland JUNO-X *MIDI Implementation* and *Parameter Guide* — official manuals available from [Roland's JUNO-X support page](https://www.roland.com/global/support/by_product/juno-x/owners_manuals/) (not redistributed here; see [docs/roland/README.md](../../roland/README.md))
 **Architecture Notes:** `docs/roland/juno-x-midi-arch.md`
 
 ---

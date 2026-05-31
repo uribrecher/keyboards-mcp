@@ -7,7 +7,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-const DIR = resolve("~/test/keyboards-mcp/test_data/before_after");
+const DIR = resolve(process.env.PROGRAMS_DIR ?? "test_data/before_after");
 
 // ── Bit extraction ──────────────────────────────────────────────────────────
 

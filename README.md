@@ -147,4 +147,4 @@ See [docs/mock_runner.md](docs/mock_runner.md) for the full UI tour — tabs, la
 
 ## License
 
-Private project.
+Licensed under the GNU General Public License v3.0 (GPL-3.0-or-later). See [LICENSE](LICENSE).
