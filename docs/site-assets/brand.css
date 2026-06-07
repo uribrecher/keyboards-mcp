@@ -30,7 +30,7 @@ code{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
 .center{text-align:center}
 
 /* soft top glow */
-.glow{position:absolute;top:-280px;left:50%;transform:translateX(-50%);width:980px;height:560px;
+.glow{position:absolute;top:-280px;left:50%;transform:translateX(-50%);width:980px;max-width:100%;height:560px;
    background:radial-gradient(closest-side,color-mix(in srgb,var(--accent) 26%,transparent),
    color-mix(in srgb,var(--p2) 12%,transparent),transparent);filter:blur(6px);pointer-events:none;z-index:0}
 .hero>*:not(.glow){position:relative;z-index:1}
