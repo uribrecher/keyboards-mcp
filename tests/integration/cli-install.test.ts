@@ -31,7 +31,8 @@ describe("installDaemon", () => {
     assert.ok(existsSync(plist), "plist written");
     const xml = readFileSync(plist, "utf8");
     assert.match(xml, /<string>broker<\/string>/);
-    assert.match(xml, new RegExp(DAEMON_LABEL));
+    // Literal match — DAEMON_LABEL has '.' (regex wildcards), so don't use RegExp.
+    assert.ok(xml.includes(DAEMON_LABEL), "plist contains the daemon label");
 
     const verbs = calls.map((c) => c[1]); // each call is ["launchctl", <verb>, ...]
     assert.deepEqual(verbs, ["bootout", "bootstrap", "kickstart"]);

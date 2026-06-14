@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, sep } from "node:path";
 import { homedir, userInfo } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -49,7 +49,22 @@ function resolveCliPath(): string {
       "Reinstall with `npm i -g keyboards-mcp`.",
     );
   }
-  return realpathSync(entry);
+  const resolved = realpathSync(entry);
+  // launchd runs the daemon with plain `node`, which can't execute TypeScript.
+  // When installing from source (npx tsx src/cli/index.ts), map the .ts entry to
+  // its built dist/ JS so the LaunchAgent points at a node-runnable file.
+  if (resolved.endsWith(".ts") && resolved.includes(`${sep}src${sep}`)) {
+    const built = resolved
+      .replace(`${sep}src${sep}`, `${sep}dist${sep}`)
+      .replace(/\.ts$/, ".js");
+    if (!existsSync(built)) {
+      throw new Error(
+        `Built CLI not found at ${built}. Run \`npm run build\` before installing from source.`,
+      );
+    }
+    return built;
+  }
+  return resolved;
 }
 
 export interface InstallDeps {

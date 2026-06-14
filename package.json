@@ -7,8 +7,8 @@
   "bin": { "keyboards-mcp": "dist/cli/index.js" },
   "engines": { "node": ">=20" },
   "files": [
-    "dist/index.js",
-    "dist/server.js",
+    "dist/index.*",
+    "dist/server.*",
     "dist/cli/**",
     "dist/mcb/**",
     "dist/tools/**",

@@ -23,8 +23,8 @@ export function classifyBrokerState(input: {
 const REMEDIATION: Record<BrokerState, string> = {
   "healthy": "Broker daemon is running. You're good to go.",
   "loaded-but-unreachable":
-    "The daemon is installed but not answering. Check the log at ~/.mcb/mcb.log, " +
-    "then reinstall with `keyboards-mcp install`.",
+    "The daemon is installed but not answering. Check the broker log (usually " +
+    "~/.mcb/mcb.log), then reinstall with `keyboards-mcp install`.",
   "not-installed":
     "The broker daemon is not installed. Run `keyboards-mcp install`.",
 };

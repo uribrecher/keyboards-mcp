@@ -100,7 +100,8 @@ kept alive automatically — you never run it by hand. Ask your agent to `connec
 ```bash
 npm install
 npm run build
-npx tsx src/cli/index.ts install   # or: keyboards-mcp install after a global link
+node dist/cli/index.js install   # run the BUILT entry so the daemon is node-runnable
+                                 # (or: keyboards-mcp install after a global link)
 ```
 
 `keyboards-mcp broker` runs the broker in the foreground (the daemon's entry point); the headless

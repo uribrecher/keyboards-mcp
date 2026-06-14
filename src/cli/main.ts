@@ -35,10 +35,10 @@ Usage:
   keyboards-mcp help            Show this help
 `;
 
-function requireMacOS(): boolean {
+function requireMacOS(command: string): boolean {
   if (process.platform === "darwin") return true;
   console.error(
-    `keyboards-mcp install is only supported on macOS (launchd) right now. ` +
+    `keyboards-mcp ${command} is only supported on macOS (launchd) right now. ` +
     `Detected platform: ${process.platform}. ` +
     `Run the broker manually with \`keyboards-mcp broker\` for now.`,
   );
@@ -54,13 +54,16 @@ export async function main(): Promise<void> {
       // Side-effect import: mcb/index.js starts listening and holds the loop.
       await import("../mcb/index.js");
       break;
-    case "install":
-      if (!requireMacOS()) { process.exitCode = 1; break; }
-      await installDaemon();
+    case "install": {
+      if (!requireMacOS("install")) { process.exitCode = 1; break; }
+      const healthy = await installDaemon();
       printConfigSnippet();
+      // Propagate failure so automation/users see the broker never went healthy.
+      if (!healthy) process.exitCode = 1;
       break;
+    }
     case "uninstall":
-      if (!requireMacOS()) { process.exitCode = 1; break; }
+      if (!requireMacOS("uninstall")) { process.exitCode = 1; break; }
       await uninstallDaemon();
       break;
     case "doctor":

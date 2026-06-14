@@ -33,7 +33,10 @@ describe("renderLaunchAgentPlist", () => {
   });
 
   it("uses the daemon label", () => {
-    assert.match(xml, new RegExp(`<key>Label</key>\\s*<string>${DAEMON_LABEL}</string>`));
+    // Structure via regex; exact label via a literal string match (DAEMON_LABEL
+    // contains '.' which are regex wildcards — don't interpolate it into a RegExp).
+    assert.match(xml, /<key>Label<\/key>\s*<string>/);
+    assert.ok(xml.includes(`<string>${DAEMON_LABEL}</string>`), "exact daemon label present");
   });
 
   it("invokes node, then the cli, then the broker subcommand", () => {
