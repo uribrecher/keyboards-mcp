@@ -112,11 +112,23 @@ Publishing to npm is automated by the **Release** GitHub Action (`.github/workfl
 Pushing a `vX.Y.Z` tag runs the full CI test suite and then publishes the package with build
 provenance — no manual `npm publish`.
 
-Auth uses **OIDC Trusted Publishing**, so there is no long-lived npm token to store or rotate
-(npm write tokens now expire after 90 days). One-time setup on npmjs.com → the package →
-**Settings → Trusted Publishing**: add a GitHub Actions publisher for repo `uribrecher/keyboards-mcp`,
-workflow `release.yml`. (If the package doesn't exist on npm yet, bootstrap it with a single manual
-`npm login && npm publish --access public` first, then configure trusted publishing.)
+Auth uses **OIDC Trusted Publishing** — no long-lived npm token to store or rotate (npm write tokens
+now expire after 90 days). Trusted publishing is configured **per package**, so it only appears once
+the package exists on npm. One-time setup:
+
+1. **Bootstrap the package once** — until you do this there is no package page (and no Trusted
+   Publishing settings): `npm login && npm publish --access public` from a clean checkout.
+2. On **npmjs.com → Packages → `keyboards-mcp` → Settings → Trusted publishing**, add a **GitHub
+   Actions** publisher:
+   - Organization or user: `uribrecher`
+   - Repository: `keyboards-mcp`
+   - Workflow filename: `release.yml`
+   - Allowed actions: **`npm publish`** (required for publishers created after 2026-05-20)
+3. _(Recommended)_ In the package's access settings, require 2FA and disallow classic tokens.
+
+Trusted publishing requires **npm ≥ 11.5.1** and **Node ≥ 22.14.0** — the workflow upgrades npm and
+runs on Node 22 to satisfy this. After setup, every tagged release publishes with no token and
+provenance is attested automatically.
 
 To cut a release:
 
