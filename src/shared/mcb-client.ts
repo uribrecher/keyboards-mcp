@@ -458,7 +458,7 @@ function call(method: string, path: string, body?: unknown, headers: Record<stri
         });
       },
     );
-    req.on("error", (err) => reject(new MCBError(0, "mcb-unreachable", `MCB unreachable at ${describeTarget(target)}: ${err.message}. Is MCB running? (npm run mcb)`)));
+    req.on("error", (err) => reject(new MCBError(0, "mcb-unreachable", `MCB unreachable at ${describeTarget(target)}: ${err.message}. Is the keyboards-mcp broker daemon running? Run 'keyboards-mcp doctor'.`)));
     if (body !== undefined) req.write(JSON.stringify(body));
     req.end();
   });

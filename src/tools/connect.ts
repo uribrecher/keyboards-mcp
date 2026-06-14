@@ -45,7 +45,8 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
         "Required: `port` (exact OS port name or registered mock label) and `model` (e.g. nord-electro-5d). " +
         "Optional: `with_shadow` (a mock label or OS port to mirror MIDI to — typical pattern is real hw + mock UI), " +
         "`input_port` (the OS port the keyboard sends from), `label`, channel options.\n\n" +
-        "MCB must be running for this tool to work (npm run mcb).",
+        "The keyboards-mcp broker daemon must be running. If a connection fails with " +
+        "mcb-unreachable, run 'keyboards-mcp doctor' (or 'keyboards-mcp install').",
       inputSchema: {
         port: z
           .string()
