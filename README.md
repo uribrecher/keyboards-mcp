@@ -65,44 +65,46 @@ Create a directory under `src/keyboard_models/<manufacturer>/<model>/` with:
 
 The model is auto-discovered at startup. See `src/keyboard_models/nord/electro_5d/` for a CC-based reference implementation, or `src/keyboard_models/roland/juno_x/` for a model using both CC and Roland DT1/RQ1 SysEx addressing.
 
-## Setup
+## Quick Start (macOS)
 
-### Prerequisites
-
-- Node.js 20+
-- A supported keyboard connected via USB (or use the mock device)
-
-### Install and build
+**Prerequisites:** macOS, Node.js 20+, and a supported keyboard connected via USB.
 
 ```bash
-npm install
-npm run build
+npm install -g keyboards-mcp     # 1. install
+keyboards-mcp install            # 2. install + start the broker daemon (launchd)
 ```
 
-### Run the connections broker
-
-`connect_to_keyboard` claims a port lease from MCB before opening MIDI, so MCB must be running:
-
-```bash
-npm run mcb
-```
-
-MCB listens on a Unix domain socket at `~/.mcb/sock` (override with `MCB_SOCKET`). Leave it running in its own terminal alongside the MCP server. CI runs that set `MIDI_TRANSPORT=ws` (docker-compose, headless tests) bypass MCB.
-
-### Configure in your MCP client
-
-Add to your MCP settings (e.g. `.claude/settings.json` for Claude Code):
+Then add this to your MCP client config (e.g. `.mcp.json` / Claude Code settings) and restart the client:
 
 ```json
 {
   "mcpServers": {
     "keyboards-mcp": {
-      "command": "node",
-      "args": ["<path-to-repo>/dist/index.js"]
+      "command": "keyboards-mcp"
     }
   }
 }
 ```
+
+That's it. The **midi-connections-broker (MCB)** is now a launchd daemon that starts at login and is
+kept alive automatically — you never run it by hand. Ask your agent to `connect_to_keyboard`.
+
+- Check broker status anytime: `keyboards-mcp doctor` (logs at `~/.mcb/mcb.log`).
+- Remove the daemon: `keyboards-mcp uninstall`.
+
+> The no-hardware **Mock Runner** (a visual device simulator) is packaged separately — see the
+> mock-runner packaging issue. This package targets owners of real MIDI hardware.
+
+## Development (from source)
+
+```bash
+npm install
+npm run build
+npx tsx src/cli/index.ts install   # or: keyboards-mcp install after a global link
+```
+
+`keyboards-mcp broker` runs the broker in the foreground (the daemon's entry point); the headless
+mock and the Electron Mock Runner remain available via `npm run mock:headless` / `npm run mock:runner`.
 
 ## Usage
 
