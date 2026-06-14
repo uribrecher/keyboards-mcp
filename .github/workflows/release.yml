@@ -1,0 +1,80 @@
+name: Release
+
+# Publishes keyboards-mcp to npm when a version tag (vX.Y.Z) is pushed.
+# Also runnable on demand from the Actions tab (workflow_dispatch).
+#
+# One-time setup: add an npm *automation* token as the repo secret NPM_TOKEN
+#   npmjs.com -> Access Tokens -> Generate New Token -> "Automation"
+#   GitHub repo -> Settings -> Secrets and variables -> Actions -> New secret: NPM_TOKEN
+# The token authenticates the publish; build provenance is attested separately
+# via GitHub OIDC (the id-token permission below) — no token needed for that.
+#
+# To cut a release: bump "version" in package.json, commit to main, then
+#   git tag "v$(node -p "require('./package.json').version")" && git push origin --tags
+#
+# Future hardening: npm Trusted Publishing (OIDC) can replace NPM_TOKEN once the
+# package exists on npm — configure a trusted publisher for it and drop the secret.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  # Manual runs publish package.json's CURRENT version as-is (no tag/version
+  # coupling, and the tag-match check below is skipped). Use sparingly — prefer
+  # tagging. npm rejects republishing an existing version, so this is fail-safe.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # required for npm provenance attestation
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false   # never interrupt an in-flight publish
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Match the Dockerfile / CI Node major.
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      - name: Install dependencies (for the publish build)
+        run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
+
+      - name: Verify tag matches package.json version
+        if: github.event_name == 'push'
+        run: |
+          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          # GITHUB_REF_NAME is the tag name; read it as an env var (not via ${{ }})
+          # to avoid any script-injection from the ref.
+          if [ "$GITHUB_REF_NAME" != "$PKG_VERSION" ]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' does not match package.json version '$PKG_VERSION'. Bump package.json or fix the tag."
+            exit 1
+          fi
+          echo "Releasing $PKG_VERSION"
+
+      # Gate on the SAME suite CI runs on every PR — full unit + integration + e2e
+      # in Docker with MIDI_TRANSPORT=ws (the container path that skips easymidi).
+      # Don't publish on anything weaker than CI. The 90% coverage gate is
+      # intentionally NOT run here so a pre-existing coverage gap can't block a release.
+      - name: Run tests (same Docker suite as CI)
+        run: docker compose -f docker-compose.test.yml run --rm test
+
+      - name: Cleanup test containers
+        if: always()
+        run: docker compose -f docker-compose.test.yml down
+
+      # `npm publish` runs the `prepublishOnly` script (npm run build) first, so
+      # the tarball always ships a fresh dist/. --access public covers both an
+      # unscoped name and a scoped @user/keyboards-mcp name.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
