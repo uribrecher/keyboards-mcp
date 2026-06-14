@@ -65,43 +65,78 @@ Create a directory under `src/keyboard_models/<manufacturer>/<model>/` with:
 
 The model is auto-discovered at startup. See `src/keyboard_models/nord/electro_5d/` for a CC-based reference implementation, or `src/keyboard_models/roland/juno_x/` for a model using both CC and Roland DT1/RQ1 SysEx addressing.
 
-## Setup
+## Quick Start (macOS)
 
-### Prerequisites
-
-- Node.js 20+
-- A supported keyboard connected via USB (or use the mock device)
-
-### Install and build
+**Prerequisites:** macOS, Node.js 20+, and a supported keyboard connected via USB.
 
 ```bash
-npm install
-npm run build
+npm install -g keyboards-mcp     # 1. install
+keyboards-mcp install            # 2. install + start the broker daemon (launchd)
 ```
 
-### Run the connections broker
-
-`connect_to_keyboard` claims a port lease from MCB before opening MIDI, so MCB must be running:
-
-```bash
-npm run mcb
-```
-
-MCB listens on a Unix domain socket at `~/.mcb/sock` (override with `MCB_SOCKET`). Leave it running in its own terminal alongside the MCP server. CI runs that set `MIDI_TRANSPORT=ws` (docker-compose, headless tests) bypass MCB.
-
-### Configure in your MCP client
-
-Add to your MCP settings (e.g. `.claude/settings.json` for Claude Code):
+Then add this to your MCP client config (e.g. `.mcp.json` / Claude Code settings) and restart the client:
 
 ```json
 {
   "mcpServers": {
     "keyboards-mcp": {
-      "command": "node",
-      "args": ["<path-to-repo>/dist/index.js"]
+      "command": "keyboards-mcp"
     }
   }
 }
+```
+
+That's it. The **midi-connections-broker (MCB)** is now a launchd daemon that starts at login and is
+kept alive automatically — you never run it by hand. Ask your agent to `connect_to_keyboard`.
+
+- Check broker status anytime: `keyboards-mcp doctor` (logs at `~/.mcb/mcb.log`).
+- Remove the daemon: `keyboards-mcp uninstall`.
+
+> The no-hardware **Mock Runner** (a visual device simulator) is packaged separately — see the
+> mock-runner packaging issue. This package targets owners of real MIDI hardware.
+
+## Development (from source)
+
+```bash
+npm install
+npm run build
+node dist/cli/index.js install   # run the BUILT entry so the daemon is node-runnable
+                                 # (or: keyboards-mcp install after a global link)
+```
+
+`keyboards-mcp broker` runs the broker in the foreground (the daemon's entry point); the headless
+mock and the Electron Mock Runner remain available via `npm run mock:headless` / `npm run mock:runner`.
+
+## Releasing
+
+Publishing to npm is automated by the **Release** GitHub Action (`.github/workflows/release.yml`).
+Pushing a `vX.Y.Z` tag runs the full CI test suite and then publishes the package with build
+provenance — no manual `npm publish`.
+
+Auth uses **OIDC Trusted Publishing** — no long-lived npm token to store or rotate (npm write tokens
+now expire after 90 days). Trusted publishing is configured **per package**, so it only appears once
+the package exists on npm. One-time setup:
+
+1. **Bootstrap the package once** — until you do this there is no package page (and no Trusted
+   Publishing settings): `npm login && npm publish --access public` from a clean checkout.
+2. On **npmjs.com → Packages → `keyboards-mcp` → Settings → Trusted publishing**, add a **GitHub
+   Actions** publisher:
+   - Organization or user: `uribrecher`
+   - Repository: `keyboards-mcp`
+   - Workflow filename: `release.yml`
+   - Allowed actions: **`npm publish`** (required for publishers created after 2026-05-20)
+3. _(Recommended)_ In the package's access settings, require 2FA and disallow classic tokens.
+
+Trusted publishing requires **npm ≥ 11.5.1** and **Node ≥ 22.14.0** — the workflow upgrades npm and
+runs on Node 22 to satisfy this. After setup, every tagged release publishes with no token and
+provenance is attested automatically.
+
+To cut a release:
+
+```bash
+# bump "version" in package.json, commit to main, then:
+git tag "v$(node -p "require('./package.json').version")"
+git push origin --tags
 ```
 
 ## Usage
