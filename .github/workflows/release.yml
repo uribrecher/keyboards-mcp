@@ -84,7 +84,7 @@ jobs:
 
       # OIDC trusted publishing: no NODE_AUTH_TOKEN. `npm publish` runs the
       # prepublishOnly script (npm run build) first, so the tarball always ships a
-      # fresh dist/. Provenance is generated automatically under trusted publishing;
-      # --access public covers both an unscoped and a scoped @user/keyboards-mcp name.
+      # fresh dist/. Provenance is generated automatically under trusted publishing.
+      # (--access public is a harmless no-op for the unscoped, public keyboards-mcp.)
       - name: Publish to npm
         run: npm publish --provenance --access public
