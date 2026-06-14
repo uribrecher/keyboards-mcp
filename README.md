@@ -106,6 +106,26 @@ npx tsx src/cli/index.ts install   # or: keyboards-mcp install after a global li
 `keyboards-mcp broker` runs the broker in the foreground (the daemon's entry point); the headless
 mock and the Electron Mock Runner remain available via `npm run mock:headless` / `npm run mock:runner`.
 
+## Releasing
+
+Publishing to npm is automated by the **Release** GitHub Action (`.github/workflows/release.yml`).
+Pushing a `vX.Y.Z` tag runs the full CI test suite and then publishes the package with build
+provenance — no manual `npm publish`.
+
+Auth uses **OIDC Trusted Publishing**, so there is no long-lived npm token to store or rotate
+(npm write tokens now expire after 90 days). One-time setup on npmjs.com → the package →
+**Settings → Trusted Publishing**: add a GitHub Actions publisher for repo `uribrecher/keyboards-mcp`,
+workflow `release.yml`. (If the package doesn't exist on npm yet, bootstrap it with a single manual
+`npm login && npm publish --access public` first, then configure trusted publishing.)
+
+To cut a release:
+
+```bash
+# bump "version" in package.json, commit to main, then:
+git tag "v$(node -p "require('./package.json').version")"
+git push origin --tags
+```
+
 ## Usage
 
 ### MCP tools
