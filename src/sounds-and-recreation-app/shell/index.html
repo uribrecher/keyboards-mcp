@@ -388,18 +388,19 @@
   </div>
 
   <!--
-    Bare-specifier import map for @sounds-and-recreation/agent-client.
-    The path is relative to this index.html (src/sounds-and-recreation-app/shell/) and
-    points at the file: dep symlinked under the repo's node_modules.
-    See plan #12 — caveats: file: dep + import map don't survive a
-    packaged Electron .app, the macOS packager will need to copy
-    client-sdk/dist/ next to the renderer and rewrite this URL.
+    Bare-specifier import map for @sounds-and-recreation/agent-client and marked.
+    Both are devDependencies, which electron-builder prunes from the packaged
+    .app — so (like peaks/konva/waveform-data) they are VENDORED into
+    shell/vendor/ and the import map points at those local copies. marked is
+    copied by `npm run copy:peaks-vendor`; the agent-client client-sdk/dist by
+    `npm run copy:agent-vendor` (runs after `build:sdk`). vendor/ is gitignored.
+    See plan #12 + issue #126.
   -->
   <script type="importmap">
   {
     "imports": {
-      "@sounds-and-recreation/agent-client": "../../../node_modules/@sounds-and-recreation/agent-client/dist/index.js",
-      "marked": "../../../node_modules/marked/lib/marked.esm.js"
+      "@sounds-and-recreation/agent-client": "vendor/agent-client/index.js",
+      "marked": "vendor/marked.esm.js"
     }
   }
   </script>

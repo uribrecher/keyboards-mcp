@@ -22,3 +22,22 @@ test("sar:dist script and electron-builder dev dep are present", () => {
   assert.match(pkg.scripts?.["sar:dist"] ?? "", /electron-builder/);
   assert.ok(pkg.devDependencies?.["electron-builder"], "electron-builder must be a devDependency");
 });
+
+test("renderer import map points at vendored deps (not node_modules — which electron-builder prunes)", () => {
+  const indexHtml = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "sounds-and-recreation-app", "shell", "index.html"),
+    "utf8",
+  );
+  // The packaged .app must resolve these from shell/vendor/ (bundled via the
+  // files glob), NOT from ../../../node_modules (devDeps, which electron-builder
+  // prunes — leaving the renderer's app.js unable to load). See #126.
+  assert.match(indexHtml, /"marked":\s*"vendor\/marked\.esm\.js"/);
+  assert.match(indexHtml, /"@sounds-and-recreation\/agent-client":\s*"vendor\/agent-client\/index\.js"/);
+  assert.doesNotMatch(indexHtml, /node_modules\/(marked|@sounds-and-recreation)/);
+});
+
+test("vendor copy scripts cover marked + agent-client, wired into the app build", () => {
+  assert.match(pkg.scripts?.["copy:peaks-vendor"] ?? "", /marked\.esm\.js/);
+  assert.match(pkg.scripts?.["copy:agent-vendor"] ?? "", /agent-client/);
+  assert.match(pkg.scripts?.["presar:dist"] ?? "", /copy:agent-vendor/);
+});
