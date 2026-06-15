@@ -1,6 +1,6 @@
 {
   "name": "keyboards-mcp",
-  "description": "Control MIDI hardware synthesizers (Nord Electro 5D, Roland JUNO-X, Prophet-6) from any AI agent: read and change parameters, load programs and set-list songs, browse extracted backups, plus a no-hardware mock device. Note: a one-time `keyboards-mcp install` sets up the MIDI Connections Broker daemon (macOS/launchd).",
+  "description": "Control MIDI hardware synthesizers (Nord Electro 5D, Roland JUNO-X, Prophet-6) from any AI agent: read and change parameters, load programs and set-list songs, and browse extracted backups. Connecting to hardware needs a one-time `keyboards-mcp install` (MIDI Connections Broker daemon, macOS/launchd); the visual no-hardware Mock Runner ships separately.",
   "version": "2.0.0",
   "author": {
     "name": "Uri Brecher",
@@ -20,11 +20,11 @@
     "prophet-6"
   ],
   "mcpServers": {
-    "keyboards": {
+    "keyboards-mcp": {
       "command": "npx",
       "args": [
         "-y",
-        "keyboards-mcp"
+        "keyboards-mcp@2.0.0"
       ]
     }
   }
