@@ -8,7 +8,7 @@
   },
   "homepage": "https://uribrecher.github.io/keyboards-mcp/",
   "repository": "https://github.com/uribrecher/keyboards-mcp",
-  "license": "GPL-3.0",
+  "license": "GPL-3.0-or-later",
   "keywords": [
     "mcp",
     "midi",
