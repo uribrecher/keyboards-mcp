@@ -16,6 +16,7 @@
     "dist/midi/**",
     "dist/keyboard_models/**",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
