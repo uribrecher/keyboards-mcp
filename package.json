@@ -4,8 +4,12 @@
   "description": "MCP server for controlling MIDI keyboards (Nord Electro 5D and more)",
   "type": "module",
   "main": "dist/index.js",
-  "bin": { "keyboards-mcp": "dist/cli/index.js" },
-  "engines": { "node": ">=20" },
+  "bin": {
+    "keyboards-mcp": "dist/cli/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "files": [
     "dist/index.*",
     "dist/server.*",
@@ -60,6 +64,7 @@
     "@types/node": "^20.0.0",
     "@types/ws": "^8.18.1",
     "electron": "^41.1.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.39.4",
     "konva": "^9.3.22",
     "marked": "^18.0.3",
@@ -74,8 +79,12 @@
     "appId": "io.sounds-and-recreation",
     "productName": "Sounds and Recreation",
     "asar": false,
-    "directories": { "output": "dist-app" },
-    "extraMetadata": { "main": "dist/sounds-and-recreation-app/main.js" },
+    "directories": {
+      "output": "dist-app"
+    },
+    "extraMetadata": {
+      "main": "dist/sounds-and-recreation-app/main.js"
+    },
     "files": [
       "dist/sounds-and-recreation-app/**",
       "dist/shared/**",
@@ -87,7 +96,9 @@
       "src/keyboard_models/**/web/**",
       "package.json"
     ],
-    "mac": { "target": "dir" },
+    "mac": {
+      "target": "dir"
+    },
     "fileAssociations": [
       {
         "ext": "mockrack",
