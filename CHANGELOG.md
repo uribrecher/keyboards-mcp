@@ -9,6 +9,11 @@ Releases are published to npm automatically when a `vX.Y.Z` tag is pushed (see
 
 ## [Unreleased]
 
+### Changed
+- Renamed the Electron desktop app from "Mock Runner" to **Sounds and Recreation**
+  and added `npm run sar:dist` to build a standalone, unsigned `Sounds and Recreation.app`
+  (UI facade + in-process mock keyboards). Internal mock/`.mockrack` formats unchanged. (#126)
+
 ## [2.0.0] - 2026-06-14
 
 First release published to npm. (Earlier `1.x` development was never published.)
