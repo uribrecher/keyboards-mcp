@@ -24,19 +24,20 @@
     "LICENSE"
   ],
   "scripts": {
-    "copy:peaks-vendor": "mkdir -p src/sounds-and-recreation-app/shell/vendor && cp node_modules/peaks.js/dist/peaks.ext.min.js src/sounds-and-recreation-app/shell/vendor/peaks.min.js && cp node_modules/konva/konva.min.js src/sounds-and-recreation-app/shell/vendor/konva.min.js && cp node_modules/waveform-data/dist/waveform-data.min.js src/sounds-and-recreation-app/shell/vendor/waveform-data.min.js",
+    "copy:peaks-vendor": "mkdir -p src/sounds-and-recreation-app/shell/vendor && cp node_modules/peaks.js/dist/peaks.ext.min.js src/sounds-and-recreation-app/shell/vendor/peaks.min.js && cp node_modules/konva/konva.min.js src/sounds-and-recreation-app/shell/vendor/konva.min.js && cp node_modules/waveform-data/dist/waveform-data.min.js src/sounds-and-recreation-app/shell/vendor/waveform-data.min.js && cp node_modules/marked/lib/marked.esm.js src/sounds-and-recreation-app/shell/vendor/marked.esm.js",
+    "copy:agent-vendor": "mkdir -p src/sounds-and-recreation-app/shell/vendor/agent-client && cp -R node_modules/@sounds-and-recreation/agent-client/dist/. src/sounds-and-recreation-app/shell/vendor/agent-client/",
     "prebuild": "npm run copy:peaks-vendor",
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "build:sdk": "npm --prefix ../sound-recreation-agent/client-sdk run build",
-    "presar": "npm run build:sdk",
-    "presar:debug": "npm run build:sdk",
+    "presar": "npm run build:sdk && npm run copy:agent-vendor",
+    "presar:debug": "npm run build:sdk && npm run copy:agent-vendor",
     "sar": "electron dist/sounds-and-recreation-app/main.js",
     "sar:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 SAR_DEVTOOLS=1 electron --inspect=5858 dist/sounds-and-recreation-app/main.js 2>&1 | tee /tmp/sounds-and-recreation.log",
     "sar:headless": "tsx src/sounds-and-recreation-app/cli.ts",
-    "presar:dist": "npm run build:sdk && npm run copy:peaks-vendor",
+    "presar:dist": "npm run build:sdk && npm run copy:peaks-vendor && npm run copy:agent-vendor",
     "sar:dist": "tsc && electron-builder --dir",
     "mcb": "tsx src/mcb/index.ts",
     "generate:audio-analysis-types": "openapi-typescript src/audio-analysis-client/openapi.json -o src/audio-analysis-client/generated/openapi-types.ts",
@@ -94,8 +95,6 @@
       "src/sounds-and-recreation-app/shell/**",
       "src/sounds-and-recreation-app/preload.cjs",
       "src/keyboard_models/**/web/**",
-      "node_modules/marked/lib/**",
-      "node_modules/@sounds-and-recreation/agent-client/dist/**",
       "package.json"
     ],
     "mac": {
