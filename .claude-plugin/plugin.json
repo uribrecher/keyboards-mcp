@@ -18,5 +18,14 @@
     "nord",
     "roland",
     "prophet-6"
-  ]
+  ],
+  "mcpServers": {
+    "keyboards": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "keyboards-mcp"
+      ]
+    }
+  }
 }
