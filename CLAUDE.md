@@ -140,7 +140,7 @@ Electron app: model picker shell -> loads model's web UI. **Three-collaborator a
 
 UI ↔ handler protocol is `{type:"setParam", name, value, part?}`. External MIDI is decoded by the codec into `set_params` calls; Roland RQ1 is fulfilled entirely in the transport via `codec.paramsAtAddress` + `handler.get_params` + `codec.encodeBytes`. Bank-select MSB/LSB CC sequences are accumulated by the transport and finalized as `handler.load_program(bank, slot)` on the matching Program Change.
 
-See [docs/mock_runner.md](docs/mock_runner.md#transport-codec-handler--runtime-contract) for the full message-flow diagrams.
+See [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md#transport-codec-handler--runtime-contract) for the full message-flow diagrams.
 
 ## Key conventions
 

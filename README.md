@@ -49,8 +49,8 @@ The **midi-connections-broker (MCB)** is a separate long-running process that ow
 | `src/keyboard_models/` | Pluggable keyboard models (`<manufacturer>/<model>/`) |
 | `src/midi/` | MIDI I/O manager (implements MidiConnection) |
 | `src/mcb/` | midi-connections-broker — lease registry, session manager, HTTP-over-UDS API |
-| `src/sounds-and-recreation-app/` | Thin Electron mock engine — virtual MIDI In/Out + WS, source-aware routing; delegates all model logic to `MockHandler` (see [docs/mock_runner.md](docs/mock_runner.md#transport-codec-handler--runtime-contract)) |
-| `src/audio-analysis-client/` | TypeScript HTTP+SSE client for the sibling `audio-analysis-mcp` service. Consumed by the Sounds and Recreation app's [Song Analysis](docs/mock_runner.md#song-analysis) view |
+| `src/sounds-and-recreation-app/` | Thin Electron mock engine — virtual MIDI In/Out + WS, source-aware routing; delegates all model logic to `MockHandler` (see [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md#transport-codec-handler--runtime-contract)) |
+| `src/audio-analysis-client/` | TypeScript HTTP+SSE client for the sibling `audio-analysis-mcp` service. Consumed by the Sounds and Recreation app's [Song Analysis](docs/sounds-and-recreation.md#song-analysis) view |
 | `docs/plans/` | Implementation plans (numbered by execution order) |
 
 ### Adding a new keyboard model
@@ -179,7 +179,7 @@ cd ../audio-analysis-mcp
 uv run python -m audio_analysis_mcp.service
 ```
 
-See [docs/mock_runner.md](docs/mock_runner.md) for the full UI tour — tabs, labels and per-instance backups, the File menu and `.mockrack` save format, backup extraction, [Song Analysis](docs/mock_runner.md#song-analysis), and the chat console.
+See [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md) for the full UI tour — tabs, labels and per-instance backups, the File menu and `.mockrack` save format, backup extraction, [Song Analysis](docs/sounds-and-recreation.md#song-analysis), and the chat console.
 
 ### Standalone app build (no hardware)
 
