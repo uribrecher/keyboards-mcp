@@ -34,6 +34,7 @@ Moving the directory and fixing all path references is one cohesive change — t
 - Move: `src/mock-runner/` → `src/sounds-and-recreation-app/`
 - Modify: `src/sounds-and-recreation-app/main.ts:41-42` (was `src/mock-runner/main.ts`)
 - Modify: `package.json:23` (`copy:peaks-vendor` — runs on every build via `prebuild`)
+- Modify: `.gitignore:17` (the gitignored vendor path)
 - Modify: `tests/helpers/mock-process.ts:53` and `:95`
 - Modify: `tests/unit/transport-state-changed.test.ts:3`
 - Modify: `tests/unit/mock-runner-ui-emit.test.ts:18`
@@ -140,6 +141,20 @@ In `package.json`, line 23, replace every `src/mock-runner/shell/vendor` with `s
 ```
 
 *(Critical: `prebuild` → `copy:peaks-vendor` fires on every `npm run build`. If left at the old path it recreates a stray `src/mock-runner/shell/vendor` and the renamed app's vendored libs go missing. The already-vendored files moved with the `git mv` in Step 1, so this just keeps the refresh script pointed at the new location.)*
+
+Then, in `.gitignore`, line 17, replace:
+
+```gitignore
+src/mock-runner/shell/vendor/
+```
+
+with:
+
+```gitignore
+src/sounds-and-recreation-app/shell/vendor/
+```
+
+*(Critical: the vendored `peaks/konva/waveform-data` bundles are gitignored by this rule. Without updating it, the rebuilt bundles at the new path stop being ignored and would get committed as source.)*
 
 - [ ] **Step 7: Verify there are no remaining live `src/mock-runner` / `dist/mock-runner` path references**
 
@@ -680,7 +695,17 @@ grep -nE "Mock Runner|mock:runner|mock:headless" docs/mock_runner.md
 
 Line 1 `# Mock Runner` → `# Sounds and Recreation`. First paragraph "The Mock Runner is an Electron app that simulates one or more keyboards…" → "Sounds and Recreation is an Electron desktop app — the UI facade over the MCP servers and agent. It simulates one or more keyboards…". `npm run mock:runner` → `npm run sar`; `npm run mock:headless` → `npm run sar:headless`. **Keep** the `MockHandler`/`MidiCodec`/`MockTransport` and "MOCK RUNNER tab strip" → "SOUNDS AND RECREATION tab strip" where the chassis is described. Leave the historical diagrams' internal mechanics intact.
 
-- [ ] **Step 4: Verify the published npm tarball stays lean (Done-when check)**
+- [ ] **Step 4: Add a CHANGELOG.md entry for the rename (do not rewrite history)**
+
+Prepend a new entry at the top of `CHANGELOG.md` describing this change (rename to "Sounds and Recreation" + `sar:dist` app build). **Do not** edit the existing entry that mentions "the Electron Mock Runner and its heavy dependencies" — that is an accurate historical record of PR #125. Match the file's existing heading/bullet style; example bullet:
+
+```markdown
+- Renamed the Electron desktop app from "Mock Runner" to **Sounds and Recreation**
+  and added `npm run sar:dist` to build a standalone, unsigned `Sounds and Recreation.app`
+  (UI facade + in-process mock keyboards). Internal mock/`.mockrack` formats unchanged. (#126)
+```
+
+- [ ] **Step 5: Verify the published npm tarball stays lean (Done-when check)**
 
 Run:
 
@@ -691,7 +716,7 @@ npm pack --dry-run 2>&1 | grep -E "sounds-and-recreation-app|mock-runner|dist/in
 
 Expected: the tarball lists `dist/index.*`, `dist/cli/**`, etc. (the MCP server) and **no** `dist/sounds-and-recreation-app/**` and **no** `dist/mock-runner/**` entries — the app stays excluded from the published package, exactly as before.
 
-- [ ] **Step 5: Final repo-wide sweep for stray live product-name references**
+- [ ] **Step 6: Final repo-wide sweep for stray live product-name references**
 
 Run:
 
@@ -703,7 +728,7 @@ grep -rniE "mock[ -]?runner" --include='*.ts' --include='*.js' --include='*.json
 
 Expected: no unexpected hits. Any remaining match is either a deliberately-preserved identifier (filter it) or a missed product-name reference (fix it). Document what (if anything) is intentionally left.
 
-- [ ] **Step 6: Final gate — lint + type-check + unit**
+- [ ] **Step 7: Final gate — lint + type-check + unit**
 
 Run:
 
@@ -713,7 +738,7 @@ npm run lint && npm run test:check && npm run test:unit
 
 Expected: all green. *(Run `test:integration` / `test:e2e:mcb` in a GUI/CI-Docker session per the Preamble; they are not headless-runnable here.)*
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add -A
