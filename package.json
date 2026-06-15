@@ -94,6 +94,8 @@
       "src/sounds-and-recreation-app/shell/**",
       "src/sounds-and-recreation-app/preload.cjs",
       "src/keyboard_models/**/web/**",
+      "node_modules/marked/lib/**",
+      "node_modules/@sounds-and-recreation/agent-client/dist/**",
       "package.json"
     ],
     "mac": {
