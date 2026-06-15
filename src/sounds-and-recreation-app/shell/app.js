@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
- * Mock Runner shell — tab state, iframe routing, chat console.
+ * Sounds and Recreation shell — tab state, iframe routing, chat console.
  * ────────────────────────────────────────────────────────────── */
 
 import { AgentClient, isWebSearchResult } from "@sounds-and-recreation/agent-client";
@@ -1227,7 +1227,7 @@ api.onMenuExtractBackup?.(() => openBackupModal());
 api.onDirtyChanged?.(({ isDirty, currentFileName }) => {
   // `currentFileName` is precomputed by main via node:path.basename(),
   // so this works on Windows too (no manual `/` splitting).
-  const base = "Mock Runner";
+  const base = "Sounds and Recreation";
   document.title = currentFileName
     ? `${base} — ${currentFileName}${isDirty ? " •" : ""}`
     : base;
