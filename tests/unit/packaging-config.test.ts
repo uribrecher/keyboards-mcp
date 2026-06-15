@@ -23,17 +23,27 @@ test("sar:dist script and electron-builder dev dep are present", () => {
   assert.ok(pkg.devDependencies?.["electron-builder"], "electron-builder must be a devDependency");
 });
 
-test("renderer import map points at vendored deps (not node_modules — which electron-builder prunes)", () => {
+test("renderer import map: vendored + non-bare addresses (so the .app's app.js loads)", () => {
   const indexHtml = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "sounds-and-recreation-app", "shell", "index.html"),
     "utf8",
   );
-  // The packaged .app must resolve these from shell/vendor/ (bundled via the
-  // files glob), NOT from ../../../node_modules (devDeps, which electron-builder
-  // prunes — leaving the renderer's app.js unable to load). See #126.
-  assert.match(indexHtml, /"marked":\s*"vendor\/marked\.esm\.js"/);
-  assert.match(indexHtml, /"@sounds-and-recreation\/agent-client":\s*"vendor\/agent-client\/index\.js"/);
-  assert.doesNotMatch(indexHtml, /node_modules\/(marked|@sounds-and-recreation)/);
+  const m = indexHtml.match(/<script type="importmap">\s*([\s\S]*?)<\/script>/);
+  assert.ok(m, "importmap <script> not found in index.html");
+  const map = JSON.parse(m![1]) as { imports: Record<string, string> };
+
+  // Must resolve from shell/vendor/ (bundled via the files glob), NOT
+  // ../../../node_modules (devDeps that electron-builder prunes). See #126.
+  assert.equal(map.imports["marked"], "./vendor/marked.esm.js");
+  assert.equal(map.imports["@sounds-and-recreation/agent-client"], "./vendor/agent-client/index.js");
+
+  // CRITICAL: import-map ADDRESSES must be absolute or start with ./ ../ or /.
+  // A bare value like "vendor/x.js" is rejected by Chromium ("blocked by a null
+  // value") and the module fails to load — which left the .app's UI dead (#126).
+  for (const [spec, addr] of Object.entries(map.imports)) {
+    assert.match(addr, /^(\.{0,2}\/|https?:)/, `import-map address for "${spec}" is a bare specifier: "${addr}"`);
+    assert.doesNotMatch(addr, /node_modules/, `import-map address for "${spec}" must not point at node_modules: "${addr}"`);
+  }
 });
 
 test("vendor copy scripts cover marked + agent-client, wired into the app build", () => {
