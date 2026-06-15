@@ -36,5 +36,4 @@ First release published to npm. (Earlier `1.x` development was never published.)
 ### Removed
 - The consumer-facing `postinstall` hook, which would fail on a global install.
 
-[Unreleased]: https://github.com/uribrecher/keyboards-mcp/commits/main
 [2.0.0]: https://www.npmjs.com/package/keyboards-mcp/v/2.0.0
