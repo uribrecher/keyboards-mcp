@@ -463,9 +463,9 @@ function createWindow(): void {
   void mainWindow.loadFile(join(SHELL_DIR, "index.html"));
 
   // Open renderer DevTools in detached mode when launched via
-  // `npm run mock:runner:debug`. Detached so the DevTools window keeps
+  // `npm run sar:debug`. Detached so the DevTools window keeps
   // working even if the main window freezes.
-  if (process.env.MOCK_RUNNER_DEVTOOLS === "1") {
+  if (process.env.SAR_DEVTOOLS === "1") {
     mainWindow.webContents.openDevTools({ mode: "detach" });
   }
 

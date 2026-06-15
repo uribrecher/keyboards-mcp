@@ -27,11 +27,13 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "build:sdk": "npm --prefix ../sound-recreation-agent/client-sdk run build",
-    "premock:runner": "npm run build:sdk",
-    "premock:runner:debug": "npm run build:sdk",
-    "mock:runner": "electron dist/sounds-and-recreation-app/main.js",
-    "mock:runner:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 MOCK_RUNNER_DEVTOOLS=1 electron --inspect=5858 dist/sounds-and-recreation-app/main.js 2>&1 | tee /tmp/mock-runner.log",
-    "mock:headless": "tsx src/sounds-and-recreation-app/cli.ts",
+    "presar": "npm run build:sdk",
+    "presar:debug": "npm run build:sdk",
+    "sar": "electron dist/sounds-and-recreation-app/main.js",
+    "sar:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 SAR_DEVTOOLS=1 electron --inspect=5858 dist/sounds-and-recreation-app/main.js 2>&1 | tee /tmp/sounds-and-recreation.log",
+    "sar:headless": "tsx src/sounds-and-recreation-app/cli.ts",
+    "presar:dist": "npm run build:sdk && npm run copy:peaks-vendor",
+    "sar:dist": "tsc && electron-builder --dir",
     "mcb": "tsx src/mcb/index.ts",
     "generate:audio-analysis-types": "openapi-typescript src/audio-analysis-client/openapi.json -o src/audio-analysis-client/generated/openapi-types.ts",
     "lint": "eslint src/ tests/",
@@ -69,12 +71,27 @@
     "waveform-data": "^4.5.2"
   },
   "build": {
-    "appId": "io.mock-runner",
-    "productName": "Mock Runner",
+    "appId": "io.sounds-and-recreation",
+    "productName": "Sounds and Recreation",
+    "asar": false,
+    "directories": { "output": "dist-app" },
+    "extraMetadata": { "main": "dist/sounds-and-recreation-app/main.js" },
+    "files": [
+      "dist/sounds-and-recreation-app/**",
+      "dist/shared/**",
+      "dist/midi/**",
+      "dist/keyboard_models/**",
+      "dist/audio-analysis-client/**",
+      "src/sounds-and-recreation-app/shell/**",
+      "src/sounds-and-recreation-app/preload.cjs",
+      "src/keyboard_models/**/web/**",
+      "package.json"
+    ],
+    "mac": { "target": "dir" },
     "fileAssociations": [
       {
         "ext": "mockrack",
-        "name": "Mock Runner Setup",
+        "name": "Sounds and Recreation Setup",
         "role": "Editor"
       }
     ]
