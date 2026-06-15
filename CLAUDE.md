@@ -8,8 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run build          # tsc → dist/
 npm run start          # MCP server (stdio transport)
 npm run dev            # MCP server via tsx (no build step)
-npm run mock:runner    # Electron mock device with model picker UI
-npm run mock:headless  # Headless mock (for testing), --model <id> required
+npm run sar            # Electron desktop app — UI facade, model picker UI
+npm run sar:headless   # Headless mock (for testing), --model <id> required
+npm run sar:dist       # build unsigned Sounds and Recreation.app (dist-app/)
 ```
 
 The MCP server communicates over stdio. Claude Code connects to it via `.mcp.json`. After code changes, reload the MCP server with `/mcp` in Claude Code before using MCP tools.
@@ -129,17 +130,17 @@ Create `src/keyboard_models/<manufacturer>/<model>/` with:
 
 The model is auto-discovered by `model-registry.ts` scanning the filesystem.
 
-### Mock Runner (`src/mock-runner/`)
+### Sounds and Recreation app (`src/sounds-and-recreation-app/`)
 
 Electron app: model picker shell -> loads model's web UI. **Three-collaborator architecture (#30):**
 
 - **`MockHandler`** (per-model) — pure logic. Speaks ONLY the param domain: `set_params(refs)`, `get_params(names, part?)`, `load_program(bank, slot)`, `getFullState()`. Internal state keyed by canonical param name with user-domain numeric values. No MIDI bytes, no addresses, no protocol awareness.
 - **`MidiCodec`** (per-model) — param ↔ MIDI translator. `encodeParams`, `encodeBytes`, `encodeAction`, `decode`, `paramsAtAddress`, `parseRequest`, `buildResponse`, `normalizeUserValue`, `wireToUserValue`. Used by both the mock-runner (incoming MIDI → `set_params`) and the MCP-side device (outgoing `set_params` → MIDI bytes).
-- **`MockTransport`** — transport. Two virtual MIDI ports + WebSocket server + source-aware routing. Owns all MIDI I/O. See `src/mock-runner/transport.md` for the file-level walkthrough.
+- **`MockTransport`** — transport. Two virtual MIDI ports + WebSocket server + source-aware routing. Owns all MIDI I/O. See `src/sounds-and-recreation-app/transport.md` for the file-level walkthrough.
 
 UI ↔ handler protocol is `{type:"setParam", name, value, part?}`. External MIDI is decoded by the codec into `set_params` calls; Roland RQ1 is fulfilled entirely in the transport via `codec.paramsAtAddress` + `handler.get_params` + `codec.encodeBytes`. Bank-select MSB/LSB CC sequences are accumulated by the transport and finalized as `handler.load_program(bank, slot)` on the matching Program Change.
 
-See [docs/mock_runner.md](docs/mock_runner.md#transport-codec-handler--runtime-contract) for the full message-flow diagrams.
+See [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md#transport-codec-handler--runtime-contract) for the full message-flow diagrams.
 
 ## Key conventions
 

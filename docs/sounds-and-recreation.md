@@ -1,25 +1,25 @@
-# Mock Runner
+# Sounds and Recreation
 
-The Mock Runner is an Electron app that simulates one or more keyboards on your desktop so you can develop and test against the MCP server without real hardware. Each tab hosts an independent mock device on its own MIDI virtual port and its own WebSocket port, with a model-specific web UI that mirrors real-time parameter changes.
+Sounds and Recreation is an Electron desktop app — the UI facade over the MCP servers and agent. It simulates one or more keyboards on your desktop so you can develop and test against the MCP server without real hardware. Each tab hosts an independent mock device on its own MIDI virtual port and its own WebSocket port, with a model-specific web UI that mirrors real-time parameter changes.
 
 ```bash
-npm run mock:runner   # Electron — model picker, then per-model UI
-npm run mock:headless --model nord-electro-5d   # Plain Node, for CI/E2E tests
+npm run sar   # Electron — model picker, then per-model UI
+npm run sar:headless -- --model nord-electro-5d   # Plain Node, for CI/E2E tests
 ```
 
-![Mock Runner tour](images/mock_runner_tour.gif)
+![Sounds and Recreation tour](images/mock_runner_tour.gif)
 
 ## Anatomy
 
 The shell is a three-column layout: the **rack column** on the left (host to one of two view-switchable panels — MIDI or SONG ANALYSIS), the **rail** in the middle (full window height; vertical selector cluster + splitter), and the **console drawer** on the right.
 
-The two rack-column views own the entire column when active — including the top chassis bar. Each view has its own brushed-metal chassis (the MIDI view's is the `MOCK RUNNER` tab strip; the SONG ANALYSIS view's is its own `SONG ANALYSIS · JOBS · STEMS · STRUCTURE` bar with a service-health chip). The inactive panel stays mounted (`visibility: hidden`) so model iframes keep their WebSocket sessions while the operator peeks at the other view.
+The two rack-column views own the entire column when active — including the top chassis bar. Each view has its own brushed-metal chassis (the MIDI view's is the `SOUNDS AND RECREATION` tab strip; the SONG ANALYSIS view's is its own `SONG ANALYSIS · JOBS · STEMS · STRUCTURE` bar with a service-health chip). The inactive panel stays mounted (`visibility: hidden`) so model iframes keep their WebSocket sessions while the operator peeks at the other view.
 
 **MIDI view** (default) — the workspace operators spend most of their time in: model picker / mock UIs + MIDI monitor at the bottom.
 
 ```
 ┌─────────────────────────────────────────────────────┬──┬──────────────────┐
-│ MOCK RUNNER · [●tab][●tab][●tab][+]                 │MI│ [CHAT●] [LOG●]   │
+│ SOUNDS AND RECREATION · [●tab][●tab][●tab][+]       │MI│ [CHAT●] [LOG●]   │
 ├─────────────────────────────────────────────────────┤DI├──────────────────┤
 │                                                     │──│ SID:abc12345 ▮▮▮ │
 │         (model UI iframe — drawbars, knobs,         │WV│                  │
@@ -112,7 +112,7 @@ Each model ships its own UI under `src/keyboard_models/<mfr>/<model>/web/`. The 
 
 Model UIs speak the **param domain only** — never raw MIDI. To change a parameter, the UI sends `{type:"setParam", name, value, part?}` over the WebSocket; the transport calls `handler.set_params([...])` for state and then asks the codec to encode the same write to MIDI Out bytes (the panel-knob analogue, so external listeners see the change). To change the active engine on a part (JUNO-X), the UI sends `{type:"setActiveEngine", engine, part?}`. To request a cache reload after a backup extract, `{type:"reload-cache"}`.
 
-The transport is a thin shell (virtual MIDI port + WebSocket server + broadcast + small protocol-state glue). All model semantics live in the per-model `MockHandler` (state) and `MidiCodec` (param ↔ MIDI translation). See [Transport, codec, handler — runtime contract](#transport-codec-handler--runtime-contract) for the boundary and [`src/mock-runner/transport.md`](../src/mock-runner/transport.md) for the transport file walkthrough.
+The transport is a thin shell (virtual MIDI port + WebSocket server + broadcast + small protocol-state glue). All model semantics live in the per-model `MockHandler` (state) and `MidiCodec` (param ↔ MIDI translation). See [Transport, codec, handler — runtime contract](#transport-codec-handler--runtime-contract) for the boundary and [`src/sounds-and-recreation-app/transport.md`](../src/sounds-and-recreation-app/transport.md) for the transport file walkthrough.
 
 ## File menu — saving and restoring rack setups
 
@@ -129,7 +129,7 @@ Save the entire rack (all tabs, their models, labels, and full state) to a singl
 
 ### Dirty indicator
 
-The title bar reads `Mock Runner — <file>.mockrack` and gains a trailing `•` whenever the rack diverges from the saved file. Engine state changes are debounced (250 ms). Tab create/close, model selection, rename, active-tab change, and backup extraction all mark the rack dirty.
+The title bar reads `Sounds and Recreation — <file>.mockrack` and gains a trailing `•` whenever the rack diverges from the saved file. Engine state changes are debounced (250 ms). Tab create/close, model selection, rename, active-tab change, and backup extraction all mark the rack dirty.
 
 ### Confirmation prompts
 
@@ -159,7 +159,7 @@ The second rack-column view, behind the **WAVE** rail button. Drives the sibling
 
 ### Prerequisite — running the service
 
-The Mock Runner does **not** spawn the audio-analysis service. Start it in another terminal before clicking ANALYZE:
+Sounds and Recreation does **not** spawn the audio-analysis service. Start it in another terminal before clicking ANALYZE:
 
 ```bash
 cd ../audio-analysis-mcp
@@ -184,14 +184,14 @@ The left pane lists everything under `<workspace>/jobs/`. Rows are populated by 
 |---|---|
 | Amber, solid | `source.wav` exists but no analysis on disk yet — ready for ANALYZE |
 | Green | At least one `stems/` or `song_structure/` result on disk |
-| Amber, pulsing | Import in flight from this Mock Runner session |
+| Amber, pulsing | Import in flight from this Sounds and Recreation session |
 | Matte (off) | `source.wav` missing — broken or partial import |
 
 Per-row metadata (`3:42 · 44.1k · mono`) is parsed from the WAV header on the fly; no decoding is done, just RIFF chunk walking.
 
 ### Display name vs slug
 
-The `audio-analysis-mcp` service sanitizes the imported filename into a slug (`Kind Of Blue.mp3` → `kind-of-blue`) and uses it as the job directory. To preserve the original title the Mock Runner writes a sidecar `<job_path>/.mock-runner.json` right after a successful import:
+The `audio-analysis-mcp` service sanitizes the imported filename into a slug (`Kind Of Blue.mp3` → `kind-of-blue`) and uses it as the job directory. To preserve the original title Sounds and Recreation writes a sidecar `<job_path>/.mock-runner.json` right after a successful import:
 
 ```json
 {
@@ -288,10 +288,10 @@ Writes are atomic (`tmp` + `rename`). The format is versioned so older files can
 
 ## Headless mode
 
-For tests and CI, `mock:headless` runs the same `MockTransport` under plain Node (no Electron, no UI). It prints `MOCK_READY` on stdout once the WebSocket server is up.
+For tests and CI, `sar:headless` runs the same `MockTransport` under plain Node (no Electron, no UI). It prints `MOCK_READY` on stdout once the WebSocket server is up.
 
 ```bash
-npm run mock:headless -- --model nord-electro-5d --ws-port 3000
+npm run sar:headless -- --model nord-electro-5d --ws-port 3000
 # flags: --model <id>            (required)
 #        --ws-port <n>           (default 3000)
 #        --lower-channel <ch>    (default 0)
@@ -306,16 +306,16 @@ Tests use this via `tests/helpers/mock-process.ts` (headless spawn + WebSocket a
 
 | Path | Role |
 |---|---|
-| `src/mock-runner/main.ts` | Electron main — owns tabs, transports, file menu, IPC (incl. audio-analysis workspace scan, fs.watch, file dialog, job-metadata write) |
-| `src/mock-runner/cli.ts` | Headless entry point |
-| `src/mock-runner/transport.ts` | `MockTransport` — MIDI virtual ports + WebSocket server + broadcast + routing glue |
-| `src/mock-runner/transport.md` | File-level walkthrough of `transport.ts` |
-| `src/mock-runner/preload.cjs` | Exposes `mockRunnerAPI` to the shell |
-| `src/mock-runner/event-log-ipc.ts` | Main → renderer event log channel |
-| `src/mock-runner/shell/index.html` | Tab bar, slot, MIDI drawer, console drawer, rail (MIDI/WAVE selectors + splitter), SONG ANALYSIS panel scaffold, backup picker |
-| `src/mock-runner/shell/app.js` | Tab routing, MIDI drawer, chat + event log, MCB LED polling, splitter, rack-view switching, dirty/title sync |
-| `src/mock-runner/shell/panel-analysis.js` | SONG ANALYSIS panel — lazy-imported; owns jobs list, import + analyze flows, health probe |
-| `src/mock-runner/shell/chooser.html` | Model picker iframe |
+| `src/sounds-and-recreation-app/main.ts` | Electron main — owns tabs, transports, file menu, IPC (incl. audio-analysis workspace scan, fs.watch, file dialog, job-metadata write) |
+| `src/sounds-and-recreation-app/cli.ts` | Headless entry point |
+| `src/sounds-and-recreation-app/transport.ts` | `MockTransport` — MIDI virtual ports + WebSocket server + broadcast + routing glue |
+| `src/sounds-and-recreation-app/transport.md` | File-level walkthrough of `transport.ts` |
+| `src/sounds-and-recreation-app/preload.cjs` | Exposes `mockRunnerAPI` to the shell |
+| `src/sounds-and-recreation-app/event-log-ipc.ts` | Main → renderer event log channel |
+| `src/sounds-and-recreation-app/shell/index.html` | Tab bar, slot, MIDI drawer, console drawer, rail (MIDI/WAVE selectors + splitter), SONG ANALYSIS panel scaffold, backup picker |
+| `src/sounds-and-recreation-app/shell/app.js` | Tab routing, MIDI drawer, chat + event log, MCB LED polling, splitter, rack-view switching, dirty/title sync |
+| `src/sounds-and-recreation-app/shell/panel-analysis.js` | SONG ANALYSIS panel — lazy-imported; owns jobs list, import + analyze flows, health probe |
+| `src/sounds-and-recreation-app/shell/chooser.html` | Model picker iframe |
 | `src/audio-analysis-client/` | TypeScript client for the sibling `audio-analysis-mcp` service (HTTP + SSE) — see [its README](../src/audio-analysis-client/README.md) |
 | `src/shared/midi-codec.ts` | `MidiCodec` interface — param ↔ MIDI translation, shared by mock + MCP |
 | `src/shared/mcb-client.ts` | HTTP-over-UDS client for midi-connections-broker (lease queries + broker-liveness) |
@@ -384,10 +384,10 @@ The transport is a dumb pipe + small protocol glue. The codec is the model's tra
 
 ### Inbound message flows
 
-Two groups, seven flows total. From the wire: UI `setParam`, external MIDI param write (CC or non-request sysex), external bank-select + Program Change (transport accumulates MSB/LSB), and codec-recognized request sysex (today: Roland RQ1, but the mechanism is generic). From the host: WebSocket client connect (with the partial-broadcast MCP-status quirk), tab relabel + cache reload, and `.mockrack` save/restore. Each is documented with diagrams in [`src/mock-runner/transport.md`](../src/mock-runner/transport.md#inbound-message-flows) alongside the transport's other internals.
+Two groups, seven flows total. From the wire: UI `setParam`, external MIDI param write (CC or non-request sysex), external bank-select + Program Change (transport accumulates MSB/LSB), and codec-recognized request sysex (today: Roland RQ1, but the mechanism is generic). From the host: WebSocket client connect (with the partial-broadcast MCP-status quirk), tab relabel + cache reload, and `.mockrack` save/restore. Each is documented with diagrams in [`src/sounds-and-recreation-app/transport.md`](../src/sounds-and-recreation-app/transport.md#inbound-message-flows) alongside the transport's other internals.
 
 ### See also
 
-- [`src/mock-runner/transport.md`](../src/mock-runner/transport.md) — file-level walkthrough of `transport.ts` (every entry point, every protocol-state bit).
+- [`src/sounds-and-recreation-app/transport.md`](../src/sounds-and-recreation-app/transport.md) — file-level walkthrough of `transport.ts` (every entry point, every protocol-state bit).
 - [`src/shared/midi-codec.ts`](../src/shared/midi-codec.ts) — the `MidiCodec` interface contract.
 - [`src/shared/keyboard-model.ts`](../src/shared/keyboard-model.ts) — the `MockHandler` interface contract.

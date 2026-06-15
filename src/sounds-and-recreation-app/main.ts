@@ -1,5 +1,5 @@
 /**
- * Tabbed Mock Runner — Electron main process.
+ * Tabbed Sounds and Recreation app — Electron main process.
  *
  * The shell window is loaded once at startup and never reloaded. Each tab in
  * the shell hosts an iframe (model chooser → model UI). The main process
@@ -35,11 +35,11 @@ const __dirname = dirname(__filename);
 
 // Set the app name early so the macOS app menu (the leftmost item in the
 // menu bar — which Electron auto-generates from app.name when no app menu
-// is in the template) reads "Mock Runner" rather than "Electron".
-app.setName("Mock Runner");
+// is in the template) reads "Sounds and Recreation" rather than "Electron".
+app.setName("Sounds and Recreation");
 
-// Resolve paths back to src/ (from dist/mock-runner/)
-const srcDir = join(__dirname, "..", "..", "src", "mock-runner");
+// Resolve paths back to src/ (from dist/sounds-and-recreation-app/)
+const srcDir = join(__dirname, "..", "..", "src", "sounds-and-recreation-app");
 const SHELL_DIR = join(srcDir, "shell");
 const PRELOAD_PATH = join(srcDir, "preload.cjs");
 
@@ -190,7 +190,7 @@ async function saveAs(): Promise<void> {
   const result = await dialog.showSaveDialog(win, {
     title: "Save Studio Setup",
     defaultPath: currentFilePath ?? "untitled.mockrack",
-    filters: [{ name: "Mock Runner Setup", extensions: ["mockrack"] }],
+    filters: [{ name: "Sounds and Recreation Setup", extensions: ["mockrack"] }],
   });
   if (result.canceled || !result.filePath) return;
   try {
@@ -348,7 +348,7 @@ async function openDialog(): Promise<void> {
   const result = await dialog.showOpenDialog(win, {
     title: "Open Studio Setup",
     properties: ["openFile"],
-    filters: [{ name: "Mock Runner Setup", extensions: ["mockrack"] }],
+    filters: [{ name: "Sounds and Recreation Setup", extensions: ["mockrack"] }],
   });
   if (result.canceled || result.filePaths.length === 0) return;
   await loadSetupFromPath(result.filePaths[0]);
@@ -449,7 +449,7 @@ function createWindow(): void {
     height: 980,
     minWidth: 1200,
     minHeight: 700,
-    title: "Mock Runner",
+    title: "Sounds and Recreation",
     backgroundColor: "#101012",
     webPreferences: {
       preload: PRELOAD_PATH,
@@ -463,9 +463,9 @@ function createWindow(): void {
   void mainWindow.loadFile(join(SHELL_DIR, "index.html"));
 
   // Open renderer DevTools in detached mode when launched via
-  // `npm run mock:runner:debug`. Detached so the DevTools window keeps
+  // `npm run sar:debug`. Detached so the DevTools window keeps
   // working even if the main window freezes.
-  if (process.env.MOCK_RUNNER_DEVTOOLS === "1") {
+  if (process.env.SAR_DEVTOOLS === "1") {
     mainWindow.webContents.openDevTools({ mode: "detach" });
   }
 
@@ -493,10 +493,10 @@ function buildMenu(): void {
   const isMac = process.platform === "darwin";
   const template: Electron.MenuItemConstructorOptions[] = [
     // macOS: explicit app menu so the SUBMENU items read "About / Hide
-    // / Quit Mock Runner". The BOLD menu-bar label still reads
+    // / Quit Sounds and Recreation". The BOLD menu-bar label still reads
     // "Electron" in dev because that's the running binary's
-    // CFBundleName — it'll switch to "Mock Runner" once the app is
-    // packaged via electron-builder (plan: macos-packager).
+    // CFBundleName — it'll switch to "Sounds and Recreation" once the app
+    // is packaged via electron-builder (plan: macos-packager).
     ...(isMac ? [{ role: "appMenu" as const, label: app.name }] : []),
     {
       label: "File",

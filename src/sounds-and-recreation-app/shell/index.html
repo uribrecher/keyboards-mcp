@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MOCK RUNNER</title>
+  <title>SOUNDS AND RECREATION</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Roboto+Mono:wght@400;500;700&family=Fraunces:opsz,wght,SOFT@9..144,400;9..144,500;9..144,700;9..144,900&display=swap">
@@ -21,7 +21,7 @@
         buttons (MIDI / WAVEFORM) flip which panel is visible. Inactive
         panel keeps its DOM mounted (visibility: hidden) so model iframes
         don't unload their WebSocket sessions when the operator switches
-        to SONG ANALYSIS. The MOCK RUNNER chassis lives inside .panel--midi
+        to SONG ANALYSIS. The SOUNDS AND RECREATION chassis lives inside .panel--midi
         — it's a feature of the MIDI view, not the shell — so SONG
         ANALYSIS gets its own full-height chassis without the brand strip
         and keyboard tabs.
@@ -33,7 +33,7 @@
 
             <div class="brand">
               <span class="brand__lamp" aria-hidden="true"></span>
-              <span class="brand__name">MOCK&nbsp;RUNNER</span>
+              <span class="brand__name">SOUNDS&nbsp;AND&nbsp;RECREATION</span>
               <span class="brand__sep">·</span>
               <span class="brand__sub">MULTI-DEVICE TEST RACK</span>
               <span class="brand__screws" aria-hidden="true">
@@ -389,7 +389,7 @@
 
   <!--
     Bare-specifier import map for @sounds-and-recreation/agent-client.
-    The path is relative to this index.html (src/mock-runner/shell/) and
+    The path is relative to this index.html (src/sounds-and-recreation-app/shell/) and
     points at the file: dep symlinked under the repo's node_modules.
     See plan #12 — caveats: file: dep + import map don't survive a
     packaged Electron .app, the macOS packager will need to copy

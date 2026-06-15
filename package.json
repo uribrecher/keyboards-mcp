@@ -4,8 +4,12 @@
   "description": "MCP server for controlling MIDI keyboards (Nord Electro 5D and more)",
   "type": "module",
   "main": "dist/index.js",
-  "bin": { "keyboards-mcp": "dist/cli/index.js" },
-  "engines": { "node": ">=20" },
+  "bin": {
+    "keyboards-mcp": "dist/cli/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "files": [
     "dist/index.*",
     "dist/server.*",
@@ -20,18 +24,20 @@
     "LICENSE"
   ],
   "scripts": {
-    "copy:peaks-vendor": "mkdir -p src/mock-runner/shell/vendor && cp node_modules/peaks.js/dist/peaks.ext.min.js src/mock-runner/shell/vendor/peaks.min.js && cp node_modules/konva/konva.min.js src/mock-runner/shell/vendor/konva.min.js && cp node_modules/waveform-data/dist/waveform-data.min.js src/mock-runner/shell/vendor/waveform-data.min.js",
+    "copy:peaks-vendor": "mkdir -p src/sounds-and-recreation-app/shell/vendor && cp node_modules/peaks.js/dist/peaks.ext.min.js src/sounds-and-recreation-app/shell/vendor/peaks.min.js && cp node_modules/konva/konva.min.js src/sounds-and-recreation-app/shell/vendor/konva.min.js && cp node_modules/waveform-data/dist/waveform-data.min.js src/sounds-and-recreation-app/shell/vendor/waveform-data.min.js",
     "prebuild": "npm run copy:peaks-vendor",
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "build:sdk": "npm --prefix ../sound-recreation-agent/client-sdk run build",
-    "premock:runner": "npm run build:sdk",
-    "premock:runner:debug": "npm run build:sdk",
-    "mock:runner": "electron dist/mock-runner/main.js",
-    "mock:runner:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 MOCK_RUNNER_DEVTOOLS=1 electron --inspect=5858 dist/mock-runner/main.js 2>&1 | tee /tmp/mock-runner.log",
-    "mock:headless": "tsx src/mock-runner/cli.ts",
+    "presar": "npm run build:sdk",
+    "presar:debug": "npm run build:sdk",
+    "sar": "electron dist/sounds-and-recreation-app/main.js",
+    "sar:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 SAR_DEVTOOLS=1 electron --inspect=5858 dist/sounds-and-recreation-app/main.js 2>&1 | tee /tmp/sounds-and-recreation.log",
+    "sar:headless": "tsx src/sounds-and-recreation-app/cli.ts",
+    "presar:dist": "npm run build:sdk && npm run copy:peaks-vendor",
+    "sar:dist": "tsc && electron-builder --dir",
     "mcb": "tsx src/mcb/index.ts",
     "generate:audio-analysis-types": "openapi-typescript src/audio-analysis-client/openapi.json -o src/audio-analysis-client/generated/openapi-types.ts",
     "lint": "eslint src/ tests/",
@@ -58,6 +64,7 @@
     "@types/node": "^20.0.0",
     "@types/ws": "^8.18.1",
     "electron": "^41.1.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.39.4",
     "konva": "^9.3.22",
     "marked": "^18.0.3",
@@ -69,12 +76,35 @@
     "waveform-data": "^4.5.2"
   },
   "build": {
-    "appId": "io.mock-runner",
-    "productName": "Mock Runner",
+    "appId": "io.sounds-and-recreation",
+    "productName": "Sounds and Recreation",
+    "asar": false,
+    "directories": {
+      "output": "dist-app"
+    },
+    "extraMetadata": {
+      "main": "dist/sounds-and-recreation-app/main.js"
+    },
+    "files": [
+      "dist/sounds-and-recreation-app/**",
+      "dist/shared/**",
+      "dist/midi/**",
+      "dist/keyboard_models/**",
+      "dist/audio-analysis-client/**",
+      "src/sounds-and-recreation-app/shell/**",
+      "src/sounds-and-recreation-app/preload.cjs",
+      "src/keyboard_models/**/web/**",
+      "node_modules/marked/lib/**",
+      "node_modules/@sounds-and-recreation/agent-client/dist/**",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dir"
+    },
     "fileAssociations": [
       {
         "ext": "mockrack",
-        "name": "Mock Runner Setup",
+        "name": "Sounds and Recreation Setup",
         "role": "Editor"
       }
     ]

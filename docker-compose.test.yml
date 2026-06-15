@@ -5,7 +5,7 @@ networks:
 services:
   mock:
     build: .
-    command: npx tsx src/mock-runner/cli.ts --model nord-electro-5d --no-midi --ws-port 3000
+    command: npx tsx src/sounds-and-recreation-app/cli.ts --model nord-electro-5d --no-midi --ws-port 3000
     ports:
       - "3000"
     networks:

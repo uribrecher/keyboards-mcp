@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { MockTransport } from "../../src/mock-runner/transport.js";
+import { MockTransport } from "../../src/sounds-and-recreation-app/transport.js";
 import type { MockHandler } from "../../src/shared/keyboard-model.js";
 
 function makeStubHandler(): MockHandler {

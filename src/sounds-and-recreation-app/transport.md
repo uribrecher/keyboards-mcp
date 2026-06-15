@@ -292,6 +292,6 @@ If you're tempted to add model knowledge here, the right answer is almost always
 
 ## See also
 
-- [`docs/mock_runner.md`](../../docs/mock_runner.md) — user-facing mock runner doc covering the shell UI, file menu, headless mode, and the high-level transport/codec/handler split.
+- [`docs/sounds-and-recreation.md`](../../docs/sounds-and-recreation.md) — user-facing mock runner doc covering the shell UI, file menu, headless mode, and the high-level transport/codec/handler split.
 - [`src/shared/keyboard-model.ts`](../shared/keyboard-model.ts) — `MockHandler` interface (state contract).
 - [`src/shared/midi-codec.ts`](../shared/midi-codec.ts) — `MidiCodec` interface (param ↔ MIDI contract).

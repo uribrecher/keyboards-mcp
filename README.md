@@ -13,7 +13,7 @@ Currently supported: **Nord Electro 5D**, **Roland JUNO-X**, **Prophet-6**
 - **Browse inventory** — list programs and songs from extracted backups with name and bank filtering
 - **Extract backup files** into a structured inventory of all sounds, programs, and set lists
 - **Mock device** with a model-specific web UI for development and testing without hardware
-- **Song Analysis workbench** — second view in the Mock Runner that imports audio, runs stem separation + structure analysis via the sibling `audio-analysis-mcp` service, and visualises live progress
+- **Song Analysis workbench** — second view in the Sounds and Recreation app that imports audio, runs stem separation + structure analysis via the sibling `audio-analysis-mcp` service, and visualises live progress
 
 ## Architecture
 
@@ -49,8 +49,8 @@ The **midi-connections-broker (MCB)** is a separate long-running process that ow
 | `src/keyboard_models/` | Pluggable keyboard models (`<manufacturer>/<model>/`) |
 | `src/midi/` | MIDI I/O manager (implements MidiConnection) |
 | `src/mcb/` | midi-connections-broker — lease registry, session manager, HTTP-over-UDS API |
-| `src/mock-runner/` | Thin Electron mock engine — virtual MIDI In/Out + WS, source-aware routing; delegates all model logic to `MockHandler` (see [docs/mock_runner.md](docs/mock_runner.md#engine-and-handler--runtime-contract)) |
-| `src/audio-analysis-client/` | TypeScript HTTP+SSE client for the sibling `audio-analysis-mcp` service. Consumed by the Mock Runner's [Song Analysis](docs/mock_runner.md#song-analysis) view |
+| `src/sounds-and-recreation-app/` | Thin Electron mock engine — virtual MIDI In/Out + WS, source-aware routing; delegates all model logic to `MockHandler` (see [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md#transport-codec-handler--runtime-contract)) |
+| `src/audio-analysis-client/` | TypeScript HTTP+SSE client for the sibling `audio-analysis-mcp` service. Consumed by the Sounds and Recreation app's [Song Analysis](docs/sounds-and-recreation.md#song-analysis) view |
 | `docs/plans/` | Implementation plans (numbered by execution order) |
 
 ### Adding a new keyboard model
@@ -92,8 +92,9 @@ kept alive automatically — you never run it by hand. Ask your agent to `connec
 - Check broker status anytime: `keyboards-mcp doctor` (logs at `~/.mcb/mcb.log`).
 - Remove the daemon: `keyboards-mcp uninstall`.
 
-> The no-hardware **Mock Runner** (a visual device simulator) is packaged separately — see the
-> mock-runner packaging issue. This package targets owners of real MIDI hardware.
+> The no-hardware **Sounds and Recreation** desktop app (a visual device simulator) is packaged
+> separately — see [Standalone app build (no hardware)](#standalone-app-build-no-hardware). This npm
+> package targets owners of real MIDI hardware.
 
 ## Development (from source)
 
@@ -105,7 +106,7 @@ node dist/cli/index.js install   # run the BUILT entry so the daemon is node-run
 ```
 
 `keyboards-mcp broker` runs the broker in the foreground (the daemon's entry point); the headless
-mock and the Electron Mock Runner remain available via `npm run mock:headless` / `npm run mock:runner`.
+mock and the Electron Sounds and Recreation app remain available via `npm run sar:headless` / `npm run sar`.
 
 ## Releasing
 
@@ -164,11 +165,11 @@ Once connected, the following tools are available:
 
 ### Mock device
 
-For development without hardware, the **Mock Runner** is an Electron app that simulates one or more keyboards as a tabbed multi-device rack with model-specific web UIs, persistent rack setups, and a built-in chat console. The rail's **WAVE** button swaps in a second view — **Song Analysis** — that drives the sibling `audio-analysis-mcp` service for audio import, stem separation, and structure analysis.
+For development without hardware, **Sounds and Recreation** is an Electron app that simulates one or more keyboards as a tabbed multi-device rack with model-specific web UIs, persistent rack setups, and a built-in chat console. The rail's **WAVE** button swaps in a second view — **Song Analysis** — that drives the sibling `audio-analysis-mcp` service for audio import, stem separation, and structure analysis.
 
 ```bash
-npm run mock:runner     # Electron app
-npm run mock:headless   # Plain Node (--model <id> required) — for tests/CI
+npm run sar             # Electron app
+npm run sar:headless    # Plain Node (--model <id> required) — for tests/CI
 ```
 
 The Song Analysis view needs the audio-analysis service running separately:
@@ -178,7 +179,20 @@ cd ../audio-analysis-mcp
 uv run python -m audio_analysis_mcp.service
 ```
 
-See [docs/mock_runner.md](docs/mock_runner.md) for the full UI tour — tabs, labels and per-instance backups, the File menu and `.mockrack` save format, backup extraction, [Song Analysis](docs/mock_runner.md#song-analysis), and the chat console.
+See [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md) for the full UI tour — tabs, labels and per-instance backups, the File menu and `.mockrack` save format, backup extraction, [Song Analysis](docs/sounds-and-recreation.md#song-analysis), and the chat console.
+
+### Standalone app build (no hardware)
+
+Build the desktop app bundle (UI facade + in-process mock keyboards):
+
+```bash
+npm run sar:dist     # → dist-app/mac*/Sounds and Recreation.app (unsigned)
+```
+
+Launch the `.app` and pick a model to drive a mock keyboard with no hardware. The
+CHAT and Song Analysis panels light up only when the agent / audio-analysis
+services are running. Signed `.dmg`/`.pkg` installers are produced separately by
+the `macos-packager` repo.
 
 ## License
 

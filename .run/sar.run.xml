@@ -1,9 +1,9 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="mock:runner" type="js.build_tools.npm" nameIsGenerated="true">
+  <configuration default="false" name="sar" type="js.build_tools.npm" nameIsGenerated="true">
     <package-json value="$PROJECT_DIR$/package.json" />
     <command value="run" />
     <scripts>
-      <script value="mock:runner" />
+      <script value="sar" />
     </scripts>
     <node-interpreter value="project" />
     <envs />
