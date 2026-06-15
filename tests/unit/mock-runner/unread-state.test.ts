@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { nextUnread } from "../../../src/mock-runner/shell/unread-state.js";
+import { nextUnread } from "../../../src/sounds-and-recreation-app/shell/unread-state.js";
 
 describe("unread-state", () => {
   it("nextUnread starts at the incoming severity from null", () => {

@@ -6,7 +6,7 @@ import {
   emitEventLogClear,
   EVENT_LOG_CHANNEL,
   EVENT_LOG_CLEAR_CHANNEL,
-} from "../../../src/mock-runner/event-log-ipc.js";
+} from "../../../src/sounds-and-recreation-app/event-log-ipc.js";
 
 interface FakeWin {
   sent: Array<{ channel: string; payload: unknown }>;

@@ -38,8 +38,8 @@ const __dirname = dirname(__filename);
 // is in the template) reads "Mock Runner" rather than "Electron".
 app.setName("Mock Runner");
 
-// Resolve paths back to src/ (from dist/mock-runner/)
-const srcDir = join(__dirname, "..", "..", "src", "mock-runner");
+// Resolve paths back to src/ (from dist/sounds-and-recreation-app/)
+const srcDir = join(__dirname, "..", "..", "src", "sounds-and-recreation-app");
 const SHELL_DIR = join(srcDir, "shell");
 const PRELOAD_PATH = join(srcDir, "preload.cjs");
 

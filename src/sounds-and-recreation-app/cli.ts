@@ -2,7 +2,7 @@
  * Headless mock runner entry point.
  * Plain Node (no Electron) — for test automation and CI.
  *
- * Usage: tsx src/mock-runner/cli.ts --model nord-electro-5d [--ws-port 3000]
+ * Usage: tsx src/sounds-and-recreation-app/cli.ts --model nord-electro-5d [--ws-port 3000]
  */
 
 import { parseArgs } from "node:util";

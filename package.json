@@ -20,7 +20,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "copy:peaks-vendor": "mkdir -p src/mock-runner/shell/vendor && cp node_modules/peaks.js/dist/peaks.ext.min.js src/mock-runner/shell/vendor/peaks.min.js && cp node_modules/konva/konva.min.js src/mock-runner/shell/vendor/konva.min.js && cp node_modules/waveform-data/dist/waveform-data.min.js src/mock-runner/shell/vendor/waveform-data.min.js",
+    "copy:peaks-vendor": "mkdir -p src/sounds-and-recreation-app/shell/vendor && cp node_modules/peaks.js/dist/peaks.ext.min.js src/sounds-and-recreation-app/shell/vendor/peaks.min.js && cp node_modules/konva/konva.min.js src/sounds-and-recreation-app/shell/vendor/konva.min.js && cp node_modules/waveform-data/dist/waveform-data.min.js src/sounds-and-recreation-app/shell/vendor/waveform-data.min.js",
     "prebuild": "npm run copy:peaks-vendor",
     "build": "tsc",
     "prepublishOnly": "npm run build",
@@ -29,9 +29,9 @@
     "build:sdk": "npm --prefix ../sound-recreation-agent/client-sdk run build",
     "premock:runner": "npm run build:sdk",
     "premock:runner:debug": "npm run build:sdk",
-    "mock:runner": "electron dist/mock-runner/main.js",
-    "mock:runner:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 MOCK_RUNNER_DEVTOOLS=1 electron --inspect=5858 dist/mock-runner/main.js 2>&1 | tee /tmp/mock-runner.log",
-    "mock:headless": "tsx src/mock-runner/cli.ts",
+    "mock:runner": "electron dist/sounds-and-recreation-app/main.js",
+    "mock:runner:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 MOCK_RUNNER_DEVTOOLS=1 electron --inspect=5858 dist/sounds-and-recreation-app/main.js 2>&1 | tee /tmp/mock-runner.log",
+    "mock:headless": "tsx src/sounds-and-recreation-app/cli.ts",
     "mcb": "tsx src/mcb/index.ts",
     "generate:audio-analysis-types": "openapi-typescript src/audio-analysis-client/openapi.json -o src/audio-analysis-client/generated/openapi-types.ts",
     "lint": "eslint src/ tests/",

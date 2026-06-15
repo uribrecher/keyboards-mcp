@@ -109,7 +109,7 @@ export class MultiDeviceHarness {
 
   /**
    * Stop a single mock-runner mid-test. The mock's own `MockTransport.stop()`
-   * runs SIGTERM-driven (see `src/mock-runner/cli.ts`), which fires the
+   * runs SIGTERM-driven (see `src/sounds-and-recreation-app/cli.ts`), which fires the
    * active `DELETE /v1/mocks/:instanceId` to the harness's MCB before exit.
    */
   async stopMock(index: number): Promise<void> {

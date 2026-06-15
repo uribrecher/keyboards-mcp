@@ -50,7 +50,7 @@ export class MockProcess {
     const wsPort = opts.wsPort ?? 3456;
     const args = [
       "tsx",
-      "src/mock-runner/cli.ts",
+      "src/sounds-and-recreation-app/cli.ts",
       "--model", opts.model,
       "--ws-port", String(wsPort),
       "--lower-channel", String(opts.lowerChannel ?? 0),
@@ -92,7 +92,7 @@ export class MockProcess {
     const wsPort = opts.wsPort ?? 3456;
     const proc = spawn("npx", [
       "tsx",
-      "src/mock-runner/cli.ts",
+      "src/sounds-and-recreation-app/cli.ts",
       "--model", opts.model,
       "--ws-port", String(wsPort),
     ], {
