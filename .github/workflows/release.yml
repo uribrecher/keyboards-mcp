@@ -62,7 +62,7 @@ jobs:
       - name: Verify tag matches package.json version
         if: github.event_name == 'push'
         run: |
-          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          PKG_VERSION="v$(node -p "require('./packages/keyboards-mcp/package.json').version")"
           # GITHUB_REF_NAME is the tag name; read it as an env var (not via ${{ }})
           # to avoid any script-injection from the ref.
           if [ "$GITHUB_REF_NAME" != "$PKG_VERSION" ]; then
@@ -87,4 +87,4 @@ jobs:
       # fresh dist/. Provenance is generated automatically under trusted publishing.
       # (--access public is a harmless no-op for the unscoped, public keyboards-mcp.)
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: npm publish -w keyboards-mcp --provenance --access public
