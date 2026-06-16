@@ -28,11 +28,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # Fail on high/critical advisories in PRODUCTION dependencies — what
-      # `npm i -g keyboards-mcp` actually installs. devDeps are omitted so the
-      # frequent Electron/UI CVEs that never reach published users don't block CI.
-      - run: npm ci --omit=dev
-      - run: npm audit --omit=dev --audit-level=high
+      # Fail on high/critical advisories in PRODUCTION dependencies of the
+      # PUBLISHED package — what `npm i -g keyboards-mcp` actually installs.
+      # Scoped to the keyboards-mcp workspace so the app's Electron/UI devDeps
+      # (never reaching published users) don't pollute the audit signal.
+      - run: npm ci
+      - run: npm audit --omit=dev --workspace keyboards-mcp --audit-level=high
 
   test:
     runs-on: ubuntu-latest
