@@ -133,7 +133,9 @@ git cat-file commit HEAD | grep -c gpgsig   # expect 1
 
 ## Task 2: Migrate the keyboards-mcp changelog to Changesets format
 
-End state: `packages/keyboards-mcp/CHANGELOG.md` has `# keyboards-mcp` as its H1 (so Changesets prepends correctly), no `[Unreleased]` block (moved to the app in Task 3), no Keep-a-Changelog preamble, and the `[2.0.0]` history preserved verbatim.
+End state: `packages/keyboards-mcp/CHANGELOG.md` has `# keyboards-mcp` as its H1 (so Changesets prepends correctly), no `[Unreleased]` block (moved to the app in Task 3), no Keep-a-Changelog preamble, and the 2.0.0 entry **normalized to native Changesets format** (`## 2.0.0` + `### Major Changes`) so it matches the app changelog and future generated entries. The change *wording* is preserved; only the heading/section structure changes.
+
+> **Revised during PR #145 review.** The original plan kept the 2.0.0 block verbatim in Keep-a-Changelog format; the issue author found the two changelogs being in different formats confusing, so we normalize 2.0.0 to native format below. Native Changesets sections are bump-type (`### Major/Minor/Patch Changes`), **not** `### Added/Changed/Removed` (that's Keep a Changelog) — the bold `**Added/Changed/Removed**` below are intentional sub-labels inside `### Major Changes`, kept only to preserve the original detail.
 
 **Files:**
 - Modify: `packages/keyboards-mcp/CHANGELOG.md`
@@ -145,11 +147,14 @@ Overwrite the whole file with exactly this:
 ```markdown
 # keyboards-mcp
 
-## [2.0.0] - 2026-06-14
+## 2.0.0
+
+### Major Changes
 
 First release published to npm. (Earlier `1.x` development was never published.)
 
-### Added
+**Added**
+
 - Global install with a `keyboards-mcp` CLI: run with no arguments to start the MCP
   stdio server, plus `install`, `uninstall`, `doctor`, and `broker` subcommands.
 - `keyboards-mcp install` registers the MIDI Connections Broker (MCB) as a macOS
@@ -161,7 +166,8 @@ First release published to npm. (Earlier `1.x` development was never published.)
 - CI `audit` job that fails the build on high/critical advisories in production
   dependencies.
 
-### Changed
+**Changed**
+
 - The broker is no longer a manual prerequisite: `connect_to_keyboard` works against
   the already-running daemon. Connection and `mcb-unreachable` guidance now points at
   `keyboards-mcp doctor`.
@@ -169,21 +175,22 @@ First release published to npm. (Earlier `1.x` development was never published.)
   (Electron, peaks.js, konva, waveform-data) are excluded from the tarball, so an
   install pulls only the runtime dependencies.
 
-### Removed
-- The consumer-facing `postinstall` hook, which would fail on a global install.
+**Removed**
 
-[2.0.0]: https://www.npmjs.com/package/keyboards-mcp/v/2.0.0
+- The consumer-facing `postinstall` hook, which would fail on a global install.
 ```
 
 - [ ] **Step 2: Verify the migration**
 
 ```bash
-head -1 packages/keyboards-mcp/CHANGELOG.md      # expect: # keyboards-mcp
-grep -c "Unreleased" packages/keyboards-mcp/CHANGELOG.md   # expect: 0
-grep -c "Keep a Changelog" packages/keyboards-mcp/CHANGELOG.md   # expect: 0
-grep -c "\[2.0.0\]" packages/keyboards-mcp/CHANGELOG.md   # expect: 2 (heading + link ref)
+head -1 packages/keyboards-mcp/CHANGELOG.md          # expect: # keyboards-mcp
+grep -c "Unreleased" packages/keyboards-mcp/CHANGELOG.md       # expect: 0
+grep -c "Keep a Changelog" packages/keyboards-mcp/CHANGELOG.md # expect: 0
+grep -c "^## 2.0.0$" packages/keyboards-mcp/CHANGELOG.md       # expect: 1 (native version heading, no brackets/date)
+grep -c "### Major Changes" packages/keyboards-mcp/CHANGELOG.md # expect: 1
+grep -c "npmjs.com/package/keyboards-mcp" packages/keyboards-mcp/CHANGELOG.md # expect: 0 (reference link dropped)
 ```
-Expected: H1 is `# keyboards-mcp`; zero `Unreleased`; zero preamble; the 2.0.0 block + link reference intact.
+Expected: H1 is `# keyboards-mcp`; zero `Unreleased`; zero preamble; native `## 2.0.0` + `### Major Changes`; no reference link.
 
 - [ ] **Step 3: Commit (signed)**
 
@@ -193,7 +200,8 @@ git commit -m "docs(changelog): migrate keyboards-mcp changelog to Changesets fo
 
 H1 is now the package name so Changesets prepends correctly; drop the
 Keep-a-Changelog preamble and the [Unreleased] block (the app-rename entry
-moves to the app's changelog). 2.0.0 history preserved.
+moves to the app's changelog). 2.0.0 normalized to native Changesets format
+(## 2.0.0 / ### Major Changes), wording preserved.
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 git cat-file commit HEAD | grep -c gpgsig   # expect 1

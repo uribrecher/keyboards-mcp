@@ -118,29 +118,44 @@ the directory is and linking the docs. Committed alongside the config.
 - Drop the Keep-a-Changelog preamble — including the "Releases are published … when a
   `vX.Y.Z` tag is pushed" note, which #138 is about to invalidate.
 - **Remove** the `[Unreleased]` block (its content moves to the app, decision 2).
-- Keep the `## [2.0.0] - 2026-06-14` body **verbatim** as history, including its
-  `[2.0.0]: https://www.npmjs.com/package/keyboards-mcp/v/2.0.0` link reference.
+- **Normalize the 2.0.0 entry to native Changesets format** so it matches the app changelog
+  and the entries `changeset version` will prepend going forward:
+  `## [2.0.0] - 2026-06-14` → `## 2.0.0`; the Keep-a-Changelog `### Added/Changed/Removed`
+  headings become a single `### Major Changes` section (2.0.0 is the major release) with the
+  original Added/Changed/Removed groups kept as **bold sub-labels** so no published detail is
+  lost; drop the `[2.0.0]: …` reference link (native format doesn't use one). The change
+  *wording* is preserved verbatim — only the heading/section structure is normalized.
+
+  > **Revised during PR #145 review.** The first cut of this spec kept the 2.0.0 block
+  > verbatim in Keep-a-Changelog format. The issue author found the two changelogs being in
+  > different formats confusing, so we normalized 2.0.0 to the native format below. Changesets
+  > never rewrites existing entries on its own — this is a one-time manual normalization.
 
 Result:
 
 ```markdown
 # keyboards-mcp
 
-## [2.0.0] - 2026-06-14
+## 2.0.0
+
+### Major Changes
 
 First release published to npm. (Earlier `1.x` development was never published.)
 
-### Added
-- … (unchanged)
+**Added**
+- … (original bullets, unchanged)
 
-### Changed
-- … (unchanged)
+**Changed**
+- … (original bullets, unchanged)
 
-### Removed
-- … (unchanged)
-
-[2.0.0]: https://www.npmjs.com/package/keyboards-mcp/v/2.0.0
+**Removed**
+- … (original bullets, unchanged)
 ```
+
+> Note: native Changesets sections are bump-type (`### Major/Minor/Patch Changes`), **not**
+> the Keep-a-Changelog `### Added/Changed/Removed`. The bold `**Added/Changed/Removed**` here
+> are intentional sub-labels *inside* `### Major Changes`, kept only to preserve the original
+> 2.0.0 detail — not headings.
 
 ### 5. `packages/sounds-and-recreation-app/CHANGELOG.md` (new)
 
