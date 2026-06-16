@@ -163,8 +163,9 @@ SOUND DESIGN TIPS:
 - When using the rotary speaker, set spkr_comp_type to "Rotary" and spkr_comp_enable to on.
 - For classic Hammond organ tones, use B3 model with appropriate drawbar settings and the Leslie rotary speaker.`,
 
-  // Web UI files live in src/, not dist/ (tsc doesn't copy non-TS files)
-  mockUiDir: join(__dirname, "..", "..", "..", "..", "src", "keyboard_models", "nord", "electro_5d", "web"),
+  // Mock-UI web assets sit next to the compiled module; the build copies them
+  // into dist/ (scripts/copy-web-assets.mjs) so they resolve when packaged.
+  mockUiDir: join(__dirname, "web"),
 
   createMockHandler() {
     return createNordElectro5DMockHandler();

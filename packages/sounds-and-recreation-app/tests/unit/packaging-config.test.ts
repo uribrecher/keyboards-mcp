@@ -6,8 +6,16 @@ import { join, dirname } from "node:path";
 
 const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
-  build?: { appId?: string; productName?: string; extraMetadata?: { main?: string }; mac?: { target?: string } };
+  private?: boolean;
+  version?: string;
+  build?: {
+    appId?: string;
+    productName?: string;
+    extraMetadata?: { main?: string; version?: string };
+    mac?: { target?: string };
+  };
   scripts?: Record<string, string>;
+  dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
 
@@ -16,6 +24,29 @@ test("electron-builder config carries the Sounds and Recreation identity", () =>
   assert.equal(pkg.build?.productName, "Sounds and Recreation");
   assert.equal(pkg.build?.extraMetadata?.main, "dist/main.js");
   assert.equal(pkg.build?.mac?.target, "dir");
+});
+
+test("app is a private, independently-versioned package coupled to keyboards-mcp by range", () => {
+  // .app/.dmg-only: Changesets versions it and writes its changelog but never
+  // publishes it (#133/#136).
+  assert.equal(pkg.private, true, "the app package must be private (never npm-published)");
+
+  // Its own SemVer line, independent of keyboards-mcp's 2.0.x.
+  assert.match(pkg.version ?? "", /^\d+\.\d+\.\d+/, "app must declare its own SemVer version");
+
+  // Coupling is expressed as a dependency (a version range), not a shared
+  // number — electron-builder reads CFBundleShortVersionString from `version`
+  // above, so there is deliberately no extraMetadata.version override.
+  assert.match(
+    pkg.dependencies?.["keyboards-mcp"] ?? "",
+    /^[\^~]?\d/,
+    "app must depend on keyboards-mcp by version range",
+  );
+  assert.equal(
+    pkg.build?.extraMetadata?.version,
+    undefined,
+    "no extraMetadata.version override — package `version` is the single source of truth",
+  );
 });
 
 test("sar:dist script and electron-builder dev dep are present", () => {

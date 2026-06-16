@@ -103,8 +103,9 @@ NOTES:
 - The low-pass filter is a 4-pole (24 dB/oct) transistor ladder design
 - The high-pass filter is a 2-pole (12 dB/oct) OTA design`,
 
-  // Web UI files live in src/, not dist/
-  mockUiDir: join(__dirname, "..", "..", "..", "..", "src", "keyboard_models", "sequential_circuits", "prophet_6", "web"),
+  // Mock-UI web assets sit next to the compiled module; the build copies them
+  // into dist/ (scripts/copy-web-assets.mjs) so they resolve when packaged.
+  mockUiDir: join(__dirname, "web"),
 
   createDevice() {
     return new Prophet6Device(model, {
