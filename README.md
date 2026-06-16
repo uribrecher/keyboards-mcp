@@ -39,23 +39,28 @@ A **KeyboardDevice** is a specific physical unit or mock instance. Each device h
 
 The **midi-connections-broker (MCB)** is a separate long-running process that owns MIDI port leases. The MCP server claims a lease via MCB on `connect_to_keyboard` and releases it on `disconnect_from_keyboard`, so multiple agent sessions can share a host without stepping on each other's ports. MCB also exposes the canonical port list and reaps leases held by dead processes.
 
-### Key directories
+### Repository layout
+
+This repo is an **npm-workspaces monorepo** with two packages: the published `keyboards-mcp` npm
+package (MCP server + shared model logic; stays on the `2.0.x` line) and the private **Sounds and
+Recreation** Electron desktop app (`0.1.x`), which depends on `keyboards-mcp` (`^2`) and imports its
+shared logic **by package name** (`keyboards-mcp/shared/*`).
 
 | Path | Description |
 |------|-------------|
-| `src/index.ts` | MCP server entry point |
-| `src/tools/` | MCP tool registrations (thin wrappers that delegate to device methods) |
-| `src/shared/` | Shared interfaces: KeyboardModel, KeyboardDevice, MidiConnection, MockHandler, mcb-client |
-| `src/keyboard_models/` | Pluggable keyboard models (`<manufacturer>/<model>/`) |
-| `src/midi/` | MIDI I/O manager (implements MidiConnection) |
-| `src/mcb/` | midi-connections-broker — lease registry, session manager, HTTP-over-UDS API |
-| `src/sounds-and-recreation-app/` | Thin Electron mock engine — virtual MIDI In/Out + WS, source-aware routing; delegates all model logic to `MockHandler` (see [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md#transport-codec-handler--runtime-contract)) |
-| `src/audio-analysis-client/` | TypeScript HTTP+SSE client for the sibling `audio-analysis-mcp` service. Consumed by the Sounds and Recreation app's [Song Analysis](docs/sounds-and-recreation.md#song-analysis) view |
-| `docs/plans/` | Implementation plans (numbered by execution order) |
+| `packages/keyboards-mcp/src/index.ts` | MCP server entry point |
+| `packages/keyboards-mcp/src/tools/` | MCP tool registrations (thin wrappers that delegate to device methods) |
+| `packages/keyboards-mcp/src/shared/` | Shared interfaces: KeyboardModel, KeyboardDevice, MidiConnection, MockHandler, mcb-client |
+| `packages/keyboards-mcp/src/keyboard_models/` | Pluggable keyboard models (`<manufacturer>/<model>/`) |
+| `packages/keyboards-mcp/src/midi/` | MIDI I/O manager (implements MidiConnection) |
+| `packages/keyboards-mcp/src/mcb/` | midi-connections-broker — lease registry, session manager, HTTP-over-UDS API |
+| `packages/sounds-and-recreation-app/src/transport.ts` | Thin Electron mock engine — virtual MIDI In/Out + WS, source-aware routing; delegates all model logic to `MockHandler` (see [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md#transport-codec-handler--runtime-contract)) |
+| `packages/sounds-and-recreation-app/src/audio-analysis-client/` | TypeScript HTTP+SSE client for the sibling `audio-analysis-mcp` service. Consumed by the app's [Song Analysis](docs/sounds-and-recreation.md#song-analysis) view |
+| `docs/plans/` | Implementation plans, at the repo root (numbered by execution order) |
 
 ### Adding a new keyboard model
 
-Create a directory under `src/keyboard_models/<manufacturer>/<model>/` with:
+Create a directory under `packages/keyboards-mcp/src/keyboard_models/<manufacturer>/<model>/` with:
 
 - `index.ts` — Default export implementing the `KeyboardModel` interface
 - `device.ts` — Class implementing `KeyboardDevice` (owns connection, state, all tool logic)
@@ -63,7 +68,7 @@ Create a directory under `src/keyboard_models/<manufacturer>/<model>/` with:
 - `mock-handler.ts` — Optional `MockHandler` implementation for the mock device
 - `web/` — Optional mock device web UI (HTML/CSS/JS)
 
-The model is auto-discovered at startup. See `src/keyboard_models/nord/electro_5d/` for a CC-based reference implementation, or `src/keyboard_models/roland/juno_x/` for a model using both CC and Roland DT1/RQ1 SysEx addressing.
+The model is auto-discovered at startup. See `packages/keyboards-mcp/src/keyboard_models/nord/electro_5d/` for a CC-based reference implementation, or `packages/keyboards-mcp/src/keyboard_models/roland/juno_x/` for a model using both CC and Roland DT1/RQ1 SysEx addressing.
 
 ## Quick Start (macOS)
 
@@ -98,47 +103,60 @@ kept alive automatically — you never run it by hand. Ask your agent to `connec
 
 ## Development (from source)
 
+Install once at the repo root (npm wires up both workspaces), then build. Package scripts run
+with `-w <package>` from the root, or via the root delegator scripts that mirror the
+already-updated root [`CLAUDE.md`](CLAUDE.md).
+
 ```bash
-npm install
-npm run build
-node dist/cli/index.js install   # run the BUILT entry so the daemon is node-runnable
-                                 # (or: keyboards-mcp install after a global link)
+npm install                                          # root install — both workspaces
+npm run build                                        # root delegator: builds keyboards-mcp, then the app
+# or build a single workspace:
+npm run build -w keyboards-mcp                        # → packages/keyboards-mcp/dist/
+
+node packages/keyboards-mcp/dist/cli/index.js install # run the BUILT entry so the daemon is node-runnable
+                                                      # (or: keyboards-mcp install after a global link)
 ```
 
-`keyboards-mcp broker` runs the broker in the foreground (the daemon's entry point); the headless
-mock and the Electron Sounds and Recreation app remain available via `npm run sar:headless` / `npm run sar`.
+`keyboards-mcp broker` runs the broker in the foreground (the daemon's entry point), or
+`npm run mcb -w keyboards-mcp` from source. The headless mock and the Electron Sounds and
+Recreation app live in the app workspace — `npm run sar:headless -w sounds-and-recreation-app` /
+`npm run sar -w sounds-and-recreation-app`.
 
 ## Releasing
 
-Publishing to npm is automated by the **Release** GitHub Action (`.github/workflows/release.yml`).
-Pushing a `vX.Y.Z` tag runs the full CI test suite and then publishes the package with build
-provenance — no manual `npm publish`.
+The two packages version and publish independently via
+**[Changesets](https://github.com/changesets/changesets)** — there are no manual `vX.Y.Z`
+version tags. The public `keyboards-mcp` package goes to npm; the private
+`sounds-and-recreation-app` only ever versions + writes its changelog (Changesets never publishes
+private packages).
 
-Auth uses **OIDC Trusted Publishing** — no long-lived npm token to store or rotate (npm write tokens
-now expire after 90 days). Trusted publishing is configured **per package**, so it only appears once
-the package exists on npm. One-time setup:
-
-1. **Bootstrap the package once** — until you do this there is no package page (and no Trusted
-   Publishing settings): `npm login && npm publish --access public` from a clean checkout.
-2. On **npmjs.com → Packages → `keyboards-mcp` → Settings → Trusted publishing**, add a **GitHub
-   Actions** publisher:
-   - Organization or user: `uribrecher`
-   - Repository: `keyboards-mcp`
-   - Workflow filename: `release.yml`
-   - Allowed actions: **`npm publish`** (required for publishers created after 2026-05-20)
-3. _(Recommended)_ In the package's access settings, require 2FA and disallow classic tokens.
-
-Trusted publishing requires **npm ≥ 11.5.1** and **Node ≥ 22.14.0** — the workflow upgrades npm and
-runs on Node 22 to satisfy this. After setup, every tagged release publishes with no token and
-provenance is attested automatically.
-
-To cut a release:
+**On every PR that changes a package's source,** ship a changeset describing which package(s)
+bumped and how:
 
 ```bash
-# bump "version" in package.json, commit to main, then:
-git tag "v$(node -p "require('./package.json').version")"
-git push origin --tags
+npm run changeset        # interactive: pick package(s) + bump type, writes .changeset/*.md
 ```
+
+CI enforces this — the `changeset` job runs `changeset status --since=origin/main` and fails a PR
+that touches package source without one. For an intentional no-release change to package source,
+record an empty changeset with `npx changeset --empty`. (README-only changes don't require one.)
+
+**The release itself is automated** by `.github/workflows/release.yml` on every push to `main`:
+
+1. While unconsumed changesets exist, [changesets/action](https://github.com/changesets/action)
+   opens/updates a **"Version Packages"** PR that applies the bumps (`changeset version`) and
+   writes each package's `CHANGELOG.md`. Nothing is published at this stage.
+2. Merging that PR consumes the changesets. The workflow runs again, finds none left, and runs
+   `changeset publish` — publishing **only** the public `keyboards-mcp` package.
+
+The root scripts mirror the workflow for local use: `npm run changeset` →
+`npm run changeset:version` → `npm run changeset:publish`.
+
+Publishing uses npm **OIDC Trusted Publishing** — no stored `NPM_TOKEN` (npm write tokens expire
+after 90 days); OIDC mints a short-lived per-run credential and attests build provenance
+automatically. Trusted publishing is configured **per package** on npmjs.com against the
+`release.yml` workflow filename, and requires **npm ≥ 11.5.1** and **Node ≥ 22.14.0** (the workflow
+upgrades npm and runs on Node 22 to satisfy this).
 
 ## Usage
 
@@ -167,9 +185,12 @@ Once connected, the following tools are available:
 
 For development without hardware, **Sounds and Recreation** is an Electron app that simulates one or more keyboards as a tabbed multi-device rack with model-specific web UIs, persistent rack setups, and a built-in chat console. The rail's **WAVE** button swaps in a second view — **Song Analysis** — that drives the sibling `audio-analysis-mcp` service for audio import, stem separation, and structure analysis.
 
+The app is the `sounds-and-recreation-app` workspace, so run its scripts with
+`-w sounds-and-recreation-app` from the repo root:
+
 ```bash
-npm run sar             # Electron app
-npm run sar:headless    # Plain Node (--model <id> required) — for tests/CI
+npm run sar -w sounds-and-recreation-app             # Electron app
+npm run sar:headless -w sounds-and-recreation-app    # Plain Node (--model <id> required) — for tests/CI
 ```
 
 The Song Analysis view needs the audio-analysis service running separately:
@@ -186,7 +207,7 @@ See [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md) for the full 
 Build the desktop app bundle (UI facade + in-process mock keyboards):
 
 ```bash
-npm run sar:dist     # → dist-app/mac*/Sounds and Recreation.app (unsigned)
+npm run sar:dist -w sounds-and-recreation-app    # → dist-app/mac*/Sounds and Recreation.app (unsigned)
 ```
 
 Launch the `.app` and pick a model to drive a mock keyboard with no hardware. The

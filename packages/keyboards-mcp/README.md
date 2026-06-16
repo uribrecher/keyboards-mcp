@@ -97,47 +97,47 @@ kept alive automatically — you never run it by hand. Ask your agent to `connec
 
 ## Development (from source)
 
+This package is one workspace of the [`keyboards-mcp` monorepo](https://github.com/uribrecher/keyboards-mcp).
+Clone the monorepo, install once at its root (which wires up both workspaces), then build:
+
 ```bash
-npm install
-npm run build
-node dist/cli/index.js install   # run the BUILT entry so the daemon is node-runnable
-                                 # (or: keyboards-mcp install after a global link)
+npm install                                          # at the monorepo root — both workspaces
+npm run build -w keyboards-mcp                        # → packages/keyboards-mcp/dist/
+node packages/keyboards-mcp/dist/cli/index.js install # run the BUILT entry so the daemon is node-runnable
+                                                      # (or: keyboards-mcp install after a global link)
 ```
 
-`keyboards-mcp broker` runs the broker in the foreground (the daemon's entry point); the headless
-mock and the Electron Sounds and Recreation app remain available via `npm run sar:headless` / `npm run sar`.
+`keyboards-mcp broker` runs the broker in the foreground (the daemon's entry point), or
+`npm run mcb -w keyboards-mcp` from source. The headless mock and the Electron Sounds and
+Recreation app live in the sibling `sounds-and-recreation-app` workspace —
+`npm run sar:headless -w sounds-and-recreation-app` / `npm run sar -w sounds-and-recreation-app`.
 
 ## Releasing
 
-Publishing to npm is automated by the **Release** GitHub Action (`.github/workflows/release.yml`).
-Pushing a `vX.Y.Z` tag runs the full CI test suite and then publishes the package with build
-provenance — no manual `npm publish`.
+This package versions and publishes via
+**[Changesets](https://github.com/changesets/changesets)** from the monorepo — there are no manual
+`vX.Y.Z` version tags. The sibling `sounds-and-recreation-app` is private and never published.
 
-Auth uses **OIDC Trusted Publishing** — no long-lived npm token to store or rotate (npm write tokens
-now expire after 90 days). Trusted publishing is configured **per package**, so it only appears once
-the package exists on npm. One-time setup:
-
-1. **Bootstrap the package once** — until you do this there is no package page (and no Trusted
-   Publishing settings): `npm login && npm publish --access public` from a clean checkout.
-2. On **npmjs.com → Packages → `keyboards-mcp` → Settings → Trusted publishing**, add a **GitHub
-   Actions** publisher:
-   - Organization or user: `uribrecher`
-   - Repository: `keyboards-mcp`
-   - Workflow filename: `release.yml`
-   - Allowed actions: **`npm publish`** (required for publishers created after 2026-05-20)
-3. _(Recommended)_ In the package's access settings, require 2FA and disallow classic tokens.
-
-Trusted publishing requires **npm ≥ 11.5.1** and **Node ≥ 22.14.0** — the workflow upgrades npm and
-runs on Node 22 to satisfy this. After setup, every tagged release publishes with no token and
-provenance is attested automatically.
-
-To cut a release:
+**On every PR that changes this package's source,** ship a changeset:
 
 ```bash
-# bump "version" in package.json, commit to main, then:
-git tag "v$(node -p "require('./package.json').version")"
-git push origin --tags
+npm run changeset        # interactive: pick package(s) + bump type, writes .changeset/*.md
 ```
+
+CI's `changeset` job enforces this (`changeset status --since=origin/main`); use
+`npx changeset --empty` for an intentional no-release source change.
+
+**The release is automated** by `.github/workflows/release.yml` on every push to `main`:
+while unconsumed changesets exist, [changesets/action](https://github.com/changesets/action)
+opens/updates a **"Version Packages"** PR that applies the bumps (`changeset version`) and writes
+the `CHANGELOG.md`; merging that PR triggers `changeset publish`, which publishes this package to
+npm. The root scripts mirror this locally: `npm run changeset` → `npm run changeset:version` →
+`npm run changeset:publish`.
+
+Publishing uses npm **OIDC Trusted Publishing** — no stored `NPM_TOKEN` (npm write tokens expire
+after 90 days); OIDC mints a short-lived per-run credential and attests build provenance
+automatically. It is configured **per package** on npmjs.com against the `release.yml` workflow
+filename, and requires **npm ≥ 11.5.1** and **Node ≥ 22.14.0** (the workflow handles both).
 
 ## Usage
 
@@ -166,9 +166,12 @@ Once connected, the following tools are available:
 
 For development without hardware, **Sounds and Recreation** is an Electron app that simulates one or more keyboards as a tabbed multi-device rack with model-specific web UIs, persistent rack setups, and a built-in chat console. The rail's **WAVE** button swaps in a second view — **Song Analysis** — that drives the sibling `audio-analysis-mcp` service for audio import, stem separation, and structure analysis.
 
+The app is the sibling `sounds-and-recreation-app` workspace, so run its scripts with
+`-w sounds-and-recreation-app` from the monorepo root:
+
 ```bash
-npm run sar             # Electron app
-npm run sar:headless    # Plain Node (--model <id> required) — for tests/CI
+npm run sar -w sounds-and-recreation-app             # Electron app
+npm run sar:headless -w sounds-and-recreation-app    # Plain Node (--model <id> required) — for tests/CI
 ```
 
 The Song Analysis view needs the audio-analysis service running separately:
@@ -185,7 +188,7 @@ See [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md) for the full 
 Build the desktop app bundle (UI facade + in-process mock keyboards):
 
 ```bash
-npm run sar:dist     # → dist-app/mac*/Sounds and Recreation.app (unsigned)
+npm run sar:dist -w sounds-and-recreation-app    # → dist-app/mac*/Sounds and Recreation.app (unsigned)
 ```
 
 Launch the `.app` and pick a model to drive a mock keyboard with no hardware. The
