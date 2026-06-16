@@ -340,17 +340,19 @@ Expected: prints the would-be tarball contents (package name `keyboards-mcp`, fi
 ```bash
 npm publish --dry-run -w sounds-and-recreation-app
 ```
-Expected: **fails** with an error containing `private` (npm refuses to publish a package marked `"private": true`). `changeset publish` defers to this same flag, so the app is never a publish candidate.
+Expected: npm **does not publish** the app because it is marked `"private": true`. Depending on npm version this surfaces either as a hard error or (npm 10/11) a warning `npm warn publish Skipping workspace sounds-and-recreation-app, marked as private` with exit 0 — both contain `private` and both leave the app unpublished. `changeset publish` defers to this same flag, so the app is never a publish candidate. (Note: the keyboards-mcp dry run runs its `prepublishOnly` build into the gitignored `dist/`, so the tree stays clean.)
 
 - [ ] **Step 4: Final sanity + clean tree**
 
 ```bash
-npx changeset status        # exit 0, "no changesets"
-npm run lint                # both workspaces lint clean
-npm run test:check          # both workspaces type-check clean
-git status --short          # expect: empty (only Task 1-3 commits exist; no working-tree changes)
+npx changeset status --since=HEAD   # exit 0, "NO packages to be bumped" at patch/minor/major
+npm run lint                        # both workspaces lint clean
+npm run test:check                  # both workspaces type-check clean
+git status --short                  # expect: empty (only Task 1-3 commits exist; no working-tree changes)
 ```
 Expected: all green; working tree clean. **Do not commit anything in Task 4.**
+
+> Use `--since=HEAD` here. Bare `npx changeset status` diffs against `baseBranch: "main"` and will exit **1** with "Some packages have been changed but no changesets were found" — that is expected on this branch (the Task 1–3 setup commits touched packages with no release changeset), **not** a leftover scratch changeset. `--since=HEAD` checks only the working tree, confirming no pending changesets remain.
 
 ---
 
