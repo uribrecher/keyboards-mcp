@@ -73,7 +73,7 @@ Overwrite `.changeset/config.json` with the following (preserve the `$schema` li
 
 ```json
 {
-  "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
+  "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
   "changelog": ["@changesets/changelog-github", { "repo": "uribrecher/keyboards-mcp" }],
   "commit": false,
   "fixed": [],
@@ -91,7 +91,7 @@ Notes (do not add to the file — context only):
 - `access: "public"` — `keyboards-mcp` publishes publicly; the app is `private` so this never applies to it.
 - `linked`/`fixed` stay empty → the two packages version independently.
 - `privatePackages: { version: true, tag: false }` → the app is versioned + changelog'd but gets no git tag; `"private": true` in its `package.json` keeps it out of `changeset publish`.
-- If `npm ls @changesets/config` reports a version other than what's in the `$schema` URL, update the URL's version segment to match (cosmetic; editor validation only).
+- The `$schema` version (`3.1.4`) is what `@changesets/cli@2.31.0` resolves `@changesets/config` to and what `changeset init` writes. If a future `npm ls @changesets/config` reports a different version, update the URL's version segment to match (cosmetic; editor validation only).
 
 - [ ] **Step 4: Add the changeset scripts to the root `package.json`**
 
