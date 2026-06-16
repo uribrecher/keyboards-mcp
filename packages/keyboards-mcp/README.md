@@ -12,8 +12,7 @@ Currently supported: **Nord Electro 5D**, **Roland JUNO-X**, **Prophet-6**
 - **Load set list songs** by bank, slot, and part
 - **Browse inventory** — list programs and songs from extracted backups with name and bank filtering
 - **Extract backup files** into a structured inventory of all sounds, programs, and set lists
-- **Mock device** with a model-specific web UI for development and testing without hardware
-- **Song Analysis workbench** — second view in the Sounds and Recreation app that imports audio, runs stem separation + structure analysis via the sibling `audio-analysis-mcp` service, and visualises live progress
+- **Develop without hardware** using the companion [Sounds and Recreation app](../sounds-and-recreation-app/README.md) — mock keyboards with model-specific web UIs, plus a Song Analysis workbench
 
 ## Architecture
 
@@ -91,9 +90,9 @@ kept alive automatically — you never run it by hand. Ask your agent to `connec
 - Check broker status anytime: `keyboards-mcp doctor` (logs at `~/.mcb/mcb.log`).
 - Remove the daemon: `keyboards-mcp uninstall`.
 
-> The no-hardware **Sounds and Recreation** desktop app (a visual device simulator) is packaged
-> separately — see [Standalone app build (no hardware)](#standalone-app-build-no-hardware). This npm
-> package targets owners of real MIDI hardware.
+> No hardware? The **Sounds and Recreation** desktop app (a visual device simulator) is a separate
+> workspace package — see the [Sounds and Recreation README](../sounds-and-recreation-app/README.md).
+> This npm package targets owners of real MIDI hardware.
 
 ## Development (from source)
 
@@ -114,30 +113,11 @@ Recreation app live in the sibling `sounds-and-recreation-app` workspace —
 
 ## Releasing
 
-This package versions and publishes via
-**[Changesets](https://github.com/changesets/changesets)** from the monorepo — there are no manual
-`vX.Y.Z` version tags. The sibling `sounds-and-recreation-app` is private and never published.
-
-**On every PR that changes this package's source,** ship a changeset:
-
-```bash
-npm run changeset        # interactive: pick package(s) + bump type, writes .changeset/*.md
-```
-
-CI's `changeset` job enforces this (`changeset status --since=origin/main`); use
-`npx changeset --empty` for an intentional no-release source change.
-
-**The release is automated** by `.github/workflows/release.yml` on every push to `main`:
-while unconsumed changesets exist, [changesets/action](https://github.com/changesets/action)
-opens/updates a **"Version Packages"** PR that applies the bumps (`changeset version`) and writes
-the `CHANGELOG.md`; merging that PR triggers `changeset publish`, which publishes this package to
-npm. The root scripts mirror this locally: `npm run changeset` → `npm run changeset:version` →
-`npm run changeset:publish`.
-
-Publishing uses npm **OIDC Trusted Publishing** — no stored `NPM_TOKEN` (npm write tokens expire
-after 90 days); OIDC mints a short-lived per-run credential and attests build provenance
-automatically. It is configured **per package** on npmjs.com against the `release.yml` workflow
-filename, and requires **npm ≥ 11.5.1** and **Node ≥ 22.14.0** (the workflow handles both).
+This package publishes to npm via **[Changesets](https://github.com/changesets/changesets)** from
+the monorepo — automated by `.github/workflows/release.yml` with npm OIDC Trusted Publishing, no
+manual version tags. Ship a changeset on any source PR (`npm run changeset`). The full flow
+(Version Packages PR, publishing, trusted-publishing setup) is documented once, in the
+[monorepo README](https://github.com/uribrecher/keyboards-mcp/blob/main/README.md#releasing).
 
 ## Usage
 
@@ -162,39 +142,9 @@ Once connected, the following tools are available:
 | `get_last_backup_location` | Get the path of the last extracted backup |
 | `get_system_prompt` | Get the keyboard's signal path, capabilities, and sound design guidelines |
 
-### Mock device
+### Developing without hardware
 
-For development without hardware, **Sounds and Recreation** is an Electron app that simulates one or more keyboards as a tabbed multi-device rack with model-specific web UIs, persistent rack setups, and a built-in chat console. The rail's **WAVE** button swaps in a second view — **Song Analysis** — that drives the sibling `audio-analysis-mcp` service for audio import, stem separation, and structure analysis.
-
-The app is the sibling `sounds-and-recreation-app` workspace, so run its scripts with
-`-w sounds-and-recreation-app` from the monorepo root:
-
-```bash
-npm run sar -w sounds-and-recreation-app             # Electron app
-npm run sar:headless -w sounds-and-recreation-app    # Plain Node (--model <id> required) — for tests/CI
-```
-
-The Song Analysis view needs the audio-analysis service running separately:
-
-```bash
-cd ../audio-analysis-mcp
-uv run python -m audio_analysis_mcp.service
-```
-
-See [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md) for the full UI tour — tabs, labels and per-instance backups, the File menu and `.mockrack` save format, backup extraction, [Song Analysis](docs/sounds-and-recreation.md#song-analysis), and the chat console.
-
-### Standalone app build (no hardware)
-
-Build the desktop app bundle (UI facade + in-process mock keyboards):
-
-```bash
-npm run sar:dist -w sounds-and-recreation-app    # → dist-app/mac*/Sounds and Recreation.app (unsigned)
-```
-
-Launch the `.app` and pick a model to drive a mock keyboard with no hardware. The
-CHAT and Song Analysis panels light up only when the agent / audio-analysis
-services are running. Signed `.dmg`/`.pkg` installers are produced separately by
-the `macos-packager` repo.
+The **Sounds and Recreation** desktop app simulates one or more keyboards — a tabbed mock rack with model-specific web UIs, persistent setups, a chat console, and a Song Analysis workbench — so you can drive this MCP server with no MIDI hardware. It's a separate workspace package; see the **[Sounds and Recreation README](../sounds-and-recreation-app/README.md)** for running it (`npm run sar -w sounds-and-recreation-app`), the headless mock used by tests/CI, and building the standalone `.app`.
 
 ## License
 
