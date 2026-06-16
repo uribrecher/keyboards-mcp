@@ -6,7 +6,7 @@
 // there. Run as the build's second step (`tsc && node scripts/copy-web-assets.mjs`).
 import { cpSync, existsSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join, dirname } from "node:path";
+import { join, dirname, relative } from "node:path";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const srcModels = join(pkgRoot, "src", "keyboard_models");
@@ -31,10 +31,10 @@ function findWebDirs(dir) {
 
 let copied = 0;
 for (const srcWeb of findWebDirs(srcModels)) {
-  const distWeb = join(distModels, srcWeb.slice(srcModels.length + 1));
+  const distWeb = join(distModels, relative(srcModels, srcWeb));
   cpSync(srcWeb, distWeb, { recursive: true });
   copied++;
-  console.log(`copy-web-assets: ${srcWeb.slice(pkgRoot.length + 1)} -> ${distWeb.slice(pkgRoot.length + 1)}`);
+  console.log(`copy-web-assets: ${relative(pkgRoot, srcWeb)} -> ${relative(pkgRoot, distWeb)}`);
 }
 
 if (copied === 0) console.warn("copy-web-assets: no model web/ dirs found under src/keyboard_models");

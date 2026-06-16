@@ -18,6 +18,13 @@ const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const srcModels = join(pkgRoot, "src", "keyboard_models");
 const distModels = join(pkgRoot, "dist", "keyboard_models");
 
+// This guards a BUILD output, so it only runs where the build is expected to
+// have run: the Docker CI services build keyboards-mcp and set MOCK_WS_URL
+// (the same signal sibling integration tests gate on). A bare local `npm test`
+// (no prior build, no MOCK_WS_URL) skips rather than failing on a missing
+// dist/ — but in CI the test runs and still fails if dist/ is unexpectedly absent.
+const skip = !process.env.MOCK_WS_URL;
+
 /** [mfr, model] for every src/keyboard_models/<mfr>/<model> that has a web/ UI. */
 function modelsWithWebUi(): Array<{ mfr: string; model: string }> {
   const out: Array<{ mfr: string; model: string }> = [];
@@ -31,8 +38,8 @@ function modelsWithWebUi(): Array<{ mfr: string; model: string }> {
   return out;
 }
 
-test("build copies every model's web mock-UI into dist alongside the compiled module", () => {
-  assert.ok(existsSync(distModels), "dist/keyboard_models missing — run `npm run build` first");
+test("build copies every model's web mock-UI into dist alongside the compiled module", { skip }, () => {
+  assert.ok(existsSync(distModels), "dist/keyboard_models missing — CI image must build keyboards-mcp first");
 
   const models = modelsWithWebUi();
   assert.ok(models.length >= 3, `expected >=3 models with a web/ UI in src, found ${models.length}`);
