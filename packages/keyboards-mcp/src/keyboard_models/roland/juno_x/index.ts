@@ -74,8 +74,9 @@ NOTES:
 - The JUNO panel always edits the currently selected part
 - SysEx (Roland DT1 protocol) is used for parameter access; CC is used for real-time control`,
 
-  // Web UI files live in src/, not dist/ — tsc doesn't copy non-TS files
-  mockUiDir: join(__dirname, "..", "..", "..", "..", "src", "keyboard_models", "roland", "juno_x", "web"),
+  // Mock-UI web assets sit next to the compiled module; the build copies them
+  // into dist/ (scripts/copy-web-assets.mjs) so they resolve when packaged.
+  mockUiDir: join(__dirname, "web"),
 
   programLoader: {
     loadProgram(midi, bank, slot) {
