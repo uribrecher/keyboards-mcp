@@ -1,6 +1,6 @@
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { mkdtempSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerExtractBackup } from "../../../src/tools/extract-backup.js";
@@ -23,13 +23,29 @@ function fixtureBackup(name = "2026-06-16_backup.ne5b"): string {
 
 let server: FakeMcpServer;
 let pool: DevicePool;
+let prevDataDir: string | undefined;
+const tmpDirs: string[] = [];
+
+/** mkdtemp that is tracked for afterEach cleanup. */
+function tmpDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tmpDirs.push(dir);
+  return dir;
+}
 
 describe("extract_backup tool", () => {
   beforeEach(() => {
     _resetForTests();
-    process.env.KEYBOARDS_MCP_DATA_DIR = mkdtempSync(join(tmpdir(), "kbd-data-"));
+    prevDataDir = process.env.KEYBOARDS_MCP_DATA_DIR;
+    process.env.KEYBOARDS_MCP_DATA_DIR = tmpDir("kbd-data-");
     ({ server, pool } = makeHarness());
     registerExtractBackup(server.asMcpServer, pool);
+  });
+
+  afterEach(() => {
+    if (prevDataDir === undefined) delete process.env.KEYBOARDS_MCP_DATA_DIR;
+    else process.env.KEYBOARDS_MCP_DATA_DIR = prevDataDir;
+    while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: true, force: true });
   });
 
   it("detects the model from the backup when no device is connected", async () => {
@@ -70,7 +86,7 @@ describe("extract_backup tool", () => {
   });
 
   it("rejects programs-only extraction with no cached full backup", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "progs-only-"));
+    const dir = tmpDir("progs-only-");
     writeFileSync(join(dir, "A.ne5p"), makeProgramFile({ bankIndex: 0, slotIndex: 0 }, []));
     const res = await server.call("extract_backup", { file_path: dir });
     assert.ok(res.isError);
@@ -80,7 +96,7 @@ describe("extract_backup tool", () => {
   it("merges programs-only extraction onto a cached full backup", async () => {
     // First a full extract to populate the _default cache.
     await server.call("extract_backup", { file_path: fixtureBackup() });
-    const dir = mkdtempSync(join(tmpdir(), "progs-merge-"));
+    const dir = tmpDir("progs-merge-");
     writeFileSync(join(dir, "Solo.ne5p"), makeProgramFile({ bankIndex: 0, slotIndex: 3 }, []));
     const res = await server.call("extract_backup", { file_path: dir });
     assert.ok(!res.isError, res.content[0].text);

@@ -1,6 +1,6 @@
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerGetLastBackupLocation } from "../../../src/tools/get-last-backup-location.js";
@@ -11,6 +11,8 @@ import type { DevicePool } from "../../../src/shared/device-pool.js";
 
 let server: FakeMcpServer;
 let pool: DevicePool;
+let prevDataDir: string | undefined;
+const tmpDirs: string[] = [];
 
 /** Store a last-backup path on disk for `label` via the shared Nord cache. */
 function storePath(path: string, label?: string): void {
@@ -20,9 +22,18 @@ function storePath(path: string, label?: string): void {
 describe("get_last_backup_location tool", () => {
   beforeEach(() => {
     _resetForTests();
-    process.env.KEYBOARDS_MCP_DATA_DIR = mkdtempSync(join(tmpdir(), "kbd-data-"));
+    prevDataDir = process.env.KEYBOARDS_MCP_DATA_DIR;
+    const dir = mkdtempSync(join(tmpdir(), "kbd-data-"));
+    tmpDirs.push(dir);
+    process.env.KEYBOARDS_MCP_DATA_DIR = dir;
     ({ server, pool } = makeHarness());
     registerGetLastBackupLocation(server.asMcpServer, pool);
+  });
+
+  afterEach(() => {
+    if (prevDataDir === undefined) delete process.env.KEYBOARDS_MCP_DATA_DIR;
+    else process.env.KEYBOARDS_MCP_DATA_DIR = prevDataDir;
+    while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: true, force: true });
   });
 
   it("errors for an out-of-range device index", async () => {
