@@ -1,10 +1,13 @@
 # keyboards-mcp
 
-## [2.0.0] - 2026-06-14
+## 2.0.0
+
+### Major Changes
 
 First release published to npm. (Earlier `1.x` development was never published.)
 
-### Added
+**Added**
+
 - Global install with a `keyboards-mcp` CLI: run with no arguments to start the MCP
   stdio server, plus `install`, `uninstall`, `doctor`, and `broker` subcommands.
 - `keyboards-mcp install` registers the MIDI Connections Broker (MCB) as a macOS
@@ -16,7 +19,8 @@ First release published to npm. (Earlier `1.x` development was never published.)
 - CI `audit` job that fails the build on high/critical advisories in production
   dependencies.
 
-### Changed
+**Changed**
+
 - The broker is no longer a manual prerequisite: `connect_to_keyboard` works against
   the already-running daemon. Connection and `mcb-unreachable` guidance now points at
   `keyboards-mcp doctor`.
@@ -24,7 +28,6 @@ First release published to npm. (Earlier `1.x` development was never published.)
   (Electron, peaks.js, konva, waveform-data) are excluded from the tarball, so an
   install pulls only the runtime dependencies.
 
-### Removed
-- The consumer-facing `postinstall` hook, which would fail on a global install.
+**Removed**
 
-[2.0.0]: https://www.npmjs.com/package/keyboards-mcp/v/2.0.0
+- The consumer-facing `postinstall` hook, which would fail on a global install.
