@@ -76,8 +76,10 @@ jobs:
           cache: npm
 
       # Trusted Publishing needs npm >= 11.5.1; Node 22 ships npm 10.x, so upgrade.
+      # Pin to the 11.x major (floored at the OIDC minimum) rather than @latest so a
+      # future npm major can't silently change publish behavior in the middle of a release.
       - name: Upgrade npm (OIDC trusted-publishing support)
-        run: npm install -g npm@latest
+        run: npm install -g npm@^11.5.1
 
       - name: Install dependencies
         run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
