@@ -8,7 +8,9 @@ import { join } from "node:path";
 
 // Always invoke MCB via tsx against the source tree. dist/ may be stale during
 // dev iteration; npx would interpose another process that swallows SIGTERM.
-const tsxCli = join(process.cwd(), "node_modules/tsx/dist/cli.mjs");
+// npm workspaces hoist tsx to the repo-root node_modules, so resolve it from
+// there (relative to this file) rather than the package-local node_modules.
+const tsxCli = new URL("../../../../../node_modules/tsx/dist/cli.mjs", import.meta.url).pathname;
 const cmd = process.execPath;
 const args = [tsxCli, "src/mcb/index.ts"];
 

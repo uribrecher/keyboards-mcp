@@ -1,0 +1,63 @@
+{
+  "name": "keyboards-mcp",
+  "version": "2.0.0",
+  "description": "MCP server for controlling MIDI keyboards (Nord Electro 5D and more)",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./shared/*": { "types": "./dist/shared/*.d.ts", "default": "./dist/shared/*.js" }
+  },
+  "bin": {
+    "keyboards-mcp": "dist/cli/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist/index.*",
+    "dist/server.*",
+    "dist/cli/**",
+    "dist/mcb/**",
+    "dist/tools/**",
+    "dist/shared/**",
+    "dist/midi/**",
+    "dist/keyboard_models/**",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "mcb": "tsx src/mcb/index.ts",
+    "lint": "eslint src/ tests/",
+    "test": "npm run test:unit && npm run test:integration && npm run test:e2e:mcb && npm run test:e2e",
+    "test:unit": "find tests/unit -name '*.test.ts' | xargs npx tsx --test",
+    "test:integration": "find tests/integration -name '*.test.ts' | xargs npx tsx --test",
+    "test:e2e": "find tests/e2e -maxdepth 1 -name '*.test.ts' | xargs npx tsx --test --test-concurrency=1",
+    "test:e2e:mcb": "find tests/e2e/mcb -name '*.test.ts' | xargs npx tsx --test --test-concurrency=1",
+    "test:coverage": "find tests -name '*.test.ts' | xargs npx tsx --test --test-concurrency=1 --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-lines=90 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov",
+    "test:check": "tsc --noEmit -p tsconfig.test.json",
+    "test:ci": "npm run lint && npm run test:check && npm run test:unit && npm run test:integration && npm run test:e2e:mcb && npm run test:e2e"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "adm-zip": "^0.5.16",
+    "easymidi": "^3.0.0",
+    "ws": "^8.20.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/adm-zip": "^0.5.8",
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
+    "eslint": "^9.39.4",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.58.2"
+  }
+}

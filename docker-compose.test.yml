@@ -5,7 +5,7 @@ networks:
 services:
   mock:
     build: .
-    command: npx tsx src/sounds-and-recreation-app/cli.ts --model nord-electro-5d --no-midi --ws-port 3000
+    command: npx tsx packages/sounds-and-recreation-app/src/cli.ts --model nord-electro-5d --no-midi --ws-port 3000
     ports:
       - "3000"
     networks:
@@ -19,7 +19,7 @@ services:
 
   mcb:
     build: .
-    command: npx tsx src/mcb/index.ts
+    command: npx tsx packages/keyboards-mcp/src/mcb/index.ts
     environment:
       - MCB_LISTEN_TCP=3100         # CI-only: listen on TCP instead of UDS
       - MIDI_TRANSPORT=ws           # skip easymidi (no ALSA in containers)
@@ -34,7 +34,7 @@ services:
 
   test:
     build: .
-    command: npm run test:ci
+    command: npm run test:ci -w keyboards-mcp
     environment:
       - MOCK_WS_URL=ws://mock:3000
       - MIDI_TRANSPORT=ws
@@ -55,8 +55,8 @@ services:
     # the cp is `|| true` so a missing/unreadable file can't mask it; the
     # final `exit $$rc` restores the real exit code.
     command: >
-      sh -c "npm run test:coverage; rc=$$?;
-             cp -f coverage.lcov /out/ 2>/dev/null || true;
+      sh -c "npm run test:coverage -w keyboards-mcp; rc=$$?;
+             cp -f packages/keyboards-mcp/coverage.lcov /out/ 2>/dev/null || true;
              exit $$rc"
     environment:
       - MOCK_WS_URL=ws://mock:3000

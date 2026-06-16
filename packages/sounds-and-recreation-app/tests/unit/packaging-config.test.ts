@@ -14,7 +14,7 @@ const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
 test("electron-builder config carries the Sounds and Recreation identity", () => {
   assert.equal(pkg.build?.appId, "io.sounds-and-recreation");
   assert.equal(pkg.build?.productName, "Sounds and Recreation");
-  assert.equal(pkg.build?.extraMetadata?.main, "dist/sounds-and-recreation-app/main.js");
+  assert.equal(pkg.build?.extraMetadata?.main, "dist/main.js");
   assert.equal(pkg.build?.mac?.target, "dir");
 });
 
@@ -25,7 +25,7 @@ test("sar:dist script and electron-builder dev dep are present", () => {
 
 test("renderer import map: vendored + non-bare addresses (so the .app's app.js loads)", () => {
   const indexHtml = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "sounds-and-recreation-app", "shell", "index.html"),
+    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "shell", "index.html"),
     "utf8",
   );
   const m = indexHtml.match(/<script type="importmap">\s*([\s\S]*?)<\/script>/);

@@ -109,7 +109,7 @@ export class MultiDeviceHarness {
 
   /**
    * Stop a single mock-runner mid-test. The mock's own `MockTransport.stop()`
-   * runs SIGTERM-driven (see `src/sounds-and-recreation-app/cli.ts`), which fires the
+   * runs SIGTERM-driven (see the app workspace's `src/cli.ts`), which fires the
    * active `DELETE /v1/mocks/:instanceId` to the harness's MCB before exit.
    */
   async stopMock(index: number): Promise<void> {
@@ -188,7 +188,11 @@ export class MultiDeviceHarness {
 }
 
 async function startMcb(socketPath: string): Promise<ChildProcess> {
-  const tsxCli = join(process.cwd(), "node_modules/tsx/dist/cli.mjs");
+  // tsx is hoisted to the repo-root node_modules under npm workspaces. From this
+  // helper (packages/keyboards-mcp/tests/helpers/), `../../../../node_modules`
+  // resolves to the hoisted root. The MCB itself stays in keyboards-mcp's own
+  // source (src/mcb/index.ts), spawned from the package cwd.
+  const tsxCli = new URL("../../../../node_modules/tsx/dist/cli.mjs", import.meta.url).pathname;
   const proc = spawn(process.execPath, [tsxCli, "src/mcb/index.ts"], {
     env: { ...process.env, MCB_SOCKET: socketPath },
     stdio: ["ignore", "ignore", "ignore"],

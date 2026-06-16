@@ -14,10 +14,10 @@ import { createServer, type Server } from "node:http";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { MockHandler, MidiMessage, MockHandlerResult } from "../shared/keyboard-model.js";
-import type { EncodedMessage, MidiCodec, ParamRef } from "../shared/midi-codec.js";
-import * as registry from "../shared/mock-registry.js";
-import { releaseMockInstance } from "../shared/mcb-client.js";
+import type { MockHandler, MidiMessage, MockHandlerResult } from "keyboards-mcp/shared/keyboard-model";
+import type { EncodedMessage, MidiCodec, ParamRef } from "keyboards-mcp/shared/midi-codec";
+import * as registry from "keyboards-mcp/shared/mock-registry";
+import { releaseMockInstance } from "keyboards-mcp/shared/mcb-client";
 
 const HEARTBEAT_MS = 30_000;
 
@@ -429,7 +429,7 @@ export class MockTransport extends EventEmitter {
    * `set_params` calls; `loadProgram` is already handled at dispatch
    * (engine accumulates bank-select); `unknown` is logged and dropped.
    */
-  private applySetEvents(events: ReadonlyArray<import("../shared/midi-codec.js").DecodedEvent>): void {
+  private applySetEvents(events: ReadonlyArray<import("keyboards-mcp/shared/midi-codec").DecodedEvent>): void {
     if (!this.handler.set_params) return;
     const refs: ParamRef[] = [];
     for (const e of events) {
@@ -453,7 +453,7 @@ export class MockTransport extends EventEmitter {
    * request range, handler tells us their user-domain values, codec
    * packs each back to wire bytes.
    */
-  private fulfillRequest(codec: MidiCodec, req: import("../shared/midi-codec.js").RequestDescriptor): void {
+  private fulfillRequest(codec: MidiCodec, req: import("keyboards-mcp/shared/midi-codec").RequestDescriptor): void {
     const refs = codec.paramsAtAddress(req.address, req.size);
     const data = new Array(req.size).fill(0);
 

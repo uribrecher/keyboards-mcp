@@ -10,7 +10,7 @@ name: Release
 #
 # One-time setup (trusted publishing is per-package, so it only appears once the
 # package exists on npm):
-#   1. Bootstrap the package once:  npm login && npm publish --access public
+#   1. Bootstrap the package once:  npm login && npm publish -w keyboards-mcp --access public
 #   2. npmjs.com -> Packages -> keyboards-mcp -> Settings -> Trusted publishing ->
 #      add a GitHub Actions publisher:
 #        Organization or user: uribrecher
@@ -20,8 +20,8 @@ name: Release
 #   Requires npm >= 11.5.1 and Node >= 22.14.0 (handled below). After that, every
 #   tagged release publishes with no token; provenance is automatic.
 #
-# To cut a release: bump "version" in package.json, commit to main, then
-#   git tag "v$(node -p "require('./package.json').version")" && git push origin --tags
+# To cut a release: bump "version" in packages/keyboards-mcp/package.json, commit to main, then
+#   git tag "v$(node -p "require('./packages/keyboards-mcp/package.json').version")" && git push origin --tags
 
 on:
   push:
@@ -62,7 +62,7 @@ jobs:
       - name: Verify tag matches package.json version
         if: github.event_name == 'push'
         run: |
-          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          PKG_VERSION="v$(node -p "require('./packages/keyboards-mcp/package.json').version")"
           # GITHUB_REF_NAME is the tag name; read it as an env var (not via ${{ }})
           # to avoid any script-injection from the ref.
           if [ "$GITHUB_REF_NAME" != "$PKG_VERSION" ]; then
@@ -87,4 +87,4 @@ jobs:
       # fresh dist/. Provenance is generated automatically under trusted publishing.
       # (--access public is a harmless no-op for the unscoped, public keyboards-mcp.)
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: npm publish -w keyboards-mcp --provenance --access public

@@ -44,7 +44,7 @@ test("packaged .app bundles the renderer import-map deps (vendored, not pruned)"
   // devDependencies that electron-builder prunes from node_modules, so if they
   // are missing, the shell's app.js (an ES module) fails to load and the whole
   // UI is dead (#126). This guards against that regression.
-  const vendor = join(appRoot!, "src", "sounds-and-recreation-app", "shell", "vendor");
+  const vendor = join(appRoot!, "src", "shell", "vendor");
   assert.ok(existsSync(join(vendor, "marked.esm.js")), "vendor/marked.esm.js missing from .app");
   assert.ok(
     existsSync(join(vendor, "agent-client", "index.js")),

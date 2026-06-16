@@ -2,15 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Monorepo layout
+
+This repo is an **npm-workspaces monorepo** with two packages:
+- `packages/keyboards-mcp/` — the published MCP server + shared model logic (`shared/`, `keyboard_models/`, `midi/`, `mcb/`). Stays on the `2.0.x` line.
+- `packages/sounds-and-recreation-app/` — the private Electron desktop app (`0.1.x`). Depends on `keyboards-mcp` (`^2`) and imports its shared logic **by package name** (`keyboards-mcp/shared/*`) — no cross-package `../` imports.
+
+Run package scripts with `-w <package>` from the repo root, or use the root delegator scripts (`build`, `lint`, `test:check`, `test:unit`). The `keyboards-mcp` package must build before the app (the app imports its compiled `dist`).
+
 ## Build & Run
 
 ```bash
-npm run build          # tsc → dist/
-npm run start          # MCP server (stdio transport)
-npm run dev            # MCP server via tsx (no build step)
-npm run sar            # Electron desktop app — UI facade, model picker UI
-npm run sar:headless   # Headless mock (for testing), --model <id> required
-npm run sar:dist       # build unsigned Sounds and Recreation.app (dist-app/)
+npm run build                                       # root: build keyboards-mcp then the app
+npm run build   -w keyboards-mcp                    # tsc → packages/keyboards-mcp/dist/
+npm run start   -w keyboards-mcp                    # MCP server (stdio transport)
+npm run dev     -w keyboards-mcp                    # MCP server via tsx (no build step)
+npm run mcb     -w keyboards-mcp                    # MIDI Connections Broker (MCB)
+npm run sar     -w sounds-and-recreation-app        # Electron desktop app — UI facade, model picker UI
+npm run sar:headless -w sounds-and-recreation-app   # Headless mock (for testing), --model <id> required
+npm run sar:dist     -w sounds-and-recreation-app   # build unsigned Sounds and Recreation.app (dist-app/)
 ```
 
 The MCP server communicates over stdio. Claude Code connects to it via `.mcp.json`. After code changes, reload the MCP server with `/mcp` in Claude Code before using MCP tools.
@@ -18,23 +28,27 @@ The MCP server communicates over stdio. Claude Code connects to it via `.mcp.jso
 ## Linting
 
 ```bash
-npm run lint           # ESLint (src/ + tests/)
+npm run lint                       # root delegator → lints both workspaces
+npm run lint -w keyboards-mcp      # ESLint a single workspace (src/ + tests/)
 ```
 
-ESLint config is in `eslint.config.js` (flat config). Key rules: `no-floating-promises` (src only), `no-unused-vars` (with `_` prefix exemption). JS files and `no-explicit-any` are excluded. CI runs lint as a separate job.
+Each package has its own `eslint.config.js` (flat config). Key rules: `no-floating-promises` (src only), `no-unused-vars` (with `_` prefix exemption). JS files and `no-explicit-any` are excluded. CI runs lint as a separate job (root delegator).
 
 ## Testing
 
+The server suite runs with `-w keyboards-mcp`; the app has its own `test:unit` + `test:check`:
+
 ```bash
-npm test                  # Run all layers: unit → integration → E2E (mcb + external)
-npm run test:unit         # Unit tests only (fast, no processes)
-npm run test:integration  # Integration tests (spawns headless mocks)
-npm run test:e2e:mcb      # E2E tests that spin up their own MCB on a tmpdir socket
-npm run test:e2e          # E2E tests that REQUIRE an external MCB at MCB_SOCKET
-                          #   start one in another terminal: `npm run mcb`
-npm run test:coverage     # All tests under V8 coverage; writes coverage.lcov + console summary
-                          #   same external-MCB precondition as test:e2e
-npm run test:check        # Type-check test files (no emit)
+npm test -w keyboards-mcp                         # Run all layers: unit → integration → E2E (mcb + external)
+npm run test:unit -w keyboards-mcp                # Unit tests only (fast, no processes)
+npm run test:unit -w sounds-and-recreation-app    # App-only unit tests
+npm run test:integration -w keyboards-mcp         # Integration tests (spawns headless mocks from the app workspace)
+npm run test:e2e:mcb -w keyboards-mcp             # E2E tests that spin up their own MCB on a tmpdir socket
+npm run test:e2e -w keyboards-mcp                 # E2E tests that REQUIRE an external MCB at MCB_SOCKET
+                                                  #   start one in another terminal: `npm run mcb -w keyboards-mcp`
+npm run test:coverage -w keyboards-mcp            # All tests under V8 coverage; writes coverage.lcov + console summary
+                                                  #   same external-MCB precondition as test:e2e
+npm run test:check -w keyboards-mcp               # Type-check test files (no emit)
 ```
 
 Tests use `node:test` + `node:assert` (zero dependencies) and run via `tsx` from source.
@@ -101,7 +115,7 @@ Claude Code <-MCP/stdio-> MCP Server <-MIDI-> Keyboard (or Mock)
 - **MidiConnection** — Transport interface that devices code against. `MidiManager` implements it. Supports CC, SysEx, NRPN, and batch sends.
 - **MockHandler** — Interface for mock device behavior. Owns ALL state and logic; the engine is just MIDI I/O + WebSocket relay.
 
-### Core files (`src/shared/`)
+### Core files (`packages/keyboards-mcp/src/shared/`)
 
 - **`keyboard-model.ts`** — `KeyboardModel`, `KeyboardDevice`, `MockHandler` interfaces. Central contract.
 - **`midi-connection.ts`** — `MidiConnection` interface (sendCC, sendSysEx, sendNRPN, onCC, onSysEx).
@@ -130,13 +144,13 @@ Create `src/keyboard_models/<manufacturer>/<model>/` with:
 
 The model is auto-discovered by `model-registry.ts` scanning the filesystem.
 
-### Sounds and Recreation app (`src/sounds-and-recreation-app/`)
+### Sounds and Recreation app (`packages/sounds-and-recreation-app/src/`)
 
 Electron app: model picker shell -> loads model's web UI. **Three-collaborator architecture (#30):**
 
 - **`MockHandler`** (per-model) — pure logic. Speaks ONLY the param domain: `set_params(refs)`, `get_params(names, part?)`, `load_program(bank, slot)`, `getFullState()`. Internal state keyed by canonical param name with user-domain numeric values. No MIDI bytes, no addresses, no protocol awareness.
 - **`MidiCodec`** (per-model) — param ↔ MIDI translator. `encodeParams`, `encodeBytes`, `encodeAction`, `decode`, `paramsAtAddress`, `parseRequest`, `buildResponse`, `normalizeUserValue`, `wireToUserValue`. Used by both the mock-runner (incoming MIDI → `set_params`) and the MCP-side device (outgoing `set_params` → MIDI bytes).
-- **`MockTransport`** — transport. Two virtual MIDI ports + WebSocket server + source-aware routing. Owns all MIDI I/O. See `src/sounds-and-recreation-app/transport.md` for the file-level walkthrough.
+- **`MockTransport`** — transport. Two virtual MIDI ports + WebSocket server + source-aware routing. Owns all MIDI I/O. See `packages/sounds-and-recreation-app/src/transport.md` for the file-level walkthrough.
 
 UI ↔ handler protocol is `{type:"setParam", name, value, part?}`. External MIDI is decoded by the codec into `set_params` calls; Roland RQ1 is fulfilled entirely in the transport via `codec.paramsAtAddress` + `handler.get_params` + `codec.encodeBytes`. Bank-select MSB/LSB CC sequences are accumulated by the transport and finalized as `handler.load_program(bank, slot)` on the matching Program Change.
 
