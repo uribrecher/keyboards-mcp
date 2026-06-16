@@ -49,9 +49,8 @@ The **midi-connections-broker (MCB)** is a separate long-running process that ow
 | `src/keyboard_models/` | Pluggable keyboard models (`<manufacturer>/<model>/`) |
 | `src/midi/` | MIDI I/O manager (implements MidiConnection) |
 | `src/mcb/` | midi-connections-broker — lease registry, session manager, HTTP-over-UDS API |
-| `src/sounds-and-recreation-app/` | Thin Electron mock engine — virtual MIDI In/Out + WS, source-aware routing; delegates all model logic to `MockHandler` (see [docs/sounds-and-recreation.md](docs/sounds-and-recreation.md#transport-codec-handler--runtime-contract)) |
-| `src/audio-analysis-client/` | TypeScript HTTP+SSE client for the sibling `audio-analysis-mcp` service. Consumed by the Sounds and Recreation app's [Song Analysis](docs/sounds-and-recreation.md#song-analysis) view |
-| `docs/plans/` | Implementation plans (numbered by execution order) |
+
+> The **Sounds and Recreation** desktop app (and its `audio-analysis-client`) now live in a separate workspace package, `sounds-and-recreation-app`, which depends on this package and imports its shared model logic via `keyboards-mcp/shared/*`.
 
 ### Adding a new keyboard model
 
