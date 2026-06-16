@@ -7,6 +7,26 @@ on:
     branches: [main]
 
 jobs:
+  # PR gate: a change to a package's source must ship with a changeset, or the
+  # release flow has nothing to bump/publish. `changeset status` exits non-zero
+  # when a package changed (per .changeset/config.json changedFilePatterns) but no
+  # changeset is present. Escape hatch for intentional no-release PRs that still
+  # touch package source: `npx changeset --empty` records "intentionally no release".
+  # PR-only: on push to main the changesets are already consumed by the Version PR.
+  changeset:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history so changeset can diff against main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
+      - run: npx changeset status --since=origin/main
+
   lint:
     runs-on: ubuntu-latest
     steps:

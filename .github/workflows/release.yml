@@ -1,12 +1,35 @@
 name: Release
 
-# Publishes keyboards-mcp to npm via OIDC Trusted Publishing when a version tag
-# (vX.Y.Z) is pushed. Also runnable on demand from the Actions tab.
+# Two-package release automation via Changesets.
 #
-# NO stored secret. npm write tokens now expire after 90 days, so an NPM_TOKEN
-# secret would silently break releases every quarter. Instead this uses GitHub
-# OIDC: npm mints a short-lived credential per run — nothing to rotate or expire,
-# and build provenance is attested automatically.
+# This repo ships TWO artifacts from one workspaces monorepo: the published
+# `keyboards-mcp` npm package and the PRIVATE `sounds-and-recreation-app` desktop
+# app. They version independently, so release must never let an app-only bump
+# publish the MCP server. The single-package "publish on any v* tag" flow this
+# replaced could not make that distinction; the Changesets flow below does.
+#
+# How a release happens now (no manual version tags):
+#   1. Feature PRs land on main carrying a changeset (.changeset/*.md) that records
+#      which package(s) bumped and how. The CI `changeset` gate enforces this.
+#   2. This workflow runs on every push to main. While unconsumed changesets exist,
+#      changesets/action opens/updates a "Version Packages" PR that applies the
+#      bumps + writes each package's CHANGELOG. NOTHING is published at this stage.
+#   3. Merging that PR consumes the changesets. This workflow runs again, finds no
+#      changesets left, and runs `changeset publish` — which publishes ONLY the
+#      public `keyboards-mcp` package and SKIPS the private app (Changesets never
+#      publishes private packages). So an app-only release versions the app and
+#      writes its changelog but never hits npm.
+#
+# Why no test step here: the commit being published has already passed the full CI
+# suite (lint + audit + Docker test + coverage) TWICE — once on the feature PR, and
+# again on the CI-gated "Version Packages" PR. Publishing is triggered only by
+# merging that CI-passing PR, so re-running tests at publish time is redundant.
+#
+# Publishing uses npm OIDC Trusted Publishing — NO stored NPM_TOKEN (npm write
+# tokens expire after 90 days; OIDC mints a short-lived per-run credential and
+# attests build provenance automatically). Trusted publishing is configured
+# per-package on npmjs.com against THIS workflow filename (release.yml) — keep the
+# filename as-is or the trusted publisher must be reconfigured.
 #
 # One-time setup (trusted publishing is per-package, so it only appears once the
 # package exists on npm):
@@ -18,32 +41,32 @@ name: Release
 #        Workflow filename:    release.yml
 #        Allowed actions:      npm publish   (required for publishers created after 2026-05-20)
 #   Requires npm >= 11.5.1 and Node >= 22.14.0 (handled below). After that, every
-#   tagged release publishes with no token; provenance is automatic.
-#
-# To cut a release: bump "version" in packages/keyboards-mcp/package.json, commit to main, then
-#   git tag "v$(node -p "require('./packages/keyboards-mcp/package.json').version")" && git push origin --tags
+#   release publishes with no token; provenance is automatic.
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
-  # Manual runs publish package.json's CURRENT version as-is (the tag-match check
-  # below is skipped). npm rejects republishing an existing version, so fail-safe.
+    branches: [main]
+  # Manual runs behave the same: open/update the Version PR if changesets exist,
+  # otherwise publish the current versions. npm rejects republishing an existing
+  # version, so a no-op manual run is fail-safe.
   workflow_dispatch:
 
 permissions:
-  contents: read
-  id-token: write   # OIDC: trusted-publishing auth + provenance attestation
+  contents: write       # changesets/action commits the version bumps + pushes the Version PR branch
+  pull-requests: write  # ...and opens/updates that PR
+  id-token: write       # OIDC: trusted-publishing auth + provenance attestation
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false   # never interrupt an in-flight publish
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Changesets needs full history to compute bumps + changelogs
 
       - uses: actions/setup-node@v4
         with:
@@ -56,35 +79,21 @@ jobs:
       - name: Upgrade npm (OIDC trusted-publishing support)
         run: npm install -g npm@latest
 
-      - name: Install dependencies (for the publish build)
+      - name: Install dependencies
         run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
 
-      - name: Verify tag matches package.json version
-        if: github.event_name == 'push'
-        run: |
-          PKG_VERSION="v$(node -p "require('./packages/keyboards-mcp/package.json').version")"
-          # GITHUB_REF_NAME is the tag name; read it as an env var (not interpolated
-          # via GitHub Actions expression syntax) to avoid any script-injection from the ref.
-          if [ "$GITHUB_REF_NAME" != "$PKG_VERSION" ]; then
-            echo "::error::Tag '$GITHUB_REF_NAME' does not match package.json version '$PKG_VERSION'. Bump package.json or fix the tag."
-            exit 1
-          fi
-          echo "Releasing $PKG_VERSION"
-
-      # Gate on the SAME suite CI runs on every PR — full unit + integration + e2e
-      # in Docker with MIDI_TRANSPORT=ws. Don't publish on anything weaker than CI.
-      # The 90% coverage gate is intentionally NOT run here so a pre-existing
-      # coverage gap can't block a release.
-      - name: Run tests (same Docker suite as CI)
-        run: docker compose -f docker-compose.test.yml run --rm test
-
-      - name: Cleanup test containers
-        if: always()
-        run: docker compose -f docker-compose.test.yml down
-
-      # OIDC trusted publishing: no NODE_AUTH_TOKEN. `npm publish` runs the
-      # prepublishOnly script (npm run build) first, so the tarball always ships a
-      # fresh dist/. Provenance is generated automatically under trusted publishing.
-      # (--access public is a harmless no-op for the unscoped, public keyboards-mcp.)
-      - name: Publish to npm
-        run: npm publish -w keyboards-mcp --provenance --access public
+      # changesets/action does double duty per run:
+      #   - changesets present -> open/update the "Version Packages" PR (no publish)
+      #   - no changesets left -> run `changeset publish` (publishes keyboards-mcp,
+      #                           skips the private sounds-and-recreation-app)
+      # `changeset publish` invokes `npm publish` per public package, which runs the
+      # package's prepublishOnly (npm run build) for a fresh dist/, and uses OIDC
+      # trusted publishing automatically given id-token:write + npm >= 11.5.1.
+      - name: Create Version PR or publish to npm
+        uses: changesets/action@v1
+        with:
+          version: npm run changeset:version
+          publish: npm run changeset:publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true   # attach build provenance on publish
