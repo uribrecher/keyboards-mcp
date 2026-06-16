@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { MockTransport } from "../../src/sounds-and-recreation-app/transport.js";
-import type { MockHandler } from "../../src/shared/keyboard-model.js";
+import { MockTransport } from "../../src/transport.js";
+import type { MockHandler } from "keyboards-mcp/shared/keyboard-model";
 
 function makeStubHandler(): MockHandler {
   let label: string | undefined;

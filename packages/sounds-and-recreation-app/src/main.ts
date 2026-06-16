@@ -15,19 +15,19 @@ import { homedir } from "node:os";
 import { sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { AudioAnalysisClient, type ImportRequest, type ImportAudioResult, type StemsRequest, type StructureRequest, type TranscribeRequest, type TriageRequest } from "../audio-analysis-client/index.js";
-import { discoverModels, loadModelById } from "../shared/model-registry.js";
-import type { KeyboardModel, KeyboardModelInfo } from "../shared/keyboard-model.js";
+import { AudioAnalysisClient, type ImportRequest, type ImportAudioResult, type StemsRequest, type StructureRequest, type TranscribeRequest, type TriageRequest } from "./audio-analysis-client/index.js";
+import { discoverModels, loadModelById } from "keyboards-mcp/shared/model-registry";
+import type { KeyboardModel, KeyboardModelInfo } from "keyboards-mcp/shared/keyboard-model";
 import { MockTransport, type MidiEventPayload } from "./transport.js";
-import * as mockRegistry from "../shared/mock-registry.js";
-import { listAllDevices, setOnBrokerLivenessChange, getBrokerLiveness } from "../shared/mcb-client.js";
+import * as mockRegistry from "keyboards-mcp/shared/mock-registry";
+import { listAllDevices, setOnBrokerLivenessChange, getBrokerLiveness } from "keyboards-mcp/shared/mcb-client";
 import {
   parseMockrack,
   writeMockrackAtomic,
   MOCKRACK_VERSION,
   type MockrackV1,
   type MockrackTab,
-} from "../shared/mockrack-format.js";
+} from "./mockrack-format.js";
 import { emitEvent, emitEventLogClear } from "./event-log-ipc.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,8 +38,8 @@ const __dirname = dirname(__filename);
 // is in the template) reads "Sounds and Recreation" rather than "Electron".
 app.setName("Sounds and Recreation");
 
-// Resolve paths back to src/ (from dist/sounds-and-recreation-app/)
-const srcDir = join(__dirname, "..", "..", "src", "sounds-and-recreation-app");
+// Resolve paths back to src/ (from dist/)
+const srcDir = join(__dirname, "..", "src");
 const SHELL_DIR = join(srcDir, "shell");
 const PRELOAD_PATH = join(srcDir, "preload.cjs");
 

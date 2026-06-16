@@ -2,11 +2,11 @@
  * Headless mock entry point for Sounds and Recreation.
  * Plain Node (no Electron) — for test automation and CI.
  *
- * Usage: tsx src/sounds-and-recreation-app/cli.ts --model nord-electro-5d [--ws-port 3000]
+ * Usage: tsx src/cli.ts --model nord-electro-5d [--ws-port 3000]
  */
 
 import { parseArgs } from "node:util";
-import { loadModelById } from "../shared/model-registry.js";
+import { loadModelById } from "keyboards-mcp/shared/model-registry";
 import { MockTransport } from "./transport.js";
 
 const { values } = parseArgs({

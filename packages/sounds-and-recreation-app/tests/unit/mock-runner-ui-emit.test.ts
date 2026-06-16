@@ -15,8 +15,8 @@
 
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { MockTransport } from "../../src/sounds-and-recreation-app/transport.js";
-import type { MidiMessage, MockHandler } from "../../src/shared/keyboard-model.js";
+import { MockTransport } from "../../src/transport.js";
+import type { MidiMessage, MockHandler } from "keyboards-mcp/shared/keyboard-model";
 
 interface SentMsg { type: string; data: any }
 

@@ -18,7 +18,7 @@ import {
   writeMockrackAtomic,
   MOCKRACK_VERSION,
   type MockrackV1,
-} from "../../src/shared/mockrack-format.js";
+} from "../../src/mockrack-format.js";
 
 let nextPort = 4400;
 const isDocker = !!process.env.MOCK_WS_URL;

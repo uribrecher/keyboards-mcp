@@ -1,0 +1,65 @@
+{
+  "name": "sounds-and-recreation-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "copy:peaks-vendor": "mkdir -p src/shell/vendor && cp ../../node_modules/peaks.js/dist/peaks.ext.min.js src/shell/vendor/peaks.min.js && cp ../../node_modules/konva/konva.min.js src/shell/vendor/konva.min.js && cp ../../node_modules/waveform-data/dist/waveform-data.min.js src/shell/vendor/waveform-data.min.js && cp ../../node_modules/marked/lib/marked.esm.js src/shell/vendor/marked.esm.js",
+    "copy:agent-vendor": "mkdir -p src/shell/vendor/agent-client && cp -R ../../node_modules/@sounds-and-recreation/agent-client/dist/. src/shell/vendor/agent-client/",
+    "build:sdk": "npm --prefix ../../../sound-recreation-agent/client-sdk run build",
+    "prebuild": "npm run copy:peaks-vendor",
+    "build": "tsc",
+    "generate:audio-analysis-types": "openapi-typescript src/audio-analysis-client/openapi.json -o src/audio-analysis-client/generated/openapi-types.ts",
+    "presar": "npm run build:sdk && npm run copy:agent-vendor",
+    "presar:debug": "npm run build:sdk && npm run copy:agent-vendor",
+    "sar": "electron dist/main.js",
+    "sar:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 SAR_DEVTOOLS=1 electron --inspect=5858 dist/main.js 2>&1 | tee /tmp/sounds-and-recreation.log",
+    "sar:headless": "tsx src/cli.ts",
+    "presar:dist": "npm run build:sdk && npm run copy:peaks-vendor && npm run copy:agent-vendor",
+    "sar:dist": "tsc && electron-builder --dir",
+    "lint": "eslint src/ tests/",
+    "test:unit": "find tests/unit -name '*.test.ts' | xargs npx tsx --test",
+    "test:check": "tsc --noEmit -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@sounds-and-recreation/agent-client": "file:../../../sound-recreation-agent/client-sdk",
+    "keyboards-mcp": "^2",
+    "marked": "^18.0.3",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.15.3",
+    "eslint": "^9.39.4",
+    "konva": "^9.3.22",
+    "openapi-typescript": "^7.13.0",
+    "peaks.js": "^4.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.58.2",
+    "waveform-data": "^4.5.2"
+  },
+  "build": {
+    "appId": "io.sounds-and-recreation",
+    "productName": "Sounds and Recreation",
+    "asar": false,
+    "directories": { "output": "dist-app" },
+    "extraMetadata": { "main": "dist/main.js" },
+    "files": [
+      "dist/**",
+      "src/shell/**",
+      "src/preload.cjs",
+      "node_modules/keyboards-mcp/dist/shared/**",
+      "node_modules/keyboards-mcp/dist/midi/**",
+      "node_modules/keyboards-mcp/dist/keyboard_models/**",
+      "package.json"
+    ],
+    "mac": { "target": "dir" },
+    "fileAssociations": [
+      { "ext": "mockrack", "name": "Sounds and Recreation Setup", "role": "Editor" }
+    ]
+  }
+}

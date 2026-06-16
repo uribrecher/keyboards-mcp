@@ -10,7 +10,7 @@ import {
   writeMockrackAtomic,
   type MockrackV1,
   type MockrackTab,
-} from "../../src/shared/mockrack-format.js";
+} from "../../src/mockrack-format.js";
 
 function makeTab(over: Partial<MockrackTab> = {}): MockrackTab {
   return { modelId: "nord-electro-5d", label: "studio-nord", state: null, ...over };
