@@ -6,6 +6,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import WebSocket from "ws";
 
+// The headless mock lives in the sibling app workspace. From this helper
+// (packages/keyboards-mcp/tests/helpers/), `../../../sounds-and-recreation-app`
+// resolves to packages/sounds-and-recreation-app. We spawn its `src/cli.ts`
+// with cwd set there so the app's own tsx/deps resolve.
+const APP_DIR = new URL("../../../sounds-and-recreation-app", import.meta.url).pathname;
+
 export interface MockProcessOptions {
   model: string;
   wsPort?: number;
@@ -50,7 +56,7 @@ export class MockProcess {
     const wsPort = opts.wsPort ?? 3456;
     const args = [
       "tsx",
-      "src/sounds-and-recreation-app/cli.ts",
+      "src/cli.ts",
       "--model", opts.model,
       "--ws-port", String(wsPort),
       "--lower-channel", String(opts.lowerChannel ?? 0),
@@ -58,7 +64,7 @@ export class MockProcess {
     ];
     if (opts.label) { args.push("--label", opts.label); }
     const proc = spawn("npx", args, {
-      cwd: process.cwd(),
+      cwd: APP_DIR,
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env as Record<string, string>, ...(opts.env ?? {}) },
     });
@@ -92,11 +98,11 @@ export class MockProcess {
     const wsPort = opts.wsPort ?? 3456;
     const proc = spawn("npx", [
       "tsx",
-      "src/sounds-and-recreation-app/cli.ts",
+      "src/cli.ts",
       "--model", opts.model,
       "--ws-port", String(wsPort),
     ], {
-      cwd: process.cwd(),
+      cwd: APP_DIR,
       stdio: ["pipe", "pipe", "pipe"],
     });
 
