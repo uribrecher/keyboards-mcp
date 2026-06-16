@@ -3,9 +3,13 @@
 Sounds and Recreation is an Electron desktop app — the UI facade over the MCP servers and agent. It simulates one or more keyboards on your desktop so you can develop and test against the MCP server without real hardware. Each tab hosts an independent mock device on its own MIDI virtual port and its own WebSocket port, with a model-specific web UI that mirrors real-time parameter changes.
 
 ```bash
-npm run sar   # Electron — model picker, then per-model UI
-npm run sar:headless -- --model nord-electro-5d   # Plain Node, for CI/E2E tests
+# from the monorepo root (drop the -w … flag if you run these inside this package)
+npm run sar -w sounds-and-recreation-app                                       # Electron — model picker, then per-model UI
+npm run sar:headless -w sounds-and-recreation-app -- --model nord-electro-5d   # Plain Node, for CI/E2E tests
+npm run sar:dist -w sounds-and-recreation-app                                  # build the unsigned Sounds and Recreation.app → dist-app/
 ```
+
+This is the private `sounds-and-recreation-app` workspace; it depends on the published [`keyboards-mcp`](../keyboards-mcp/README.md) package and imports its shared model logic by package name (`keyboards-mcp/shared/*`). See the [repo README](../../README.md) for the monorepo layout and release flow.
 
 ![Sounds and Recreation tour](images/mock_runner_tour.gif)
 
@@ -50,7 +54,7 @@ The two rack-column views own the entire column when active — including the to
 
 - **Chassis** — brand strip plus tab bar with a `+` button (MIDI view) or the SONG ANALYSIS title + service-health chip (analysis view). Each view's chassis lives inside its own panel — neither spans across the rail.
 - **Rack panels** — two stacked panels share the rack column. Rail selectors pick which is visible; the inactive one stays mounted. Tab LEDs are still meaningful in MIDI view (see [Tab LEDs](#tab-leds-and-mcb)).
-- **Slot** (MIDI view) — the active tab's iframe. Loads `chooser.html` until a model is picked, then that model's UI from `src/keyboard_models/<mfr>/<model>/web/`. Inactive tabs stay mounted but hidden.
+- **Slot** (MIDI view) — the active tab's iframe. Loads `chooser.html` until a model is picked, then that model's UI from `keyboards-mcp/src/keyboard_models/<mfr>/<model>/web/`. Inactive tabs stay mounted but hidden.
 - **Empty rack slot** — placeholder shown when no tabs are open.
 - **MIDI monitor drawer** — collapsible strip at the bottom of the MIDI view showing the active tab's recent MIDI traffic (see [MIDI monitor](#midi-monitor)).
 - **Rail** — full-height vertical strip (34px) on the slot-facing edge of the console. Top-to-bottom: **selector cluster** (MIDI / WAVE buttons, click-only, jewel-LED active state); **splitter** (fills the rest of the rail, drag to resize the console, click to collapse, chevron at the top under the buttons).
@@ -74,7 +78,7 @@ Each loaded tab has a sanitized **label** (lowercase `[a-z0-9._-]`). It defaults
 
 ### Tab LEDs and MCB
 
-The dot at the start of each tab title is a status LED reflecting that mock's role in [midi-connections-broker (MCB)](../README.md) leases:
+The dot at the start of each tab title is a status LED reflecting that mock's role in [midi-connections-broker (MCB)](../keyboards-mcp/README.md) leases:
 
 | LED | Meaning |
 |---|---|
@@ -83,7 +87,7 @@ The dot at the start of each tab title is a status LED reflecting that mock's ro
 | Blue | Held as the **shadow** of another device (mirror destination — typical hw + mock pair). |
 | Blinking amber (all tabs) | MCB is unreachable; the broker-liveness state pushes "down" to every tab until it comes back. With the broker down, the lease-state poll collapses every tab to "none" (amber) and the blink pulses opacity on top of that. |
 
-The shell polls MCB every 2 s for lease state, and registers a broker-liveness subscriber so the "down" / "up" transitions arrive as push notifications (no polling on the renderer side). MCB lives in `src/shared/mcb-client.ts`; the mock-runner is not a hard dependent — if MCB is down, mocks still run, the LEDs just collapse to "none".
+The shell polls MCB every 2 s for lease state, and registers a broker-liveness subscriber so the "down" / "up" transitions arrive as push notifications (no polling on the renderer side). MCB lives in `keyboards-mcp/src/shared/mcb-client.ts`; the mock-runner is not a hard dependent — if MCB is down, mocks still run, the LEDs just collapse to "none".
 
 ### MIDI monitor
 
@@ -104,15 +108,15 @@ Events arrive from each tab's `MockTransport` via the `midi-event` EventEmitter 
 
 ## Model picker
 
-A new tab opens to the chooser, which lists every model auto-discovered under `src/keyboard_models/<manufacturer>/<model>/`. Cards show manufacturer, display name, and model id. Clicking a card spins up the transport for that tab and navigates the iframe to the model's web UI. The chooser runs inside the iframe and asks the parent shell for the catalog via `postMessage` — the preload-bridged `mockRunnerAPI` only exists on the parent.
+A new tab opens to the chooser, which lists every model auto-discovered under `keyboards-mcp/src/keyboard_models/<manufacturer>/<model>/`. Cards show manufacturer, display name, and model id. Clicking a card spins up the transport for that tab and navigates the iframe to the model's web UI. The chooser runs inside the iframe and asks the parent shell for the catalog via `postMessage` — the preload-bridged `mockRunnerAPI` only exists on the parent.
 
 ## Model UI
 
-Each model ships its own UI under `src/keyboard_models/<mfr>/<model>/web/`. The shell injects the per-tab `wsPort` via the URL query string; the UI opens a WebSocket back to that port and re-renders on every full-state broadcast it receives. Drawbars, knobs, LEDs, and parameter values update both when external MIDI arrives on the virtual port and when another client (the agent via MCP, a real keyboard via a bridge) writes to the mock.
+Each model ships its own UI under `keyboards-mcp/src/keyboard_models/<mfr>/<model>/web/`. The shell injects the per-tab `wsPort` via the URL query string; the UI opens a WebSocket back to that port and re-renders on every full-state broadcast it receives. Drawbars, knobs, LEDs, and parameter values update both when external MIDI arrives on the virtual port and when another client (the agent via MCP, a real keyboard via a bridge) writes to the mock.
 
 Model UIs speak the **param domain only** — never raw MIDI. To change a parameter, the UI sends `{type:"setParam", name, value, part?}` over the WebSocket; the transport calls `handler.set_params([...])` for state and then asks the codec to encode the same write to MIDI Out bytes (the panel-knob analogue, so external listeners see the change). To change the active engine on a part (JUNO-X), the UI sends `{type:"setActiveEngine", engine, part?}`. To request a cache reload after a backup extract, `{type:"reload-cache"}`.
 
-The transport is a thin shell (virtual MIDI port + WebSocket server + broadcast + small protocol-state glue). All model semantics live in the per-model `MockHandler` (state) and `MidiCodec` (param ↔ MIDI translation). See [Transport, codec, handler — runtime contract](#transport-codec-handler--runtime-contract) for the boundary and [`src/sounds-and-recreation-app/transport.md`](../src/sounds-and-recreation-app/transport.md) for the transport file walkthrough.
+The transport is a thin shell (virtual MIDI port + WebSocket server + broadcast + small protocol-state glue). All model semantics live in the per-model `MockHandler` (state) and `MidiCodec` (param ↔ MIDI translation). See [Transport, codec, handler — runtime contract](#transport-codec-handler--runtime-contract) for the boundary and [`src/transport.md`](src/transport.md) for the transport file walkthrough.
 
 ## File menu — saving and restoring rack setups
 
@@ -304,26 +308,28 @@ Tests use this via `tests/helpers/mock-process.ts` (headless spawn + WebSocket a
 
 ## Architecture quick reference
 
+This app's own files live under `src/` (i.e. `packages/sounds-and-recreation-app/src/`); the shared model logic it imports lives in the sibling `keyboards-mcp` package (shown as `keyboards-mcp/src/…`).
+
 | Path | Role |
 |---|---|
-| `src/sounds-and-recreation-app/main.ts` | Electron main — owns tabs, transports, file menu, IPC (incl. audio-analysis workspace scan, fs.watch, file dialog, job-metadata write) |
-| `src/sounds-and-recreation-app/cli.ts` | Headless entry point |
-| `src/sounds-and-recreation-app/transport.ts` | `MockTransport` — MIDI virtual ports + WebSocket server + broadcast + routing glue |
-| `src/sounds-and-recreation-app/transport.md` | File-level walkthrough of `transport.ts` |
-| `src/sounds-and-recreation-app/preload.cjs` | Exposes `mockRunnerAPI` to the shell |
-| `src/sounds-and-recreation-app/event-log-ipc.ts` | Main → renderer event log channel |
-| `src/sounds-and-recreation-app/shell/index.html` | Tab bar, slot, MIDI drawer, console drawer, rail (MIDI/WAVE selectors + splitter), SONG ANALYSIS panel scaffold, backup picker |
-| `src/sounds-and-recreation-app/shell/app.js` | Tab routing, MIDI drawer, chat + event log, MCB LED polling, splitter, rack-view switching, dirty/title sync |
-| `src/sounds-and-recreation-app/shell/panel-analysis.js` | SONG ANALYSIS panel — lazy-imported; owns jobs list, import + analyze flows, health probe |
-| `src/sounds-and-recreation-app/shell/chooser.html` | Model picker iframe |
-| `src/audio-analysis-client/` | TypeScript client for the sibling `audio-analysis-mcp` service (HTTP + SSE) — see [its README](../src/audio-analysis-client/README.md) |
-| `src/shared/midi-codec.ts` | `MidiCodec` interface — param ↔ MIDI translation, shared by mock + MCP |
-| `src/shared/mcb-client.ts` | HTTP-over-UDS client for midi-connections-broker (lease queries + broker-liveness) |
-| `src/shared/mock-registry.ts` | At-rest index of running mocks, written by each `MockTransport` |
-| `src/shared/mockrack-format.ts` | `.mockrack` schema, parse, atomic write |
-| `src/keyboard_models/<mfr>/<model>/mock-handler.ts` | Per-model state — `set_params` / `get_params` / `getFullState` / `setFullState` |
-| `src/keyboard_models/<mfr>/<model>/midi-codec.ts` | Per-model codec implementation |
-| `src/keyboard_models/<mfr>/<model>/web/` | Per-model UI loaded into the tab iframe |
+| `src/main.ts` | Electron main — owns tabs, transports, file menu, IPC (incl. audio-analysis workspace scan, fs.watch, file dialog, job-metadata write) |
+| `src/cli.ts` | Headless entry point |
+| `src/transport.ts` | `MockTransport` — MIDI virtual ports + WebSocket server + broadcast + routing glue |
+| `src/transport.md` | File-level walkthrough of `transport.ts` |
+| `src/preload.cjs` | Exposes `mockRunnerAPI` to the shell |
+| `src/event-log-ipc.ts` | Main → renderer event log channel |
+| `src/shell/index.html` | Tab bar, slot, MIDI drawer, console drawer, rail (MIDI/WAVE selectors + splitter), SONG ANALYSIS panel scaffold, backup picker |
+| `src/shell/app.js` | Tab routing, MIDI drawer, chat + event log, MCB LED polling, splitter, rack-view switching, dirty/title sync |
+| `src/shell/panel-analysis.js` | SONG ANALYSIS panel — lazy-imported; owns jobs list, import + analyze flows, health probe |
+| `src/shell/chooser.html` | Model picker iframe |
+| `src/audio-analysis-client/` | TypeScript client for the sibling `audio-analysis-mcp` service (HTTP + SSE) — see [its README](src/audio-analysis-client/README.md) |
+| `src/mockrack-format.ts` | `.mockrack` schema, parse, atomic write |
+| `keyboards-mcp/src/shared/midi-codec.ts` | `MidiCodec` interface — param ↔ MIDI translation, shared by mock + MCP |
+| `keyboards-mcp/src/shared/mcb-client.ts` | HTTP-over-UDS client for midi-connections-broker (lease queries + broker-liveness) |
+| `keyboards-mcp/src/shared/mock-registry.ts` | At-rest index of running mocks, written by each `MockTransport` |
+| `keyboards-mcp/src/keyboard_models/<mfr>/<model>/mock-handler.ts` | Per-model state — `set_params` / `get_params` / `getFullState` / `setFullState` |
+| `keyboards-mcp/src/keyboard_models/<mfr>/<model>/midi-codec.ts` | Per-model codec implementation |
+| `keyboards-mcp/src/keyboard_models/<mfr>/<model>/web/` | Per-model UI loaded into the tab iframe |
 
 ## Transport, codec, handler — runtime contract
 
@@ -384,10 +390,10 @@ The transport is a dumb pipe + small protocol glue. The codec is the model's tra
 
 ### Inbound message flows
 
-Two groups, seven flows total. From the wire: UI `setParam`, external MIDI param write (CC or non-request sysex), external bank-select + Program Change (transport accumulates MSB/LSB), and codec-recognized request sysex (today: Roland RQ1, but the mechanism is generic). From the host: WebSocket client connect (with the partial-broadcast MCP-status quirk), tab relabel + cache reload, and `.mockrack` save/restore. Each is documented with diagrams in [`src/sounds-and-recreation-app/transport.md`](../src/sounds-and-recreation-app/transport.md#inbound-message-flows) alongside the transport's other internals.
+Two groups, seven flows total. From the wire: UI `setParam`, external MIDI param write (CC or non-request sysex), external bank-select + Program Change (transport accumulates MSB/LSB), and codec-recognized request sysex (today: Roland RQ1, but the mechanism is generic). From the host: WebSocket client connect (with the partial-broadcast MCP-status quirk), tab relabel + cache reload, and `.mockrack` save/restore. Each is documented with diagrams in [`src/transport.md`](src/transport.md#inbound-message-flows) alongside the transport's other internals.
 
 ### See also
 
-- [`src/sounds-and-recreation-app/transport.md`](../src/sounds-and-recreation-app/transport.md) — file-level walkthrough of `transport.ts` (every entry point, every protocol-state bit).
-- [`src/shared/midi-codec.ts`](../src/shared/midi-codec.ts) — the `MidiCodec` interface contract.
-- [`src/shared/keyboard-model.ts`](../src/shared/keyboard-model.ts) — the `MockHandler` interface contract.
+- [`src/transport.md`](src/transport.md) — file-level walkthrough of `transport.ts` (every entry point, every protocol-state bit).
+- [`keyboards-mcp/src/shared/midi-codec.ts`](../keyboards-mcp/src/shared/midi-codec.ts) — the `MidiCodec` interface contract.
+- [`keyboards-mcp/src/shared/keyboard-model.ts`](../keyboards-mcp/src/shared/keyboard-model.ts) — the `MockHandler` interface contract.
