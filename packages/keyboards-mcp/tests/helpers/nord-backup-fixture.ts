@@ -21,6 +21,11 @@ const CBIN_HEADER_SIZE = 0x1c; // 28 bytes
  * starting at absolute bit `absBit`, most-significant bit first.
  */
 export function setBits(buf: Buffer, absBit: number, count: number, value: number): void {
+  if (absBit < 0 || ((absBit + count - 1) >> 3) >= buf.length) {
+    throw new RangeError(
+      `setBits out of range: bits ${absBit}..${absBit + count - 1} exceed a ${buf.length}-byte buffer`,
+    );
+  }
   for (let i = 0; i < count; i++) {
     const bit = (value >> (count - 1 - i)) & 1;
     const bi = absBit + i;
@@ -171,14 +176,15 @@ export class FakeMidiConnection implements MidiConnection {
   }
   async sendCCBatch(
     messages: Array<{ controller: number; value: number; channel?: number }>,
+    _delayMs?: number,
   ): Promise<void> {
     this.batches.push(messages);
     for (const m of messages) this.cc.push(m);
   }
-  onCC(): void {
+  onCC(_callback: (cc: number, value: number, channel: number) => void): void {
     /* no-op for tests */
   }
-  onSysEx(): () => void {
+  onSysEx(_callback: (bytes: number[]) => void): () => void {
     return () => {
       /* unsubscribe no-op */
     };
