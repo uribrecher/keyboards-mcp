@@ -1,111 +1,17 @@
 {
-  "name": "keyboards-mcp",
-  "version": "2.0.0",
-  "description": "MCP server for controlling MIDI keyboards (Nord Electro 5D and more)",
+  "name": "keyboards-mcp-monorepo",
+  "version": "0.0.0",
+  "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "bin": {
-    "keyboards-mcp": "dist/cli/index.js"
-  },
-  "engines": {
-    "node": ">=20"
-  },
-  "files": [
-    "dist/index.*",
-    "dist/server.*",
-    "dist/cli/**",
-    "dist/mcb/**",
-    "dist/tools/**",
-    "dist/shared/**",
-    "dist/midi/**",
-    "dist/keyboard_models/**",
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE"
+  "workspaces": [
+    "packages/keyboards-mcp",
+    "packages/sounds-and-recreation-app"
   ],
   "scripts": {
-    "copy:peaks-vendor": "mkdir -p src/sounds-and-recreation-app/shell/vendor && cp node_modules/peaks.js/dist/peaks.ext.min.js src/sounds-and-recreation-app/shell/vendor/peaks.min.js && cp node_modules/konva/konva.min.js src/sounds-and-recreation-app/shell/vendor/konva.min.js && cp node_modules/waveform-data/dist/waveform-data.min.js src/sounds-and-recreation-app/shell/vendor/waveform-data.min.js && cp node_modules/marked/lib/marked.esm.js src/sounds-and-recreation-app/shell/vendor/marked.esm.js",
-    "copy:agent-vendor": "mkdir -p src/sounds-and-recreation-app/shell/vendor/agent-client && cp -R node_modules/@sounds-and-recreation/agent-client/dist/. src/sounds-and-recreation-app/shell/vendor/agent-client/",
-    "prebuild": "npm run copy:peaks-vendor",
-    "build": "tsc",
-    "prepublishOnly": "npm run build",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "build:sdk": "npm --prefix ../sound-recreation-agent/client-sdk run build",
-    "presar": "npm run build:sdk && npm run copy:agent-vendor",
-    "presar:debug": "npm run build:sdk && npm run copy:agent-vendor",
-    "sar": "electron dist/sounds-and-recreation-app/main.js",
-    "sar:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 SAR_DEVTOOLS=1 electron --inspect=5858 dist/sounds-and-recreation-app/main.js 2>&1 | tee /tmp/sounds-and-recreation.log",
-    "sar:headless": "tsx src/sounds-and-recreation-app/cli.ts",
-    "presar:dist": "npm run build:sdk && npm run copy:peaks-vendor && npm run copy:agent-vendor",
-    "sar:dist": "tsc && electron-builder --dir",
-    "mcb": "tsx src/mcb/index.ts",
-    "generate:audio-analysis-types": "openapi-typescript src/audio-analysis-client/openapi.json -o src/audio-analysis-client/generated/openapi-types.ts",
-    "lint": "eslint src/ tests/",
-    "test": "npm run test:unit && npm run test:integration && npm run test:e2e:mcb && npm run test:e2e",
-    "test:unit": "find tests/unit -name '*.test.ts' | xargs npx tsx --test",
-    "test:integration": "find tests/integration -name '*.test.ts' | xargs npx tsx --test",
-    "test:e2e": "find tests/e2e -maxdepth 1 -name '*.test.ts' | xargs npx tsx --test --test-concurrency=1",
-    "test:e2e:mcb": "find tests/e2e/mcb -name '*.test.ts' | xargs npx tsx --test --test-concurrency=1",
-    "test:coverage": "find tests -name '*.test.ts' | xargs npx tsx --test --test-concurrency=1 --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-lines=90 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov",
-    "test:check": "tsc --noEmit -p tsconfig.test.json",
-    "test:ci": "npm run lint && npm run test:check && npm run test:unit && npm run test:integration && npm run test:e2e:mcb && npm run test:e2e"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "adm-zip": "^0.5.16",
-    "easymidi": "^3.0.0",
-    "ws": "^8.20.0",
-    "zod": "^3.23.0"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@sounds-and-recreation/agent-client": "file:../sound-recreation-agent/client-sdk",
-    "@types/adm-zip": "^0.5.8",
-    "@types/node": "^20.0.0",
-    "@types/ws": "^8.18.1",
-    "electron": "^41.1.1",
-    "electron-builder": "^26.15.3",
-    "eslint": "^9.39.4",
-    "konva": "^9.3.22",
-    "marked": "^18.0.3",
-    "openapi-typescript": "^7.13.0",
-    "peaks.js": "^4.0.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.5.0",
-    "typescript-eslint": "^8.58.2",
-    "waveform-data": "^4.5.2"
-  },
-  "build": {
-    "appId": "io.sounds-and-recreation",
-    "productName": "Sounds and Recreation",
-    "asar": false,
-    "directories": {
-      "output": "dist-app"
-    },
-    "extraMetadata": {
-      "main": "dist/sounds-and-recreation-app/main.js"
-    },
-    "files": [
-      "dist/sounds-and-recreation-app/**",
-      "dist/shared/**",
-      "dist/midi/**",
-      "dist/keyboard_models/**",
-      "dist/audio-analysis-client/**",
-      "src/sounds-and-recreation-app/shell/**",
-      "src/sounds-and-recreation-app/preload.cjs",
-      "src/keyboard_models/**/web/**",
-      "package.json"
-    ],
-    "mac": {
-      "target": "dir"
-    },
-    "fileAssociations": [
-      {
-        "ext": "mockrack",
-        "name": "Sounds and Recreation Setup",
-        "role": "Editor"
-      }
-    ]
+    "build": "npm run build -w keyboards-mcp && npm run build -w sounds-and-recreation-app",
+    "lint": "npm run lint --workspaces --if-present",
+    "test:check": "npm run test:check --workspaces --if-present",
+    "test:unit": "npm run test:unit --workspaces --if-present",
+    "test": "npm run test -w keyboards-mcp"
   }
 }
