@@ -63,8 +63,8 @@ jobs:
         if: github.event_name == 'push'
         run: |
           PKG_VERSION="v$(node -p "require('./packages/keyboards-mcp/package.json').version")"
-          # GITHUB_REF_NAME is the tag name; read it as an env var (not via ${{ }})
-          # to avoid any script-injection from the ref.
+          # GITHUB_REF_NAME is the tag name; read it as an env var (not interpolated
+          # via GitHub Actions expression syntax) to avoid any script-injection from the ref.
           if [ "$GITHUB_REF_NAME" != "$PKG_VERSION" ]; then
             echo "::error::Tag '$GITHUB_REF_NAME' does not match package.json version '$PKG_VERSION'. Bump package.json or fix the tag."
             exit 1
