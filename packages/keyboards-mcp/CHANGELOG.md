@@ -1,21 +1,4 @@
-# Changelog
-
-All notable changes to this project are documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-Releases are published to npm automatically when a `vX.Y.Z` tag is pushed (see
-[Releasing](README.md#releasing)).
-
-## [Unreleased]
-
-### Changed
-- Renamed the Electron desktop app from "Mock Runner" to **Sounds and Recreation**
-  and added `npm run sar:dist` to build a standalone, unsigned `Sounds and Recreation.app`
-  (UI facade + in-process mock keyboards). The renderer's import-map dependencies
-  (`marked`, `@sounds-and-recreation/agent-client`) are vendored into `shell/vendor/`
-  so the packaged app launches and is fully interactive. Internal mock/`.mockrack`
-  formats unchanged. (#126, #131, #132)
+# keyboards-mcp
 
 ## [2.0.0] - 2026-06-14
 
