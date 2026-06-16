@@ -12,6 +12,13 @@
     "lint": "npm run lint --workspaces --if-present",
     "test:check": "npm run test:check --workspaces --if-present",
     "test:unit": "npm run test:unit --workspaces --if-present",
-    "test": "npm run test -w keyboards-mcp"
+    "test": "npm run test -w keyboards-mcp",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.0"
   }
 }
