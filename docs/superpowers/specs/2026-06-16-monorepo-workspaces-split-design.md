@@ -78,13 +78,17 @@ depends on `keyboards-mcp` and imports its shared model logic **by package name*
 keyboards-mcp/                          (repo root — NEW private workspaces umbrella; never published)
 ├── package.json                        { "private": true, "workspaces": ["packages/*"], thin delegator scripts }
 ├── package-lock.json                   (single root lockfile)
-├── docs/                               (repo-level specs/plans stay at the root — see Open items)
+├── .claude-plugin/plugin.json          (Claude Code plugin manifest — marketplace discovery; STAYS at root)
+├── README.md                           (GitHub repo + marketplace face; STAYS at root, unchanged during review)
+├── LICENSE                             (GPL-3.0-or-later; STAYS at root for the marketplace/GitHub URL)
+├── PRIVACY.md                          (privacy-policy md referenced by the marketplace form; STAYS at root)
+├── docs/                               (repo-level specs/plans + the GitHub Pages source at /docs; STAYS at root)
 └── packages/
     ├── keyboards-mcp/                  (the published npm server — stays on the 2.0.x line)
     │   ├── package.json                name keyboards-mcp, bin, files whitelist, + NEW exports map
     │   ├── tsconfig.json               (+ "declaration": true so consumers get types)
     │   ├── eslint.config.js
-    │   ├── README.md  CHANGELOG.md  LICENSE   (published surface — move with the package)
+    │   ├── README.md  LICENSE  CHANGELOG.md   (npm tarball copies: README + LICENSE copied for the published package; CHANGELOG moves here — see Marketplace constraints)
     │   ├── Dockerfile  docker-compose.test.yml  data/
     │   ├── src/                        index.ts server.ts cli/ mcb/ tools/ midi/ shared/ keyboard_models/
     │   └── tests/                      ALL tests stay here (helpers retargeted to the app)
@@ -181,6 +185,39 @@ Because the server moves to `packages/keyboards-mcp/`, references to its `dist` 
 
 These are listed in the implementation plan as a coordination checklist; #135's PR
 description will call them out so the agent/parent-docs can be updated in lockstep.
+
+## Marketplace submission constraints (registration under review)
+
+`keyboards-mcp` is mid-review for the Anthropic / Claude Code plugin marketplace. The
+submitted form references repo-level artifacts and the published npm package; the
+restructure must not disturb any of them. Verified against `.claude-plugin/plugin.json`
+and the live Pages config (`gh api repos/uribrecher/keyboards-mcp/pages` →
+`source: { branch: main, path: /docs }`):
+
+| Form / manifest reference | Value | Restructure impact |
+|---|---|---|
+| GitHub repo URL | `github.com/uribrecher/keyboards-mcp` | none — repo unchanged |
+| GitHub Pages URL | `uribrecher.github.io/keyboards-mcp/` | none — derived from repo name; Pages serves `main:/docs`, and `docs/` stays at root |
+| Privacy policy | `PRIVACY.md` (repo root) | **must stay at root** to preserve the URL |
+| License | `GPL-3.0-or-later` | none — a type value, not a moved file; `LICENSE` also stays at root |
+| Plugin manifest | `.claude-plugin/plugin.json` (repo root) | **must stay at root** (Claude Code marketplace discovery) |
+| MCP server launch | `npx -y keyboards-mcp@2.0.0` | none — resolves the **published npm package**, not a repo path |
+
+**Hard constraints added by this finding:**
+- `.claude-plugin/plugin.json`, `PRIVACY.md`, `LICENSE`, `README.md`, and `docs/` **stay at the
+  repo root, unchanged** — they are the GitHub/marketplace face. This **revises** the earlier
+  "move README/LICENSE into the package" idea: the **package keeps its own copies** of `README.md`
+  + `LICENSE` for the npm tarball (LICENSE duplicates the root GPL-3.0 text), while the
+  authoritative root copies are left untouched. `CHANGELOG.md` moves into the package (it is the
+  server changelog and is not marketplace-referenced).
+- The published package name (`keyboards-mcp`) and the `2.0.x` version line are preserved, so the
+  manifest's `npx keyboards-mcp@2.0.0` keeps resolving. The root umbrella `package.json` is
+  `private` and is **not** the published package, so it never affects `npx keyboards-mcp`.
+
+**Timing — author's call:** because the form is under review, decide whether to (a) land this
+restructure now (safe per the table above, but the repo visibly reshapes mid-review), or (b) hold
+the PR merge until the marketplace registration is approved, keeping the branch ready. Either way
+the restructure is internal and preserves every referenced value.
 
 ## Scope
 
