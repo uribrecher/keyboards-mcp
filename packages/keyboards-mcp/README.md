@@ -18,18 +18,20 @@ Currently supported: **Nord Electro 5D**, **Roland JUNO-X**, **Prophet-6**
 
 **Model-delegated design.** MCP tools are thin wrappers — keyboard models own all business logic.
 
-```
-AI Agent  <──MCP──>  MCP Server  <──MIDI──>  Keyboard (or Mock)
-                          │
-                          ├──HTTP/UDS──> MCB (midi-connections-broker)
-                          │              claims port leases so concurrent
-                          │              agent sessions don't collide
-                          │
-                     tools/ (thin delegates)
-                          │
-                     DevicePool → KeyboardDevice (1..N)
-                          │
-               keyboard_models/<mfr>/<model>/
+```mermaid
+flowchart TB
+    agent([AI Agent])
+    mcp["MCP Server"]
+    kbd["Keyboard (or Mock)"]
+    mcb["MCB (midi-connections-broker)<br/>claims port leases so concurrent<br/>agent sessions don't collide"]
+    tools["tools/ (thin delegates)"]
+    pool["DevicePool &rarr; KeyboardDevice (1..N)"]
+    models["keyboard_models/&lt;mfr&gt;/&lt;model&gt;/"]
+
+    agent <-- "MCP" --> mcp
+    mcp <-- "MIDI" --> kbd
+    mcp -- "HTTP / UDS" --> mcb
+    mcp --> tools --> pool --> models
 ```
 
 A **KeyboardModel** is a type of keyboard (e.g., "Nord Electro 5D"). It owns shared definitions (parameter map, system prompt, backup parsing) and acts as a factory for device instances.
