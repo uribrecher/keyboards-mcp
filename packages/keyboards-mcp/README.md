@@ -25,11 +25,11 @@ flowchart TB
     kbd["Keyboard (or Mock)"]
     mcb["MCB (midi-connections-broker)<br/>claims port leases so concurrent<br/>agent sessions don't collide"]
     tools["tools/ (thin delegates)"]
-    pool["DevicePool &rarr; KeyboardDevice (1..N)"]
+    pool["DevicePool → KeyboardDevice (1..N)"]
     models["keyboard_models/&lt;mfr&gt;/&lt;model&gt;/"]
 
-    agent <-- "MCP" --> mcp
-    mcp <-- "MIDI" --> kbd
+    agent <-->|MCP| mcp
+    mcp <-->|MIDI| kbd
     mcp -- "HTTP / UDS" --> mcb
     mcp --> tools --> pool --> models
 ```
