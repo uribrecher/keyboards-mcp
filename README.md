@@ -17,17 +17,24 @@ The rest of this file covers the **repository as a whole**: how the pieces fit, 
 
 ## System architecture
 
-```
- AI agent ──MCP/stdio──▶  keyboards-mcp  ──MIDI──▶  keyboard (real)
-                          (MCP server)                  ▲
-                               │                        │  no hardware?
-                               └──HTTP/UDS──▶ MCB        │
-                                   (port-lease broker)   │
-                                                         │
-                 Sounds and Recreation app ──virtual MIDI┘
-                 (mock keyboards + model UIs)
-                               │
-                 Song Analysis ──HTTP/SSE──▶ audio-analysis-mcp (sibling repo)
+```mermaid
+flowchart LR
+    agent([AI agent])
+    mcp["keyboards-mcp<br/>(MCP server)"]
+    mcb["MCB<br/>(port-lease broker)"]
+    kbd["keyboard (real)"]
+    audio["audio-analysis-mcp<br/>(sibling repo)"]
+
+    subgraph sar ["Sounds and Recreation app"]
+        mock["mock keyboards + model UIs"]
+        song["Song Analysis"]
+    end
+
+    agent -- "MCP / stdio" --> mcp
+    mcp -- "HTTP / UDS" --> mcb
+    mcp -- "MIDI" --> kbd
+    mcp -- "virtual MIDI<br/>(no hardware)" --> mock
+    song -- "HTTP / SSE" --> audio
 ```
 
 - **keyboards-mcp** is the MCP server. Tools are thin wrappers; keyboard *models* own all logic. It talks to real keyboards over USB MIDI, or to the mock app's virtual MIDI ports.
