@@ -2,6 +2,21 @@
   "name": "keyboards-mcp",
   "version": "2.0.0",
   "description": "MCP server for controlling MIDI keyboards (Nord Electro 5D and more)",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "midi",
+    "synthesizer",
+    "synth",
+    "keyboard",
+    "nord-electro",
+    "roland-juno-x",
+    "prophet-6",
+    "music",
+    "music-production",
+    "sound-design",
+    "ai-agent"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/uribrecher/keyboards-mcp.git",
