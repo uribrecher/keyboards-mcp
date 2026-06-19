@@ -2,6 +2,15 @@
   "name": "keyboards-mcp",
   "version": "2.0.0",
   "description": "MCP server for controlling MIDI keyboards (Nord Electro 5D and more)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uribrecher/keyboards-mcp.git",
+    "directory": "packages/keyboards-mcp"
+  },
+  "homepage": "https://uribrecher.github.io/keyboards-mcp/",
+  "bugs": {
+    "url": "https://github.com/uribrecher/keyboards-mcp/issues"
+  },
   "type": "module",
   "main": "dist/index.js",
   "exports": {
