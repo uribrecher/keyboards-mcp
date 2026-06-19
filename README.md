@@ -1,5 +1,8 @@
 # keyboards-mcp
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](./LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/uribrecher/keyboards-mcp?style=flat&logo=github)](https://github.com/uribrecher/keyboards-mcp/stargazers)
+
 AI-controlled MIDI keyboards. An MCP server lets an AI agent research a sound and dial it in on real hardware synthesizers over USB MIDI; a companion desktop app simulates those keyboards so you can develop without hardware.
 
 Supported keyboards: **Nord Electro 5D**, **Roland JUNO-X**, **Prophet-6**.
