@@ -6,7 +6,7 @@
 
 The transport owns three things:
 
-1. **Transport.** One virtual MIDI port (in + out) + one WebSocket server, per mock instance.
+1. **Transport.** One virtual MIDI port (in + out) + one WebSocket server, per mock instance. In WS-only mode (no virtual MIDI) an optional **second WS server — the "out lane" (`wsOutPort`, #109)** — carries outgoing-from-mock SysEx so a WS-transport MCP can receive the RQ1→DT1 round-trip.
 2. **Routing.** WS messages → handler methods. External MIDI → codec/handler.
 3. **A small amount of stateful protocol glue** that neither the codec (stateless) nor the handler (model-agnostic transport) can own:
    - Bank-select accumulator (CC 0 / CC 32) before a Program Change.
@@ -46,8 +46,10 @@ The transport accepts two kinds of WebSocket clients, distinguished by `?client=
 
 | Client | Set | Receives | Sends |
 |---|---|---|---|
-| UI (default) | `this.clients` | Full state snapshots (+ `mcpConnected`, `label`) | `setParam`, `setActiveEngine`, `reload-cache` |
+| UI (default) | `this.clients` | Full state snapshots (+ `mcpConnected`, `label`) | `setParam`, `setActiveEngine`, `reload-cache`, and (WS-only mode) raw MIDI `cc`/`program`/`sysex` |
 | MCP server | `this.mcpClients` | `{mcpConnected, label}` only — for label discovery and live status | nothing |
+
+A third, optional server — the **out lane** (`wsOutPort`, #109) — is **broadcast-only**: its clients (`this.wsOutClients`) receive `{type:"sysex", bytes}` for every outgoing SysEx and the server never reads inbound messages. The MCP's `WsMidiConnection` *sends* inbound MIDI on the main port and *listens* on the out lane — a clean unidirectional split that cannot form a feedback loop.
 
 `broadcast()` fans out to both sets but sends different payloads, and stamps every payload with `mcpConnected` (current size of `mcpClients > 0`) and `label` (the per-instance backup label). `broadcastMcpStatus()` sends the label-only payload to both sets on MCP connect/disconnect (so UIs can flip their "MCP connected" indicator). The partial-broadcast nature of `broadcastMcpStatus()` is the reason UI clients must *merge* incoming payloads into their cached `lastState` rather than replace — Flow 5 has the detail.
 
@@ -60,6 +62,7 @@ Handled in the `ws.on("message", ...)` block:
 | `setParam` | `handler.set_params([{name, value, part}])`, broadcast resulting state, then `codec.encodeParams(...)` → `emitOne()` for each encoded message (UI is a closed-loop source — panel-knob analogue). |
 | `setActiveEngine` | `handler.set_active_engine(part, engine)` if implemented; broadcast the new state. |
 | `reload-cache` | `handler.onCacheReload?.()` then broadcast a fresh full state snapshot. Used after `extract_backup`. |
+| `cc` / `program` / `sysex` | Raw MIDI from the MCP's `WsMidiConnection` in WS-only mode. Routed through `ingestExternalMidi()` → `dispatch()` — treated exactly like external MIDI on the virtual In, so it updates state and is **never echoed back** (only an RQ1 emits, on the out lane). |
 | anything else | Silently ignored (the outer `try { ... } catch {}` swallows malformed JSON too). |
 
 Adding a new WS message means adding a branch here. Each branch is a thin call into a handler method.
@@ -242,7 +245,9 @@ The only source-aware rule is: **external MIDI is never echoed back to MIDI Out*
 
 ## Outbound — `emitOne`
 
-Called from two paths: outbound after `setParam` (encoded by codec) and outbound from RQ1 fulfillment (the DT1 reply). Resolves the default channel (codec contract: `channel === undefined` → use the connection's default, which on the mock side is `opts.lowerChannel`). Sends to `easymidi.Output` and emits a structured `midi-event` only *after* `send` returns successfully — otherwise the per-tab MIDI drawer would show traffic that never reached the wire.
+Called from two paths: outbound after `setParam` (encoded by codec) and outbound from RQ1 fulfillment (the DT1 reply). Resolves the default channel (codec contract: `channel === undefined` → use the connection's default, which on the mock side is `opts.lowerChannel`). Sends to `easymidi.Output` (when present) and emits a structured `midi-event` only *after* `send` returns successfully — otherwise the per-tab MIDI drawer would show traffic that never reached the wire.
+
+When an out lane (`wsOutPort`, #109) is configured, every outgoing **SysEx** is also broadcast to its clients as `{type:"sysex", bytes}` (`broadcastWsOut`). This runs even with **no** virtual MIDI Out — in WS-only mode the out lane *is* the wire, so `emitOne` no longer early-returns on a missing `midiOutput`. Because `emitOne` is only ever reached for genuinely outgoing traffic (RQ1 replies + UI panel-knob writes) and never to echo external input, the out-lane broadcast inherits the no-loop guarantee. SysEx-only by design: the lane is the RQ1→DT1 response stream the MCP listens for, not a mirror of every CC.
 
 ## Telemetry
 
@@ -257,11 +262,11 @@ The stdout `summarizeSysex` format trims long sysex packets (head ≤4 bytes + t
 
 | Method | When | Notes |
 |---|---|---|
-| `start()` | Once at construction. | Initializes handler, creates virtual MIDI port (unless `noMidi`), starts HTTP+WS, captures the OS-assigned port name (Core MIDI suffixes duplicates: "Foo", "Foo1"), publishes to the runtime registry. |
+| `start()` | Once at construction. | Initializes handler, creates virtual MIDI port (unless `noMidi`), starts HTTP+WS (and the out-lane HTTP+WS when `wsOutPort` is set), captures the OS-assigned port name (Core MIDI suffixes duplicates: "Foo", "Foo1"), publishes to the runtime registry once both servers are listening. |
 | `reloadCache()` | After `extract_backup` writes new backup data to disk. | Tells the handler to re-read caches, then broadcasts a fresh full state. |
 | `relabel(label, lo, hi)` | Hot label swap from `main.ts` (e.g. tab rename). | Re-inits handler under a new label without tearing the WS or MIDI port. Updates the registry entry's label too. |
 | `getFullState(...)` / `restoreSnapshot(...)` | `.mockrack` save / load (plan #9). | Snapshot/restore round-trip; restore broadcasts once for consistent UI transition. Returns false when the handler doesn't implement `setFullState`. |
-| `stop()` | Tab close, app quit. | Clears heartbeat timer, unregisters from the registry, closes MIDI ports + WS clients + HTTP server. |
+| `stop()` | Tab close, app quit. | Clears heartbeat timer, unregisters from the registry, closes MIDI ports + WS clients + HTTP server (+ the out-lane clients + server when present). |
 
 ## Mock registry & heartbeat
 

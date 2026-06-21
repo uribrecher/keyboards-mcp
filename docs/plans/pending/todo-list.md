@@ -11,6 +11,5 @@
 - PPG Wave keyboard model — #106
 - Yamaha DX7 keyboard model (FM synthesis) — #107
 - Re-home chat backup / reset / event-log clear actions in the mock-runner shell — #108
-- WS-mode SysEx receive (second WebSocket lane for outgoing MIDI) — #109
 - MIDI Connections Broker — deferred backlog — #117
 - MIDI Connections Broker — OS service templates — #118

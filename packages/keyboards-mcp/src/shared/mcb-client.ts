@@ -35,9 +35,9 @@ export interface Manifest {
   deviceId: string;
   ownerSessionId: string;
   model: string;
-  primary: { portName: string; wsPort: number | null };
+  primary: { portName: string; wsPort: number | null; wsOutPort?: number | null };
   input?: { portName: string };
-  shadow?: { portName: string; wsPort: number | null };
+  shadow?: { portName: string; wsPort: number | null; wsOutPort?: number | null };
   channel: number;
   lowerChannel?: number;
   upperChannel?: number;

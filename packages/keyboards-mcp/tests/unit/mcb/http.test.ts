@@ -23,9 +23,9 @@ beforeEach(async () => {
     sessions: new SessionManager(),
     portList: { listOutputs: () => ["Port A", "Port B", "Mock Port"], listInputs: () => ["Port A In"] },
     mockRegistry: {
-      findByLabel: (l) => l === "mocky" ? { midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999, instanceId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" } : undefined,
-      findByMidiPort: (p) => p === "Mock Port" ? { midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999, instanceId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" } : undefined,
-      list: () => [{ midiPort: "Mock Port", wsPort: 3001, label: "mocky", pid: 999, instanceId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }],
+      findByLabel: (l) => l === "mocky" ? { midiPort: "Mock Port", wsPort: 3001, wsOutPort: 3011, label: "mocky", pid: 999, instanceId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" } : undefined,
+      findByMidiPort: (p) => p === "Mock Port" ? { midiPort: "Mock Port", wsPort: 3001, wsOutPort: 3011, label: "mocky", pid: 999, instanceId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" } : undefined,
+      list: () => [{ midiPort: "Mock Port", wsPort: 3001, wsOutPort: 3011, label: "mocky", pid: 999, instanceId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }],
       listAllWithStale: () => [],
     },
   });
@@ -100,7 +100,7 @@ describe("MCB HTTP", () => {
     const r = await call("POST", "/v1/devices", { port: "Port A", model: "m" }, { "x-session-id": sid });
     assert.equal(r.statusCode, 200);
     assert.equal(r.body.ownerSessionId, sid);
-    assert.deepEqual(r.body.primary, { portName: "Port A", wsPort: null });
+    assert.deepEqual(r.body.primary, { portName: "Port A", wsPort: null, wsOutPort: null });
     assert.equal(r.body.model, "m");
     // Lease no longer carries a label field — that data lives on the local pool device.
     assert.equal(r.body.label, undefined);
@@ -111,7 +111,7 @@ describe("MCB HTTP", () => {
   it("POST /v1/devices fills wsPort for a mock primary", async () => {
     const sid = await newSession();
     const r = await call("POST", "/v1/devices", { port: "mocky", model: "m" }, { "x-session-id": sid });
-    assert.deepEqual(r.body.primary, { portName: "Mock Port", wsPort: 3001 });
+    assert.deepEqual(r.body.primary, { portName: "Mock Port", wsPort: 3001, wsOutPort: 3011 });
   });
 
   it("POST /v1/devices binds lease.mockInstanceId to the mock's instanceId when claiming a mock port", async () => {
@@ -158,7 +158,7 @@ describe("MCB HTTP", () => {
   it("POST /v1/devices with with_shadow registers bridge", async () => {
     const sid = await newSession();
     const r = await call("POST", "/v1/devices", { port: "Port A", model: "m", with_shadow: "mocky" }, { "x-session-id": sid });
-    assert.deepEqual(r.body.shadow, { portName: "Mock Port", wsPort: 3001 });
+    assert.deepEqual(r.body.shadow, { portName: "Mock Port", wsPort: 3001, wsOutPort: 3011 });
   });
 
   it("T1 — second session cannot claim same port", async () => {

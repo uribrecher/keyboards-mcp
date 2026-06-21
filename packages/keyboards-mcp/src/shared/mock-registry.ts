@@ -36,6 +36,7 @@ export interface MockRegistryEntry {
   midiPort: string;
   /** WebSocket port — also the registry key. Unique per running engine. */
   wsPort: number;
+  wsOutPort?: number;
   /** Model id (e.g. "nord-electro-5d"). */
   modelId: string;
   /** Human-friendly model name (e.g. "Nord Electro 5D"). */
@@ -96,6 +97,7 @@ export function readAll(): MockRegistryEntry[] {
       typeof e === "object" && e !== null
         && typeof e.midiPort === "string"
         && typeof e.wsPort === "number"
+        && (e.wsOutPort === undefined || typeof e.wsOutPort === "number")
         && typeof e.modelId === "string"
         && typeof e.label === "string"
         && typeof e.pid === "number"

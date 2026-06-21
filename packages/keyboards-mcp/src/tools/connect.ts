@@ -5,8 +5,37 @@ import type { DevicePool } from "../shared/device-pool.js";
 import { loadModelById } from "../shared/model-registry.js";
 import { WsMidiConnection } from "../midi/ws-midi-connection.js";
 import type { KeyboardModel, KeyboardDevice } from "../shared/keyboard-model.js";
-import { findByMidiPort } from "../shared/mock-registry.js";
+import { findByMidiPort, findByWsPort } from "../shared/mock-registry.js";
 import { claimLease, MCBError, MCBSessionLostError } from "../shared/mcb-client.js";
+
+/**
+ * Resolve the outgoing-MIDI WS lane (#109) for WS transport mode.
+ *
+ * `MOCK_WS_OUT_URL` is the explicit handle used by direct WS-mode tests and
+ * Docker. Absent that, derive it from the mock-registry entry whose `wsPort`
+ * matches the inbound lane — the same `wsOutPort` the MCB manifest surfaces.
+ * Returns undefined when neither is available (one-way / no out lane).
+ */
+function resolveWsOutUrl(inUrl: string): string | undefined {
+  if (process.env.MOCK_WS_OUT_URL) return process.env.MOCK_WS_OUT_URL;
+  try {
+    const url = new URL(inUrl);
+    // Need an explicit numeric port to match the registry key. `url.port` is
+    // "" when the URL omits one (Number("") === 0, which would mis-resolve).
+    if (url.port === "") return undefined;
+    const lanePort = Number(url.port);
+    if (!Number.isInteger(lanePort)) return undefined;
+    const entry = findByWsPort(lanePort);
+    // Clone and swap only the port so the URL keeps protocol + host (incl.
+    // IPv6 brackets) intact.
+    if (entry?.wsOutPort) {
+      const out = new URL(inUrl);
+      out.port = String(entry.wsOutPort);
+      return out.toString();
+    }
+  } catch { /* MOCK_WS_URL not a parseable URL — env-var path only */ }
+  return undefined;
+}
 
 /** Same sanitizer as the model-level backup-cache. */
 function sanitizeLabelForCache(label: string | undefined | null): string {
@@ -97,14 +126,16 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           const wsModelId = process.env.MOCK_MODEL_ID ?? modelId;
           const model = await loadModelById(wsModelId);
           const device = createDeviceForModel(model, label);
-          const wsConn = await WsMidiConnection.connect(wsUrl);
+          const wsOutUrl = resolveWsOutUrl(wsUrl);
+          const wsChannel = channel !== undefined ? channel - 1 : 0;
+          const wsConn = await WsMidiConnection.connect(wsUrl, wsChannel, wsOutUrl);
           device.attach(wsConn);
           const index = pool.connect(device, () => { wsConn.close?.(); });
           return {
             content: [{
               type: "text",
               text: `Detected model: ${model.info.displayName}\n` +
-                `Connected via WebSocket: ${wsUrl}\n` +
+                `Connected via WebSocket: ${wsUrl}${wsOutUrl ? ` (out lane: ${wsOutUrl})` : ""}\n` +
                 `Assigned device ${index}${label ? ` "${label}"` : ""}.`,
             }],
           };

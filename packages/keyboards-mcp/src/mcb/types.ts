@@ -15,6 +15,7 @@ export interface ShadowEndpoint {
 export interface PortInfo {
   portName: string;
   wsPort: number | null;
+  wsOutPort?: number | null;
 }
 
 export interface Lease {
@@ -57,6 +58,7 @@ export interface PortListReader {
 export interface MockRegistryEntry {
   midiPort: string;
   wsPort: number;
+  wsOutPort?: number;
   label: string;
   pid: number;
   /** Per-boot UUID. See `src/shared/mock-registry.ts` for semantics. */

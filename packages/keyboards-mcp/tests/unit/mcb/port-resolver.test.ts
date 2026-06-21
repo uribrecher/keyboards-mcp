@@ -18,7 +18,13 @@ const mockEntry: MockRegistryEntry = { midiPort: "Nord Mock", wsPort: 3002, labe
 describe("PortResolver", () => {
   it("resolves a mock label (output)", () => {
     const r = resolvePort("nordi", "output", ports(["Nord Mock"]), reg([mockEntry]));
-    assert.deepEqual(r, { portName: "Nord Mock", wsPort: 3002 });
+    assert.deepEqual(r, { portName: "Nord Mock", wsPort: 3002, wsOutPort: null });
+  });
+
+  it("surfaces the mock's wsOutPort when present (#109)", () => {
+    const withOut: MockRegistryEntry = { ...mockEntry, wsOutPort: 3003 };
+    const r = resolvePort("nordi", "output", ports(["Nord Mock"]), reg([withOut]));
+    assert.deepEqual(r, { portName: "Nord Mock", wsPort: 3002, wsOutPort: 3003 });
   });
 
   it("rejects mock label for input direction", () => {
@@ -30,7 +36,7 @@ describe("PortResolver", () => {
 
   it("resolves an exact OS output port name", () => {
     const r = resolvePort("Nord Hw", "output", ports(["Nord Hw"]), reg([]));
-    assert.deepEqual(r, { portName: "Nord Hw", wsPort: null });
+    assert.deepEqual(r, { portName: "Nord Hw", wsPort: null, wsOutPort: null });
   });
 
   it("does NOT substring-match", () => {
