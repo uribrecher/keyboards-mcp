@@ -13,6 +13,11 @@ jobs:
   # changeset is present. Escape hatch for intentional no-release PRs that still
   # touch package source: `npx changeset --empty` records "intentionally no release".
   # PR-only: on push to main the changesets are already consumed by the Version PR.
+  #
+  # The Version Packages PR (head branch `changeset-release/main`, opened by
+  # changesets/action) is the one PR that legitimately has NO changesets — it
+  # consumes them and bumps package.json — so the gate steps are skipped there.
+  # The job still runs and reports green so the check isn't left pending.
   changeset:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -24,8 +29,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
-      - run: npx changeset status --since=origin/main
+      - if: github.head_ref != 'changeset-release/main'
+        run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
+      - if: github.head_ref != 'changeset-release/main'
+        run: npx changeset status --since=origin/main
 
   lint:
     runs-on: ubuntu-latest
