@@ -36,6 +36,13 @@ export interface MockRegistryEntry {
   midiPort: string;
   /** WebSocket port — also the registry key. Unique per running engine. */
   wsPort: number;
+  /**
+   * Optional second WS port — the dedicated outgoing-from-mock MIDI lane
+   * (#109). Set only when the engine was started with one (WS-only mode).
+   * Consumers (e.g. `connect_to_keyboard` in WS transport mode) dial this to
+   * receive the RQ1→DT1 round-trip. Absent on real-MIDI engines.
+   */
+  wsOutPort?: number;
   /** Model id (e.g. "nord-electro-5d"). */
   modelId: string;
   /** Human-friendly model name (e.g. "Nord Electro 5D"). */
@@ -96,6 +103,7 @@ export function readAll(): MockRegistryEntry[] {
       typeof e === "object" && e !== null
         && typeof e.midiPort === "string"
         && typeof e.wsPort === "number"
+        && (e.wsOutPort === undefined || typeof e.wsOutPort === "number")
         && typeof e.modelId === "string"
         && typeof e.label === "string"
         && typeof e.pid === "number"

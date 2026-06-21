@@ -13,18 +13,18 @@ export function resolvePort(
   registry: MockRegistryReader,
 ): PortInfo {
   const osPorts = direction === "output" ? ports.listOutputs() : ports.listInputs();
-  const candidates: Array<{ portName: string; wsPort?: number }> = [];
+  const candidates: Array<{ portName: string; wsPort?: number; wsOutPort?: number }> = [];
 
   // Mock label match (output only)
   if (direction === "output") {
     const m = registry.findByLabel(arg);
-    if (m) candidates.push({ portName: m.midiPort, wsPort: m.wsPort });
+    if (m) candidates.push({ portName: m.midiPort, wsPort: m.wsPort, wsOutPort: m.wsOutPort });
   }
 
   // OS exact match
   if (osPorts.includes(arg)) {
     const m = registry.findByMidiPort(arg);
-    candidates.push({ portName: arg, wsPort: m?.wsPort });
+    candidates.push({ portName: arg, wsPort: m?.wsPort, wsOutPort: m?.wsOutPort });
   }
 
   const unique = new Set(candidates.map((c) => c.portName));
@@ -43,5 +43,5 @@ export function resolvePort(
       `Port '${chosen.portName}' resolved from '${arg}' is not currently visible to the OS`,
       { arg, resolvedTo: chosen.portName });
   }
-  return { portName: chosen.portName, wsPort: chosen.wsPort ?? null };
+  return { portName: chosen.portName, wsPort: chosen.wsPort ?? null, wsOutPort: chosen.wsOutPort ?? null };
 }

@@ -35,9 +35,12 @@ export interface Manifest {
   deviceId: string;
   ownerSessionId: string;
   model: string;
-  primary: { portName: string; wsPort: number | null };
+  // `wsOutPort` (#109): the mock's dedicated outgoing-MIDI WS port, surfaced
+  // so a WS-transport consumer can receive the RQ1→DT1 round-trip. Null/absent
+  // for real hardware or mocks without an out lane.
+  primary: { portName: string; wsPort: number | null; wsOutPort?: number | null };
   input?: { portName: string };
-  shadow?: { portName: string; wsPort: number | null };
+  shadow?: { portName: string; wsPort: number | null; wsOutPort?: number | null };
   channel: number;
   lowerChannel?: number;
   upperChannel?: number;

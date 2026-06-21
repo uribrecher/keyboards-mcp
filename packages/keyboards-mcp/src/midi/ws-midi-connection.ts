@@ -2,8 +2,13 @@
  * WebSocket-based MidiConnection for CI/testing environments
  * where real MIDI (easymidi/ALSA) is unavailable.
  *
- * Sends CC/program/sysex as JSON over WebSocket to the mock engine,
- * which already handles these message types from WS clients.
+ * Two lanes (#109):
+ *  - **In lane** (`url`): CC/program/sysex are sent here as JSON. The mock
+ *    engine dispatches them exactly like external MIDI on a virtual port.
+ *  - **Out lane** (`outUrl`, optional): the mock's dedicated outgoing-MIDI
+ *    server. We listen for `{type:"sysex"}` and fire `onSysEx`, mirroring the
+ *    real-MIDI RQ1→DT1 round-trip. Without an out lane, `onSysEx` never fires
+ *    (one-way mode, the historical behavior).
  */
 
 import WebSocket from "ws";
@@ -13,14 +18,20 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class WsMidiConnection implements MidiConnection {
   private ws: WebSocket;
+  /** Out lane — null when the caller didn't supply one (one-way mode). */
+  private wsOut: WebSocket | null;
   private channel: number;
+  private onSysExCallbacks: Array<(bytes: number[]) => void> = [];
 
-  constructor(ws: WebSocket, channel = 0) {
+  constructor(ws: WebSocket, channel = 0, wsOut: WebSocket | null = null) {
     this.ws = ws;
     this.channel = channel;
+    this.wsOut = wsOut;
+    if (wsOut) this.wireOutLane(wsOut);
   }
 
-  static async connect(url: string, channel = 0): Promise<WsMidiConnection> {
+  /** Open a WS and resolve once it's connected (or reject on timeout/error). */
+  private static openSocket(url: string): Promise<WebSocket> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url);
       const timeout = setTimeout(() => {
@@ -29,13 +40,47 @@ export class WsMidiConnection implements MidiConnection {
       }, 5000);
       ws.on("open", () => {
         clearTimeout(timeout);
-        resolve(new WsMidiConnection(ws, channel));
+        resolve(ws);
       });
       ws.on("error", (err) => {
         clearTimeout(timeout);
         reject(err);
       });
     });
+  }
+
+  /**
+   * Subscribe the out-lane socket: every `{type:"sysex"}` message fires the
+   * registered `onSysEx` callbacks. The out lane is receive-only — we never
+   * send on it, so this connection cannot create a MIDI feedback loop.
+   */
+  private wireOutLane(wsOut: WebSocket): void {
+    // Swallow post-open errors — the out lane is best-effort signalling.
+    wsOut.on("error", () => { /* ignore */ });
+    wsOut.on("message", (raw) => {
+      try {
+        const msg = JSON.parse(String(raw));
+        if (msg && msg.type === "sysex" && Array.isArray(msg.bytes)) {
+          const bytes = msg.bytes.map(Number);
+          // Iterate a copy so a callback can unsubscribe mid-dispatch.
+          for (const cb of [...this.onSysExCallbacks]) cb(bytes.slice());
+        }
+      } catch { /* non-JSON / non-sysex — ignore */ }
+    });
+  }
+
+  static async connect(url: string, channel = 0, outUrl?: string): Promise<WsMidiConnection> {
+    const ws = await WsMidiConnection.openSocket(url);
+    let wsOut: WebSocket | null = null;
+    if (outUrl) {
+      try {
+        wsOut = await WsMidiConnection.openSocket(outUrl);
+      } catch (err) {
+        ws.close();
+        throw err;
+      }
+    }
+    return new WsMidiConnection(ws, channel, wsOut);
   }
 
   sendCC(controller: number, value: number, channel?: number): void {
@@ -81,15 +126,26 @@ export class WsMidiConnection implements MidiConnection {
   }
 
   onCC(_callback: (cc: number, value: number, channel: number) => void): void {
-    // No-op: mock doesn't send CCs back over WS
+    // No-op: the mock doesn't send CCs back over WS — the out lane carries
+    // only the SysEx (RQ1→DT1) response stream.
   }
 
-  onSysEx(_callback: (bytes: number[]) => void): () => void {
-    // No-op in WS mode — see todo #25 for the planned mock-out WS lane.
-    return () => { /* nothing to unsubscribe from */ };
+  /**
+   * Register a SysEx listener. Fires for every `{type:"sysex"}` arriving on
+   * the out lane. Returns an unsubscribe function. When no out lane was
+   * supplied, the callback is held but never invoked (one-way mode).
+   */
+  onSysEx(callback: (bytes: number[]) => void): () => void {
+    this.onSysExCallbacks.push(callback);
+    return () => {
+      const idx = this.onSysExCallbacks.indexOf(callback);
+      if (idx >= 0) this.onSysExCallbacks.splice(idx, 1);
+    };
   }
 
   close(): void {
     this.ws.close();
+    this.wsOut?.close();
+    this.wsOut = null;
   }
 }

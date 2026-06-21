@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { SessionManager } from "../session-manager.js";
 import type { LeaseRegistry } from "../lease-registry.js";
 import type { BridgeRegistry } from "../bridge-registry.js";
-import type { PortListReader, MockRegistryReader, Lease } from "../types.js";
+import type { PortListReader, MockRegistryReader, Lease, PortInfo } from "../types.js";
 import { resolvePort, PortResolutionError } from "../port-resolver.js";
 import { reapStaleMockLeases } from "../reap-stale-mock-leases.js";
 import type { RouteContext } from "./server.js";
@@ -74,7 +74,7 @@ export function makeDevicesHandlers(deps: Deps) {
         }
       }
 
-      let shadow: { portName: string; wsPort: number | null } | undefined;
+      let shadow: PortInfo | undefined;
       if (typeof body.with_shadow === "string") {
         shadow = resolveOrHttp(() => resolvePort(body.with_shadow!, "output", deps.portList, deps.mockRegistry));
         if (shadow.portName === primary.portName) throw new HttpError(409, "self-shadow", "Master and shadow resolve to the same OS port");

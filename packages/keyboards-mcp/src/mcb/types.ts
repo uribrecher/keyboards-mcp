@@ -15,6 +15,12 @@ export interface ShadowEndpoint {
 export interface PortInfo {
   portName: string;
   wsPort: number | null;
+  /**
+   * Mock's dedicated outgoing-MIDI WS port (#109), when it has one. Surfaced
+   * in the manifest so a WS-transport consumer can receive the RQ1→DT1
+   * round-trip. `null`/absent for real hardware or mocks without an out lane.
+   */
+  wsOutPort?: number | null;
 }
 
 export interface Lease {
@@ -57,6 +63,8 @@ export interface PortListReader {
 export interface MockRegistryEntry {
   midiPort: string;
   wsPort: number;
+  /** Dedicated outgoing-MIDI WS port (#109), when the mock has one. */
+  wsOutPort?: number;
   label: string;
   pid: number;
   /** Per-boot UUID. See `src/shared/mock-registry.ts` for semantics. */
