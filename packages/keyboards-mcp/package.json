@@ -1,6 +1,6 @@
 {
   "name": "keyboards-mcp",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "MCP server for controlling MIDI keyboards (Nord Electro 5D and more)",
   "keywords": [
     "mcp",
@@ -29,8 +29,14 @@
   "type": "module",
   "main": "dist/index.js",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./shared/*": { "types": "./dist/shared/*.d.ts", "default": "./dist/shared/*.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./shared/*": {
+      "types": "./dist/shared/*.d.ts",
+      "default": "./dist/shared/*.js"
+    }
   },
   "bin": {
     "keyboards-mcp": "dist/cli/index.js"
