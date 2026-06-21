@@ -102,11 +102,11 @@ The UI never touches MIDI bytes; it sends a named param write over the WebSocket
 
 ```mermaid
 flowchart TB
-    ui["UI"] -- "{type:'setParam', name, value, part?}" --> ws["transport WS handler"]
+    ui["UI"] -- "{type:&quot;setParam&quot;, name, value, part?}" --> ws["transport WS handler"]
     ws --> sp["handler.set_params([{name, value, part}])<br/>updates state, returns { state, log }"]
     ws --> bc["transport.broadcast(state)"]
     bc --> uic["UI clients"]
-    ws --> enc["codec.encodeParams([{name, value, part}])<br/>→ EncodedMessage[]<br/>e.g. {type:'cc', controller, value, channel?}<br/>{type:'sysex', bytes:[…]}"]
+    ws --> enc["codec.encodeParams([{name, value, part}])<br/>→ EncodedMessage[]<br/>e.g. {type:&quot;cc&quot;, controller, value, channel?}<br/>{type:&quot;sysex&quot;, bytes:[…]}"]
     enc --> emit["transport emits each via emitOne()"]
 ```
 
@@ -124,7 +124,7 @@ Any MIDI message that arrives on the virtual In and is *not* a bank-select CC, *
 flowchart TB
     em["External MIDI<br/>(cc / sysex)"] --> vin["virtual MIDI In"]
     vin --> disp["transport.dispatch"]
-    disp --> dec["codec.decode(message)<br/>→ [{kind:'param', name, value, part?, engine?}, …]"]
+    disp --> dec["codec.decode(message)<br/>→ [{kind:&quot;param&quot;, name, value, part?, engine?}, …]"]
     dec --> sp["handler.set_params(refs)<br/>updates state"]
     sp --> bc["transport.broadcast(state)"]
     bc --> uic["UI clients"]
