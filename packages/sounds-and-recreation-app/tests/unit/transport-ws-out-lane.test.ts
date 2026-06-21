@@ -129,4 +129,37 @@ describe("MockTransport WS out lane: RQ1 round-trip + no-echo", { concurrency: 1
       await transport.stop();
     }
   });
+
+  it("drops malformed inbound WS MIDI without breaking dispatch", async () => {
+    const transport = await makeTransport(56124, 56125);
+    let laneIn: WebSocket | undefined;
+    let laneOut: WebSocket | undefined;
+    try {
+      laneIn = await openWs("ws://localhost:56124");
+      laneOut = await openWs("ws://localhost:56125");
+      const out: number[][] = [];
+      laneOut.on("message", (raw) => {
+        const msg = JSON.parse(String(raw));
+        if (msg.type === "sysex") out.push(msg.bytes);
+      });
+
+      // Garbage at the trust boundary: a non-numeric CC, an out-of-range CC,
+      // and a non-array sysex. All must be dropped silently.
+      laneIn.send(JSON.stringify({ type: "cc", controller: "nope", value: 10, channel: 0 }));
+      laneIn.send(JSON.stringify({ type: "cc", controller: 200, value: 999, channel: 0 }));
+      laneIn.send(JSON.stringify({ type: "sysex", bytes: "not-an-array" }));
+      await delay(150);
+      assert.equal(out.length, 0, "malformed input must not emit anything");
+
+      // A well-formed RQ1 right after still round-trips — dispatch wasn't corrupted.
+      laneIn.send(JSON.stringify({ type: "sysex", bytes: buildRQ1(JUNO_X_MODEL_ID, DEVICE_ID, CHORUS_SWITCH_ADDR, [0, 0, 0, 1]) }));
+      await waitFor(() => out.length >= 1, 1500);
+      assert.equal(out.length, 1, "valid RQ1 after malformed input still produces exactly one DT1");
+      assert.ok(parseDT1(out[0], JUNO_X_MODEL_ID), "out-lane message is a valid DT1");
+    } finally {
+      laneIn?.close();
+      laneOut?.close();
+      await transport.stop();
+    }
+  });
 });

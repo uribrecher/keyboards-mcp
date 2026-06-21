@@ -311,14 +311,34 @@ export class MockTransport extends EventEmitter {
    * normalize it into a `MidiMessage`. Returns null for malformed payloads.
    */
   private static parseWsMidi(msg: any): MidiMessage | null {
+    // This is the trust boundary for WS-only MIDI input — reject anything
+    // that isn't an in-range integer so malformed payloads can never reach
+    // dispatch() as NaN / out-of-range and corrupt bank-select or codec parsing.
+    const intIn = (v: unknown, min: number, max: number): number | null => {
+      const n = Number(v);
+      return Number.isInteger(n) && n >= min && n <= max ? n : null;
+    };
     if (msg.type === "cc") {
-      return { type: "cc", controller: Number(msg.controller), value: Number(msg.value), channel: Number(msg.channel ?? 0) };
+      const controller = intIn(msg.controller, 0, 127);
+      const value = intIn(msg.value, 0, 127);
+      const channel = intIn(msg.channel ?? 0, 0, 15);
+      if (controller === null || value === null || channel === null) return null;
+      return { type: "cc", controller, value, channel };
     }
     if (msg.type === "program") {
-      return { type: "program", number: Number(msg.number), channel: Number(msg.channel ?? 0) };
+      const number = intIn(msg.number, 0, 127);
+      const channel = intIn(msg.channel ?? 0, 0, 15);
+      if (number === null || channel === null) return null;
+      return { type: "program", number, channel };
     }
     if (msg.type === "sysex" && Array.isArray(msg.bytes)) {
-      return { type: "sysex", bytes: msg.bytes.map(Number) };
+      const bytes: number[] = [];
+      for (const b of msg.bytes) {
+        const n = intIn(b, 0, 255);
+        if (n === null) return null;
+        bytes.push(n);
+      }
+      return { type: "sysex", bytes };
     }
     return null;
   }
@@ -614,38 +634,50 @@ export class MockTransport extends EventEmitter {
     const defaultChannel = this.opts.lowerChannel;
     try {
       if (msg.type === "cc") {
+        // CC is not carried on the out lane, so with no virtual MIDI Out
+        // (WS-only mode) nothing actually goes out — don't log or emit
+        // telemetry for traffic that never reached the wire.
+        if (!this.midiOutput) return;
         const channel = msg.channel ?? defaultChannel;
         console.log(`${this.tag()} MIDI-OUT cc CC=${msg.controller} val=${msg.value} ch=${channel}`);
-        this.midiOutput?.send("cc", { controller: msg.controller, value: msg.value, channel });
+        this.midiOutput.send("cc", { controller: msg.controller, value: msg.value, channel });
         this.emit("midi-event", { direction: "out", kind: "cc", controller: msg.controller, value: msg.value, channel } satisfies MidiEventPayload);
       } else if (msg.type === "program") {
+        if (!this.midiOutput) return;
         const channel = msg.channel ?? defaultChannel;
         console.log(`${this.tag()} MIDI-OUT program n=${msg.number} ch=${channel}`);
-        this.midiOutput?.send("program", { number: msg.number, channel });
+        this.midiOutput.send("program", { number: msg.number, channel });
         this.emit("midi-event", { direction: "out", kind: "program", number: msg.number, channel } satisfies MidiEventPayload);
       } else if (msg.type === "sysex") {
-        console.log(`${this.tag()} MIDI-OUT ${MockTransport.summarizeSysex(msg.bytes)}`);
-        this.midiOutput?.send("sysex", msg.bytes);
-        // Mirror outgoing SysEx to the WS out lane (#109) — the MCP's
-        // WsMidiConnection listens here for the DT1 response in WS-only mode.
-        this.broadcastWsOut(msg.bytes);
-        this.emit("midi-event", { direction: "out", kind: "sysex", bytes: msg.bytes.slice() } satisfies MidiEventPayload);
+        // SysEx goes to the virtual MIDI Out (if any) and the WS out lane
+        // (#109) — the MCP's WsMidiConnection listens there for the DT1
+        // response in WS-only mode. Only log + emit telemetry when it
+        // actually reached at least one sink.
+        if (this.midiOutput) this.midiOutput.send("sysex", msg.bytes);
+        const broadcast = this.broadcastWsOut(msg.bytes);
+        if (this.midiOutput || broadcast) {
+          console.log(`${this.tag()} MIDI-OUT ${MockTransport.summarizeSysex(msg.bytes)}`);
+          this.emit("midi-event", { direction: "out", kind: "sysex", bytes: msg.bytes.slice() } satisfies MidiEventPayload);
+        }
       }
     } catch (err) { console.error(`${this.tag()} MIDI-OUT send failed:`, err); }
   }
 
   /**
    * Broadcast an outgoing SysEx packet to the WS out-lane clients (#109).
-   * No-op when no out lane is configured / no clients are attached. SysEx
+   * No-op (returns false) when no out lane is configured / no clients are
+   * attached. Returns true when at least one open client received it. SysEx
    * only by design — this lane is the RQ1→DT1 response stream, not a mirror
    * of every CC.
    */
-  private broadcastWsOut(bytes: number[]): void {
-    if (this.wsOutClients.size === 0) return;
+  private broadcastWsOut(bytes: number[]): boolean {
+    if (this.wsOutClients.size === 0) return false;
     const json = JSON.stringify({ type: "sysex", bytes });
+    let delivered = false;
     for (const ws of this.wsOutClients) {
-      if (ws.readyState === ws.OPEN) ws.send(json);
+      if (ws.readyState === ws.OPEN) { ws.send(json); delivered = true; }
     }
+    return delivered;
   }
 
   private broadcast(msg: Record<string, any>): void {

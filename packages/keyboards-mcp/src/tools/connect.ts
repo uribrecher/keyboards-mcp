@@ -20,11 +20,14 @@ function resolveWsOutUrl(inUrl: string): string | undefined {
   if (process.env.MOCK_WS_OUT_URL) return process.env.MOCK_WS_OUT_URL;
   try {
     const url = new URL(inUrl);
+    // Need an explicit numeric port to match the registry key. `url.port` is
+    // "" when the URL omits one (Number("") === 0, which would mis-resolve).
+    if (url.port === "") return undefined;
     const lanePort = Number(url.port);
-    if (!Number.isNaN(lanePort)) {
-      const entry = findByWsPort(lanePort);
-      if (entry?.wsOutPort) return `ws://${url.hostname}:${entry.wsOutPort}`;
-    }
+    if (!Number.isInteger(lanePort)) return undefined;
+    const entry = findByWsPort(lanePort);
+    // Preserve the inbound protocol (ws/wss) and host; only the port differs.
+    if (entry?.wsOutPort) return `${url.protocol}//${url.hostname}:${entry.wsOutPort}`;
   } catch { /* MOCK_WS_URL not a parseable URL — env-var path only */ }
   return undefined;
 }
@@ -123,7 +126,10 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           // from the mock-registry entry whose wsPort matches the in lane —
           // i.e. `primary.wsOutPort` surfaced via the registry.
           const wsOutUrl = resolveWsOutUrl(wsUrl);
-          const wsConn = await WsMidiConnection.connect(wsUrl, 0, wsOutUrl);
+          // Honor the user-supplied channel (1–16 → 0-based), matching the
+          // real-MIDI path; default to 0 when unspecified.
+          const wsChannel = channel !== undefined ? channel - 1 : 0;
+          const wsConn = await WsMidiConnection.connect(wsUrl, wsChannel, wsOutUrl);
           device.attach(wsConn);
           const index = pool.connect(device, () => { wsConn.close?.(); });
           return {
