@@ -38,7 +38,8 @@ describe("WS-mode SysEx receive: RQ1 round-trip over the second WS lane", { conc
     });
     let conn: WsMidiConnection | undefined;
     try {
-      conn = await WsMidiConnection.connect(`ws://localhost:${WS_PORT}`, DEVICE_ID, `ws://localhost:${WS_OUT_PORT}`);
+      // channel 0 (MIDI ch 1); DEVICE_ID below is the Roland SysEx device id, not a channel.
+      conn = await WsMidiConnection.connect(`ws://localhost:${WS_PORT}`, 0, `ws://localhost:${WS_OUT_PORT}`);
 
       // Pre-set chorus_switch=ON with a DT1 on the in lane (0x7F is the
       // canonical ON wire byte for this max=1 discrete).
