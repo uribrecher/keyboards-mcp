@@ -18,31 +18,26 @@ What it does **not** own: parameter values, MIDI map, engine selection, backup d
 
 ## Topology
 
-```
-                                ┌─────────────────────────────────┐
-                                │           MockTransport         │
-              WS (UI client)    │  ┌─────────────────────────────┐│
-  ◀──────── (full state) ◀───── │  │ WebSocketServer             ││
-            UI panels           │  │  - this.clients   (UI)      ││
-  ────────► setParam ─────────► │  │  - this.mcpClients (MCP)    ││
-            setActiveEngine     │  └─────────────────────────────┘│
-            reload-cache        │            │           ▲        │
-                                │            ▼           │        │
-                                │  ┌─────────────────────┴───────┐│
-              MIDI (cc/pc/sx)   │  │ routing + protocol glue     ││
-  ────────►  inbound  ────────► │  │  - bank-select accumulator  ││
-                                │  │  - RQ1 fulfillment          ││
-                                │  │  - dispatch()/emitOne()     ││
-                                │  └─────────┬───────────────────┘│
-                                │            │                    │
-                                │            ▼                    │
-                                │     handler  +  codec           │
-                                │   (per-model, model-aware)      │
-                                │                                 │
-              MIDI (cc/pc/sx)   │  ┌─────────────────────────────┐│
-  ◀──────── outbound  ◀──────── │  │ easymidi.Output             ││
-                                │  └─────────────────────────────┘│
-                                └─────────────────────────────────┘
+```mermaid
+flowchart TB
+    ui["WS UI client<br/>(UI panels)"]
+    midiIn["External MIDI in<br/>(cc/pc/sx)"]
+    midiOut["External MIDI out<br/>(cc/pc/sx)"]
+
+    subgraph mt ["MockTransport"]
+        wss["WebSocketServer<br/>- this.clients (UI)<br/>- this.mcpClients (MCP)"]
+        glue["routing + protocol glue<br/>- bank-select accumulator<br/>- RQ1 fulfillment<br/>- dispatch() / emitOne()"]
+        hc["handler + codec<br/>(per-model, model-aware)"]
+        out["easymidi.Output"]
+        wss <--> glue
+        glue --> hc
+        hc --> out
+    end
+
+    ui -- "setParam, setActiveEngine, reload-cache" --> wss
+    wss -- "full state" --> ui
+    midiIn -- "inbound" --> glue
+    out -- "outbound" --> midiOut
 ```
 
 ## WebSocket clients
@@ -73,16 +68,20 @@ Adding a new WS message means adding a branch here. Each branch is a thin call i
 
 `dispatch(msg: MidiMessage)` routes everything from the virtual MIDI Input. Source is implicitly **external** — the transport **must not** echo inbound MIDI back out (would feedback-loop on bridges/shadows).
 
-```
-sysex                    parseRequest matches?  ──► RQ1 fulfillment (read-only path)
-                         no match              ──► codec.decode → set_params
-
-cc, controller 0 or 32   accumulate bank-select per channel  (no handler call)
-
-program                  combine accumulated bank with PC slot
-                         handler.load_program(bank, slot)
-
-cc (anything else)       codec.decode → set_params
+```mermaid
+flowchart TB
+    d["dispatch(msg)"]
+    d --> sx["sysex"]
+    sx -- "parseRequest match" --> rq1["RQ1 fulfillment (read-only)"]
+    sx -- "no match" --> dec1["codec.decode"]
+    dec1 --> sp1["handler.set_params"]
+    d --> bank["CC 0 / CC 32"]
+    bank -- "no handler call" --> acc["accumulate bank-select per channel"]
+    d --> prog["program change"]
+    prog --> lp["handler.load_program(bank, slot)"]
+    d --> ccx["other CC"]
+    ccx --> dec2["codec.decode"]
+    dec2 --> sp2["handler.set_params"]
 ```
 
 ### RQ1 → DT1 fulfillment (`fulfillRequest`)
@@ -103,20 +102,17 @@ These flows cover everything that mutates state or emits to the wire. They split
 
 The UI never touches MIDI bytes; it sends a named param write over the WebSocket. The transport updates state via the handler, then asks the codec to encode the same write and emits it on MIDI Out (the panel-knob analogue — external listeners see the change).
 
+```mermaid
+flowchart TB
+    ui["UI"] -- "setParam" --> ws["transport WS handler"]
+    ws --> sp["handler.set_params"]
+    ws --> bc["transport.broadcast(state)"]
+    bc --> uic["UI clients"]
+    ws --> enc["codec.encodeParams"]
+    enc -- "EncodedMessage[]" --> emit["emitOne() per message"]
 ```
-UI ──{type:"setParam", name, value, part?}──► transport WS handler
-                                               │
-                                               ├──► handler.set_params([{name, value, part}])
-                                               │      └─ updates state, returns { state, log }
-                                               │
-                                               ├──► transport.broadcast(state)  ──► UI clients
-                                               │
-                                               └──► codec.encodeParams([{name, value, part}])
-                                                      → EncodedMessage[]
-                                                        (e.g. {type:"cc", controller, value, channel?}
-                                                              {type:"sysex", bytes:[…]})
-                                                      └─ transport emits each via emitOne()
-```
+
+The encoded write carries the full named payload `{type: "setParam", name, value, part?}`; `codec.encodeParams` returns `EncodedMessage[]` (e.g. `{type: "cc", controller, value, channel?}` or `{type: "sysex", bytes: […]}`), and the transport emits each via `emitOne()`.
 
 If `codec.encodeParams` throws (unknown param, transport-less param), the transport catches and logs `setParam emit failed` and continues — state was still updated and broadcast.
 
@@ -128,20 +124,19 @@ If `codec.encodeParams` throws (unknown param, transport-less param), the transp
 
 Any MIDI message that arrives on the virtual In and is *not* a bank-select CC, *not* a Program Change, and *not* a codec-recognized request (Flow 4) falls through here. The codec decodes; the handler applies. External MIDI is never echoed back to MIDI Out — a bridge that fans out would loop the message right back into our own In.
 
+```mermaid
+flowchart TB
+    em["external MIDI<br/>(cc / sysex)"] --> vin["virtual MIDI In"]
+    vin --> disp["transport.dispatch"]
+    disp --> dec["codec.decode"]
+    dec -- "param events" --> sp["handler.set_params"]
+    sp --> bc["transport.broadcast(state)"]
+    bc --> uic["UI clients"]
+    note["⚠ external MIDI is never echoed to MIDI Out"]
+    disp -.- note
 ```
-External MIDI ──cc / sysex──► virtual MIDI In ──► transport.dispatch
-                                                   │
-                                                   ├──► codec.decode(message)
-                                                   │      → [{kind:"param", name, value, part?, engine?}, …]
-                                                   │
-                                                   └──► handler.set_params(refs)
-                                                          ├─ updates state
-                                                          └─ transport.broadcast(state) ──► UI clients
 
-                                                   (no emission to MIDI Out)
-```
-
-CC-only codecs (Nord, Prophet-6) handle CC writes here and return `[]` for sysex. Roland-style codecs (JUNO-X) handle CC *and* inbound DT1 sysex writes via the same path.
+`codec.decode` returns `param` events shaped `{kind: "param", name, value, part?, engine?}`. CC-only codecs (Nord, Prophet-6) handle CC writes here and return `[]` for sysex. Roland-style codecs (JUNO-X) handle CC *and* inbound DT1 sysex writes via the same path.
 
 `codec.decode` may return **multiple** `param` events for one CC when the controller is ambiguous (JUNO-X emits one candidate per matching engine; the handler picks based on the part's `activeEngine` and silently ignores non-matches). `applySetEvents` rolls all returned `param` events into a single `handler.set_params(refs)` call; `unknown`-kind events are logged and dropped.
 
@@ -149,40 +144,32 @@ CC-only codecs (Nord, Prophet-6) handle CC writes here and return `[]` for sysex
 
 CC 0 (bank MSB) and CC 32 (bank LSB) on their own mean nothing — they're stateful predecessors to a Program Change. The codec is stateless by design, so the **transport** accumulates MSB/LSB per channel and finalizes a `handler.load_program(bank, slot)` call when the matching PC arrives.
 
-```
-External MIDI ──CC 0 (MSB)──►  transport: pendingBankByCh[ch].msb = value   (no handler call)
-External MIDI ──CC 32 (LSB)──► transport: pendingBankByCh[ch].lsb = value   (no handler call)
-External MIDI ──PC──►          transport: bank = (msb << 7) | lsb
-                                          handler.load_program(bank, slot)
-                                          └─ updates state → broadcast
+```mermaid
+flowchart TB
+    msb["CC 0 (MSB)"] -- "no handler call" --> a1["pendingBankByCh[ch].msb = value"]
+    lsb["CC 32 (LSB)"] -- "no handler call" --> a2["pendingBankByCh[ch].lsb = value"]
+    pc["program change"] --> calc["bank = (msb &lt;&lt; 7) | lsb"]
+    calc --> lp["handler.load_program(bank, slot)"]
+    lp -- "updates state" --> bc["broadcast(state)"]
 ```
 
 #### Flow 4 — Codec-recognized request sysex (transport-fulfilled, handler read-only)
 
 When an inbound sysex matches `codec.parseRequest`, the transport orchestrates a read-only round-trip entirely through the codec; the handler just returns the requested params' values. Today this is wired for Roland RQ1 → DT1 on the JUNO-X model — but the mechanism is generic. Any codec that implements `parseRequest` + `paramsAtAddress` + `encodeBytes` + `buildResponse` gets the same fulfillment.
 
-```
-External MIDI ──sysex──► virtual MIDI In ──► transport.dispatch
-                                              │
-                                              ├──► codec.parseRequest(msg)
-                                              │      → { address, size, deviceId } | undefined
-                                              │      (undefined → falls through to Flow 2)
-                                              │
-                                              ├──► codec.paramsAtAddress(address, size)
-                                              │      → [{name, part?, byteOffset, byteCount}, …]
-                                              │
-                                              ├──► handler.get_params(names, part)   per part
-                                              │      → { name: userValue, … }
-                                              │
-                                              ├──► codec.encodeBytes(name, value, part)   per param
-                                              │      → wire bytes
-                                              │
-                                              └──► codec.buildResponse(req, dataBytes)
-                                                     → reply sysex
-                                                     └─ transport emits to MIDI Out
+```mermaid
+flowchart TB
+    em["external MIDI (sysex)"] --> vin["virtual MIDI In"]
+    vin --> disp["transport.dispatch"]
+    disp --> pr["codec.parseRequest"]
+    pr -- "address, size, deviceId" --> pa["codec.paramsAtAddress"]
+    pa -- "param descriptors" --> gp["handler.get_params (per part)"]
+    gp -- "user values" --> eb["codec.encodeBytes (per param)"]
+    eb -- "wire bytes" --> br["codec.buildResponse"]
+    br -- "reply sysex" --> emit["emit to MIDI Out"]
 ```
 
-The handler never sees raw MIDI here. Adding a new addressable-param read on a Roland-style model means extending the per-model codec's `paramsAtAddress` — no transport changes.
+If `codec.parseRequest` returns `undefined`, the message falls through to Flow 2. The handler never sees raw MIDI here. Adding a new addressable-param read on a Roland-style model means extending the per-model codec's `paramsAtAddress` — no transport changes.
 
 ### From the host (external method calls)
 
@@ -192,19 +179,18 @@ The main process (`main.ts`) and the headless CLI (`cli.ts`) call into the trans
 
 UI clients and MCP-status clients connect to the same WebSocket port, distinguished by `?client=mcp` on the URL.
 
-```
-HTTP upgrade ─?client=mcp─► transport: mcpClients.add(ws)
-                            └─ broadcastMcpStatus()
-                               └─► partial {mcpConnected:true, label} to ALL clients
-                                   (UI clients too — they merge into lastState)
+```mermaid
+flowchart TB
+    up1["HTTP upgrade ?client=mcp"] --> m1["mcpClients.add(ws)"]
+    m1 --> m2["broadcastMcpStatus()"]
+    m2 -- "partial { mcpConnected, label }" --> all["ALL clients<br/>(UI clients merge into lastState)"]
 
-HTTP upgrade ─(no query)──► transport: clients.add(ws)
-                            └─ ws.send( handler.getFullState(true)
-                                         + { mcpConnected, label } )
-                               └─► initial full snapshot to JUST this UI client
+    up2["HTTP upgrade (no query)"] --> u1["clients.add(ws)"]
+    u1 --> u2["ws.send full state<br/>+ { mcpConnected, label }"]
+    u2 -- "initial snapshot" --> just["just this UI client"]
 ```
 
-MCP disconnect fires `broadcastMcpStatus()` again with `mcpConnected:false`. Every regular `broadcast()` also stamps the current `mcpConnected` flag and `label` onto the state payload — UI panels mirror it for the "MCP connected" indicator.
+The full snapshot is `handler.getFullState(true)` stamped with `{ mcpConnected, label }`. MCP disconnect fires `broadcastMcpStatus()` again with `mcpConnected:false`. Every regular `broadcast()` also stamps the current `mcpConnected` flag and `label` onto the state payload — UI panels mirror it for the "MCP connected" indicator.
 
 Because `broadcastMcpStatus()` sends a **partial** payload (no `part1..partN`), UI clients that cache the last broadcast must *merge* the new fields in rather than replace the whole cache, or part state evaporates on the next MCP connect/disconnect.
 
@@ -212,38 +198,43 @@ Because `broadcastMcpStatus()` sends a **partial** payload (no `part1..partN`), 
 
 The main process calls these directly during tab rename (`relabel`) and after on-disk backup extraction (`reloadCache`). Both end in a fresh full-state broadcast so connected UIs see the new label or new inventory.
 
-```
-main → transport.relabel(label, lo, hi)
-       ├─ this.opts.label = label
-       ├─ handler.init(lo, hi, label)            ← re-load per-instance backup cache for new label
-       ├─ registry.relabel(wsPort, label)        ← update mock-registry entry
-       └─ broadcast( handler.getFullState(true) )
+```mermaid
+flowchart TB
+    main["main"]
+    main --> relabel["transport.relabel(label, lo, hi)"]
+    relabel --> r1["opts.label = label"]
+    relabel --> r2["handler.init(lo, hi, label)"]
+    relabel --> r3["registry.relabel(wsPort, label)"]
+    relabel --> r4["broadcast full state"]
 
-main → transport.reloadCache()
-       ├─ handler.onCacheReload?.()
-       └─ broadcast( handler.getFullState(true) )
+    main --> reload["transport.reloadCache()"]
+    reload --> c1["handler.onCacheReload?.()"]
+    reload --> c2["broadcast full state"]
 ```
 
-`{type:"reload-cache"}` over the WebSocket (Flow 1's tail) reaches the same handler path; `transport.reloadCache()` is the equivalent for callers inside the same process.
+`relabel` re-loads the per-instance backup cache under the new label (`handler.init`) and updates the mock-registry entry (`registry.relabel`); both paths broadcast `handler.getFullState(true)`. `{type:"reload-cache"}` over the WebSocket (Flow 1's tail) reaches the same handler path; `transport.reloadCache()` is the equivalent for callers inside the same process.
 
 #### Flow 7 — `.mockrack` save / restore
 
 The save side is read-only. The restore side calls the handler's `setFullState` and broadcasts once for a clean UI transition.
 
-```
-main (Save) → transport.getFullState(false)
-              └─ handler.getFullState(false)
-                 → opaque state blob → mockrack file
+```mermaid
+flowchart TB
+    saveMain["main (Save)"] --> gfs["transport.getFullState(false)"]
+    gfs --> hgfs["handler.getFullState(false)"]
+    hgfs -- "opaque state blob" --> file["mockrack file"]
 
-main (Open) → transport.restoreSnapshot(snapshot)
-              ├─ if !snapshot:                         → return false
-              ├─ if !handler.setFullState:             → return false   (graceful degrade)
-              ├─ handler.setFullState(snapshot)        (may throw → caught, return false)
-              └─ broadcast( handler.getFullState(true) )
-                 → return true
+    openMain["main (Open)"] --> rs["transport.restoreSnapshot(snapshot)"]
+    rs --> o1{"!snapshot ?"}
+    o1 -- "yes" --> rf1["return false"]
+    o1 -- "no" --> o2{"!handler.setFullState ?"}
+    o2 -- "yes" --> rf2["return false (graceful degrade)"]
+    o2 -- "no" --> o3["handler.setFullState(snapshot)"]
+    o3 --> o4["broadcast full state"]
+    o4 --> rt["return true"]
 ```
 
-Models that don't implement `setFullState` restore as model + label only with knobs at defaults; the shell notes that to the operator.
+`handler.setFullState` may throw — the transport catches it and returns `false`. Models that don't implement `setFullState` restore as model + label only with knobs at defaults; the shell notes that to the operator.
 
 ### Source-aware emission
 
