@@ -121,13 +121,7 @@ export function registerConnect(server: McpServer, pool: DevicePool): void {
           const wsModelId = process.env.MOCK_MODEL_ID ?? modelId;
           const model = await loadModelById(wsModelId);
           const device = createDeviceForModel(model, label);
-          // Resolve the outgoing-MIDI lane (#109) so the device can receive
-          // the RQ1→DT1 round-trip. Explicit env wins; otherwise derive it
-          // from the mock-registry entry whose wsPort matches the in lane —
-          // i.e. `primary.wsOutPort` surfaced via the registry.
           const wsOutUrl = resolveWsOutUrl(wsUrl);
-          // Honor the user-supplied channel (1–16 → 0-based), matching the
-          // real-MIDI path; default to 0 when unspecified.
           const wsChannel = channel !== undefined ? channel - 1 : 0;
           const wsConn = await WsMidiConnection.connect(wsUrl, wsChannel, wsOutUrl);
           device.attach(wsConn);

@@ -15,9 +15,7 @@ const APP_DIR = new URL("../../../sounds-and-recreation-app", import.meta.url).p
 export interface MockProcessOptions {
   model: string;
   wsPort?: number;
-  /** Second WS port for the outgoing-from-mock MIDI lane (#109). */
   wsOutPort?: number;
-  /** Skip the virtual MIDI port — WS-only mode (CI/Docker, no ALSA). */
   noMidi?: boolean;
   lowerChannel?: number;
   upperChannel?: number;

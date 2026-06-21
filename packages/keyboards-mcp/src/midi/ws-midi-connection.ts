@@ -1,14 +1,8 @@
 /**
- * WebSocket-based MidiConnection for CI/testing environments
- * where real MIDI (easymidi/ALSA) is unavailable.
- *
- * Two lanes (#109):
- *  - **In lane** (`url`): CC/program/sysex are sent here as JSON. The mock
- *    engine dispatches them exactly like external MIDI on a virtual port.
- *  - **Out lane** (`outUrl`, optional): the mock's dedicated outgoing-MIDI
- *    server. We listen for `{type:"sysex"}` and fire `onSysEx`, mirroring the
- *    real-MIDI RQ1→DT1 round-trip. Without an out lane, `onSysEx` never fires
- *    (one-way mode, the historical behavior).
+ * WebSocket-based MidiConnection for CI/testing where real MIDI is
+ * unavailable. Sends CC/program/sysex on the in lane (`url`); when an out
+ * lane (`outUrl`, #109) is supplied, listens there for `{type:"sysex"}` and
+ * fires `onSysEx` (the WS-mode RQ1→DT1 receive path).
  */
 
 import WebSocket from "ws";
@@ -18,7 +12,6 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class WsMidiConnection implements MidiConnection {
   private ws: WebSocket;
-  /** Out lane — null when the caller didn't supply one (one-way mode). */
   private wsOut: WebSocket | null;
   private channel: number;
   private onSysExCallbacks: Array<(bytes: number[]) => void> = [];

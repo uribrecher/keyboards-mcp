@@ -42,19 +42,7 @@ export interface EngineOptions {
   lowerChannel: number;
   upperChannel: number;
   wsPort: number;
-  /**
-   * Optional second WS server port — the "out lane" dedicated to
-   * outgoing-from-mock MIDI (#109). When set, every outgoing SysEx the
-   * transport emits is also broadcast here as `{type:"sysex", bytes}`. In
-   * WS-only mode (no virtual MIDI) this is the only receive path the MCP's
-   * WsMidiConnection has, mirroring the real-MIDI RQ1→DT1 round-trip. Lane 1
-   * (`wsPort`) stays dedicated to UI state + MCP status.
-   *
-   * The out lane is broadcast-only: it never reads inbound messages, so it
-   * cannot re-inject MIDI. Combined with the dispatch rule that external
-   * input is never echoed (only an RQ1 emits — its DT1 response), this keeps
-   * the two lanes a clean unidirectional split with no feedback loop.
-   */
+  /** Second WS server for outgoing-from-mock SysEx — the out lane (#109). */
   wsOutPort?: number;
   portName: string;
   /** Model id for the runtime registry (e.g. "nord-electro-5d"). */
@@ -83,9 +71,7 @@ export class MockTransport extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private clients = new Set<WebSocket>();
   private mcpClients = new Set<WebSocket>();
-  // The dedicated outgoing-MIDI lane (#109). Broadcast-only — never reads
-  // inbound messages. Null when `wsOutPort` is not set (real-MIDI mode has a
-  // virtual MIDI Out and doesn't need it).
+  // The outgoing-MIDI out lane (#109) — broadcast-only. Null when unused.
   private httpServerOut: Server | null = null;
   private wssOut: WebSocketServer | null = null;
   private wsOutClients = new Set<WebSocket>();
