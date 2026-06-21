@@ -21,6 +21,13 @@ jobs:
   changeset:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # Skip the gate ONLY for the genuine Version Packages PR: the magic branch
+    # name alone isn't enough (anyone, incl. a fork, could name a branch that),
+    # so also require the github-actions bot author and a same-repo head.
+    env:
+      IS_VERSION_PR: ${{ github.head_ref == 'changeset-release/main'
+        && github.event.pull_request.user.login == 'github-actions[bot]'
+        && github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,9 +36,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - if: github.head_ref != 'changeset-release/main'
+      - if: env.IS_VERSION_PR != 'true'
         run: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
-      - if: github.head_ref != 'changeset-release/main'
+      - if: env.IS_VERSION_PR != 'true'
         run: npx changeset status --since=origin/main
 
   lint:
