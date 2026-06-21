@@ -56,8 +56,13 @@ export class MockProcess {
 
   static async start(opts: MockProcessOptions): Promise<MockProcess> {
     const wsPort = opts.wsPort ?? 3456;
+    // Run tsx via `node --import` rather than `npx tsx`. npx is an extra
+    // process layer: killing it orphans the real tsx/node mock, whose open
+    // stdio pipes then keep this test's process alive (node:test runs each
+    // file in its own subprocess, so the orphan hangs the whole run). Spawning
+    // node directly makes `proc` the mock itself, so a kill fully reaps it.
     const args = [
-      "tsx",
+      "--import", "tsx",
       "src/cli.ts",
       "--model", opts.model,
       "--ws-port", String(wsPort),
@@ -67,7 +72,7 @@ export class MockProcess {
     if (opts.wsOutPort !== undefined) { args.push("--ws-out-port", String(opts.wsOutPort)); }
     if (opts.noMidi) { args.push("--no-midi"); }
     if (opts.label) { args.push("--label", opts.label); }
-    const proc = spawn("npx", args, {
+    const proc = spawn(process.execPath, args, {
       cwd: APP_DIR,
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env as Record<string, string>, ...(opts.env ?? {}) },
@@ -100,8 +105,8 @@ export class MockProcess {
    */
   static async startExpectingFailure(opts: MockProcessOptions): Promise<number> {
     const wsPort = opts.wsPort ?? 3456;
-    const proc = spawn("npx", [
-      "tsx",
+    const proc = spawn(process.execPath, [
+      "--import", "tsx",
       "src/cli.ts",
       "--model", opts.model,
       "--ws-port", String(wsPort),
