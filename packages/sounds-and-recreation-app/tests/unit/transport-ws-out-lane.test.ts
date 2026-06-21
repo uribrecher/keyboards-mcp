@@ -42,6 +42,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
     if (predicate()) return;
     await delay(20);
   }
+  throw new Error(`waitFor: condition not met within ${timeoutMs}ms`);
 }
 
 async function makeTransport(wsPort: number, wsOutPort: number): Promise<MockTransport> {

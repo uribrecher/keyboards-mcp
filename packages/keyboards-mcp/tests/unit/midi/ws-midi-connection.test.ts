@@ -20,6 +20,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
     if (predicate()) return;
     await delay(10);
   }
+  throw new Error(`waitFor: condition not met within ${timeoutMs}ms`);
 }
 
 interface FakeServer {
@@ -86,6 +87,11 @@ describe("WsMidiConnection: in lane sends, out lane receives SysEx", { concurren
       laneOut.broadcast({ type: "state", foo: 1 });
       await delay(100);
       assert.equal(got.length, 1, "onSysEx must not fire for non-sysex out-lane messages");
+
+      // SysEx with non-integer / out-of-range bytes is dropped at the boundary.
+      laneOut.broadcast({ type: "sysex", bytes: [0xf0, "x", 999, 0xf7] });
+      await delay(100);
+      assert.equal(got.length, 1, "onSysEx must drop sysex with invalid bytes");
 
       // Unsubscribe stops further callbacks.
       unsubscribe();

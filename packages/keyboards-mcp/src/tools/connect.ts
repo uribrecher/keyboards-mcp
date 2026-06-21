@@ -26,8 +26,13 @@ function resolveWsOutUrl(inUrl: string): string | undefined {
     const lanePort = Number(url.port);
     if (!Number.isInteger(lanePort)) return undefined;
     const entry = findByWsPort(lanePort);
-    // Preserve the inbound protocol (ws/wss) and host; only the port differs.
-    if (entry?.wsOutPort) return `${url.protocol}//${url.hostname}:${entry.wsOutPort}`;
+    // Clone and swap only the port so the URL keeps protocol + host (incl.
+    // IPv6 brackets) intact.
+    if (entry?.wsOutPort) {
+      const out = new URL(inUrl);
+      out.port = String(entry.wsOutPort);
+      return out.toString();
+    }
   } catch { /* MOCK_WS_URL not a parseable URL — env-var path only */ }
   return undefined;
 }

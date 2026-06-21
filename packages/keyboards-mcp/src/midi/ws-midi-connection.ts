@@ -54,9 +54,16 @@ export class WsMidiConnection implements MidiConnection {
       try {
         const msg = JSON.parse(String(raw));
         if (msg && msg.type === "sysex" && Array.isArray(msg.bytes)) {
-          const bytes = msg.bytes.map(Number);
+          // Trust boundary: drop the message unless every byte is a 0..255 int.
+          const bytes: number[] = [];
+          let ok = true;
+          for (const b of msg.bytes) {
+            const n = Number(b);
+            if (!Number.isInteger(n) || n < 0 || n > 255) { ok = false; break; }
+            bytes.push(n);
+          }
           // Iterate a copy so a callback can unsubscribe mid-dispatch.
-          for (const cb of [...this.onSysExCallbacks]) cb(bytes.slice());
+          if (ok) for (const cb of [...this.onSysExCallbacks]) cb(bytes.slice());
         }
       } catch { /* non-JSON / non-sysex — ignore */ }
     });
