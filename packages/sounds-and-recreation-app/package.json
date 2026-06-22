@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "copy:peaks-vendor": "mkdir -p src/shell/vendor && cp ../../node_modules/peaks.js/dist/peaks.ext.min.js src/shell/vendor/peaks.min.js && cp ../../node_modules/konva/konva.min.js src/shell/vendor/konva.min.js && cp ../../node_modules/waveform-data/dist/waveform-data.min.js src/shell/vendor/waveform-data.min.js && cp ../../node_modules/marked/lib/marked.esm.js src/shell/vendor/marked.esm.js",
-    "copy:agent-vendor": "if [ -d ../../node_modules/@sounds-and-recreation/agent-client/dist ]; then mkdir -p src/shell/vendor/agent-client && cp -R ../../node_modules/@sounds-and-recreation/agent-client/dist/. src/shell/vendor/agent-client/; else echo 'agent-client optional dep not installed (sibling repo absent) — skipping vendor copy'; fi",
+    "copy:agent-vendor": "if [ -d node_modules/@sounds-and-recreation/agent-client/dist ]; then SRC=node_modules; elif [ -d ../../node_modules/@sounds-and-recreation/agent-client/dist ]; then SRC=../../node_modules; fi; if [ -n \"$SRC\" ]; then mkdir -p src/shell/vendor/agent-client && cp -R \"$SRC/@sounds-and-recreation/agent-client/dist/.\" src/shell/vendor/agent-client/; else echo 'agent-client not installed; skipping vendor copy'; fi",
     "build:sdk": "npm --prefix ../../../sound-recreation-agent/client-sdk run build",
     "build:deps": "npm --prefix ../keyboards-mcp run build",
     "prebuild": "npm run build:deps && npm run copy:peaks-vendor",
