@@ -409,7 +409,10 @@
     waveform-data must be on window before peaks.ext.min.js loads
     (we ship the "ext" build that doesn't bundle them). All three
     files are copied from node_modules/ into vendor/ by
-    `npm run copy:peaks-vendor` (wired via postinstall + prebuild).
+    `npm run copy:peaks-vendor`, which runs as part of `build` (prebuild) and
+    `sar` / `sar:dist` (presar / presar:dist) — so any UI build/launch path
+    populates vendor/ (the headless `sar:headless` mock doesn't load the shell,
+    so it neither copies nor needs vendor/).
   -->
   <script src="vendor/konva.min.js"></script>
   <script src="vendor/waveform-data.min.js"></script>

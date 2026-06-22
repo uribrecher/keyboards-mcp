@@ -8,7 +8,7 @@
     "packages/sounds-and-recreation-app"
   ],
   "scripts": {
-    "build": "npm run build -w keyboards-mcp && npm run build -w sounds-and-recreation-app",
+    "build": "npm run build -w sounds-and-recreation-app",
     "lint": "npm run lint --workspaces --if-present",
     "test:check": "npm run test:check --workspaces --if-present",
     "test:unit": "npm run test:unit --workspaces --if-present",
