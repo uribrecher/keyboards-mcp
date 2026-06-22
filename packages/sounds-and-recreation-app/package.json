@@ -16,8 +16,8 @@
     "sar": "electron dist/main.js",
     "sar:debug": "ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 SAR_DEVTOOLS=1 electron --inspect=5858 dist/main.js 2>&1 | tee /tmp/sounds-and-recreation.log",
     "sar:headless": "tsx src/cli.ts",
-    "presar:dist": "npm run build:sdk && npm run copy:peaks-vendor && npm run copy:agent-vendor",
-    "sar:dist": "tsc && electron-builder --dir",
+    "presar:dist": "npm run build:sdk && npm run copy:agent-vendor",
+    "sar:dist": "npm run build && electron-builder --dir",
     "lint": "eslint src/ tests/",
     "test:unit": "find tests/unit -name '*.test.ts' | xargs npx tsx --test",
     "test:check": "tsc --noEmit -p tsconfig.test.json"
