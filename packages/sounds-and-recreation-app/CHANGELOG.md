@@ -1,5 +1,18 @@
 # sounds-and-recreation-app
 
+## 0.2.1
+
+### Patch Changes
+
+- [#163](https://github.com/uribrecher/keyboards-mcp/pull/163) [`ba0e4ee`](https://github.com/uribrecher/keyboards-mcp/commit/ba0e4ee275e0772a1a7304a5bcf4449aa543d233) Thanks [@uribrecher](https://github.com/uribrecher)! - Fix `npm run sar` launching a non-responsive app. `copy:agent-vendor` looked
+  for the `@sounds-and-recreation/agent-client` `file:` dep in the hoisted root
+  `node_modules`, but npm keeps that symlink in the **app-local** `node_modules`
+  (only registry deps like peaks.js hoist to root). So the guard never found it,
+  the agent client was never vendored into `src/shell/vendor/agent-client/`, and
+  `app.js`'s top-level `import` 404'd — taking the whole renderer down. The check
+  now tries app-local first, then root (the latter covers the SDK once it's
+  published, sound-recreation-agent#37).
+
 ## 0.2.0
 
 ### Minor Changes
